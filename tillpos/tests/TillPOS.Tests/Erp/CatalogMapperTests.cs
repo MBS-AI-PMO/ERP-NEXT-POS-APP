@@ -42,6 +42,19 @@ public class CatalogMapperTests
         Assert.Contains(reasonContains, rule.UnsupportedReason);
     }
 
+    [Theory]
+    [InlineData(",\"uom\":\"Box\"", true)]
+    [InlineData(",\"uom\":\"\"", false)]
+    [InlineData("", false)]
+    public void Uom_specific_rules_are_unsupported(string uomJson, bool unsupported)
+    {
+        var rule = CatalogMapper.PricingRule(J($$"""
+            {"name":"R","apply_on":"Item Code","items":[{"item_code":"WATER"{{uomJson}}}],"selling":1,"rate_or_discount":"Discount Percentage","discount_percentage":10}
+            """))!;
+        if (unsupported) Assert.Contains("UOM-specific", rule.UnsupportedReason);
+        else Assert.Null(rule.UnsupportedReason);
+    }
+
     [Fact]
     public void Disabled_or_buying_only_rule_maps_to_null()
     {

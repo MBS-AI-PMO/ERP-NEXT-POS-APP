@@ -1,6 +1,7 @@
 namespace TillPOS.Core.Money;
 
-public enum RoundingMethod { Bankers, Commercial }
+/// <summary>Bankers = Frappe "Banker's Rounding" (half-even), BankersLegacy = "Banker's Rounding (legacy)", Commercial = "Commercial Rounding".</summary>
+public enum RoundingMethod { Bankers, Commercial, BankersLegacy }
 
 public sealed record MoneySettings(
     int Precision = 2,
@@ -13,8 +14,22 @@ public sealed record MoneySettings(
 public static class Rounder
 {
     public static decimal Round(decimal value, int precision, RoundingMethod method) =>
-        Math.Round(value, precision,
-            method == RoundingMethod.Bankers ? MidpointRounding.ToEven : MidpointRounding.AwayFromZero);
+        method switch
+        {
+            RoundingMethod.Commercial => Math.Round(value, precision, MidpointRounding.AwayFromZero),
+            RoundingMethod.BankersLegacy => BankersLegacy(value, precision),
+            _ => Math.Round(value, precision, MidpointRounding.ToEven),
+        };
+
+    // Frappe _bankers_rounding_legacy: at precision > 0 an exact midpoint goes to floor + 1; at precision 0 it is half-even.
+    private static decimal BankersLegacy(decimal value, int precision)
+    {
+        var scale = (decimal)Math.Pow(10, precision);
+        var scaled = value * scale;
+        var floor = Math.Floor(scaled);
+        if (scaled - floor == 0.5m && precision > 0) return (floor + 1) / scale;
+        return Math.Round(value, precision, MidpointRounding.ToEven);
+    }
 
     public static decimal Round(decimal value, MoneySettings money) =>
         Round(value, money.Precision, money.Rounding);

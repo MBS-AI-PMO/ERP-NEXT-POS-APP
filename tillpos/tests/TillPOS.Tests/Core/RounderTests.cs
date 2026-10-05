@@ -20,6 +20,17 @@ public class RounderTests
         Assert.Equal(M(expected), Rounder.Round(M(input), 2, RoundingMethod.Commercial));
 
     [Theory]
+    [InlineData("2.025", 2, "2.03")]
+    [InlineData("0.065", 2, "0.07")]
+    [InlineData("-2.025", 2, "-2.02")]
+    [InlineData("2.024", 2, "2.02")]
+    [InlineData("2.026", 2, "2.03")]
+    [InlineData("10.5", 0, "10")]
+    [InlineData("11.5", 0, "12")]
+    public void Bankers_legacy_follows_frappe(string input, int precision, string expected) =>
+        Assert.Equal(M(expected), Rounder.Round(M(input), precision, RoundingMethod.BankersLegacy));
+
+    [Theory]
     [InlineData("10.12", "10.00")]
     [InlineData("10.13", "10.25")]
     [InlineData("10.38", "10.50")]

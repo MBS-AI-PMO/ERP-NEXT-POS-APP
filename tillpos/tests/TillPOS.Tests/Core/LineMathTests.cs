@@ -24,6 +24,10 @@ public class LineMathTests
     }
 
     [Fact]
+    public void No_rule_rounds_price_list_rate_to_currency_precision() =>
+        Assert.Equal(M("12.34"), LineMath.RateAfterRule(M("12.345"), 1m, null, Money));
+
+    [Fact]
     public void No_rule_keeps_price_list_rate() =>
         Assert.Equal(M("12.34"), LineMath.RateAfterRule(M("12.34"), 1m, null, Money));
 }

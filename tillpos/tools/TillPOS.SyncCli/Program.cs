@@ -39,10 +39,10 @@ switch (args[0])
     case "parity":
     {
         var settings = store.LoadPosSettings() ?? throw new InvalidOperationException("Run 'pull' first.");
-        var money = new MoneySettings(config.Precision, config.Rounding, settings.SmallestCurrencyFraction, settings.DisableRoundedTotal);
-        var template = settings.TaxesAndCharges is null ? null : catalog.FindSalesTaxTemplate(settings.TaxesAndCharges);
-        var cart = new Cart(new SaleContext(catalog, money, settings.PriceList, settings.Warehouse, settings.TaxCategory, template,
-            () => DateOnly.FromDateTime(DateTime.Now)));
+        var saleCtx = SaleContext.Create(catalog, settings, catalog.FindSalesTaxTemplate, config.Precision, config.Rounding,
+            () => DateOnly.FromDateTime(DateTime.Now));
+        var template = saleCtx.TaxTemplate;
+        var cart = new Cart(saleCtx);
 
         foreach (var barcode in args.Skip(1))
         {

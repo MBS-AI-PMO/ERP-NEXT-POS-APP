@@ -39,6 +39,22 @@ public class CartTests
     }
 
     [Fact]
+    public void Price_list_rate_is_rounded_to_currency_precision()
+    {
+        catalog.Items.Add(new Item("HALF", "Half pack", "Food", null, "Nos", false, true));
+        catalog.Uoms.Add(new ItemUom("HALF", "Half", M("0.5")));
+        catalog.Barcodes.Add(new ItemBarcode("555", "HALF", "Half"));
+        catalog.Prices.Add(new ItemPrice("P-HALF", "HALF", "Nos", M("7.25"), null, null));
+        var cart = NewCart();
+
+        cart.AddBarcode("555");
+
+        var line = Assert.Single(cart.Lines);
+        Assert.Equal(M("3.62"), line.PriceListRate);
+        Assert.Equal(M("3.62"), line.Rate);
+    }
+
+    [Fact]
     public void Scanning_the_same_item_twice_increases_quantity()
     {
         AddItem("MILK", "Full Cream Milk 1L", "Dairy", "290", "111");

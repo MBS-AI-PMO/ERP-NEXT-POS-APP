@@ -20,6 +20,16 @@ public class PricingRuleSelectorTests
     private AppliedRule? Select(DateOnly? date = null) =>
         new PricingRuleSelector(catalog, new MoneySettings(), "Retail", "Stores - S").Select(rice, M("2150"), 1m, date ?? Today);
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Full_tie_is_broken_by_rule_name(bool reversed)
+    {
+        var rules = new[] { Rule("R-B", RuleApplyOn.ItemCode, "RICE5", "10"), Rule("R-A", RuleApplyOn.ItemCode, "RICE5", "10") };
+        catalog.Rules.AddRange(reversed ? rules.Reverse() : rules);
+        Assert.Equal("R-A", Select()!.RuleName);
+    }
+
     [Fact]
     public void No_rules_means_no_offer() => Assert.Null(Select());
 

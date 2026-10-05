@@ -18,6 +18,9 @@ public sealed class ItemGroupFeed(SyncContext ctx) : ISyncFeed
              "`tabItem Tax`.valid_from as valid_from", "`tabItem Tax`.idx as idx"], [], "name asc", 0, 0), ct))
             .ToLookup(r => r.Str("name"));
 
+        if (groups.Count == 0)
+            throw new InvalidOperationException("Server returned no item groups; refusing to delete local groups.");
+
         ctx.Store.ReplaceItemGroups(groups.Select(g => new ItemGroupSnapshot(
             CatalogMapper.Group(g),
             taxes[g.Str("name")].Select(CatalogMapper.ItemTax).OfType<ItemTaxAssignment>().ToList())));

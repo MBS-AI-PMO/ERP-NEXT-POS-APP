@@ -1,3 +1,4 @@
+using System.Globalization;
 using TillPOS.Erp.Mapping;
 
 namespace TillPOS.Sync.Feeds;
@@ -16,7 +17,17 @@ public sealed class ItemPriceFeed(SyncContext ctx) : ISyncFeed
         var settings = ctx.Store.LoadPosSettings()
             ?? throw new InvalidOperationException("POS Profile has not been synced yet, so the price list is unknown.");
 
-        return ctx.Pager.PullAsync("Item Price|" + settings.PriceList, "Item Price", Fields, [], page =>
+        // Every price list switch bumps a generation so the pager starts a fresh full pull (A -> B -> A must not reuse A's old watermark).
+        var generation = int.TryParse(ctx.Store.GetValue("item_price_generation"), CultureInfo.InvariantCulture, out var g) ? g : 0;
+        if (ctx.Store.GetValue("item_price_list") != settings.PriceList)
+        {
+            generation++;
+            ctx.Store.SetValue("item_price_generation", generation.ToString(CultureInfo.InvariantCulture));
+            ctx.Store.SetValue("item_price_list", settings.PriceList);
+            ctx.Store.SetValue("reconciled_at", DateTimeOffset.MinValue.ToString("O", CultureInfo.InvariantCulture));
+        }
+
+        return ctx.Pager.PullAsync($"Item Price|{settings.PriceList}|{generation}", "Item Price", Fields, [], page =>
         {
             var keep = page.Where(r => r.StrOrNull("price_list") == settings.PriceList
                                        && r.StrOrNull("customer") is null

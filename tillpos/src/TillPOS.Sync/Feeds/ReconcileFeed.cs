@@ -15,7 +15,8 @@ public sealed class ReconcileFeed(SyncContext ctx, Func<DateTimeOffset> now) : I
     public async Task<int> RunAsync(CancellationToken ct)
     {
         if (ctx.Store.GetValue(Key) is { } last
-            && now() - DateTimeOffset.Parse(last, CultureInfo.InvariantCulture) < TimeSpan.FromHours(24))
+            && now() - DateTimeOffset.Parse(last, CultureInfo.InvariantCulture) is var elapsed
+            && elapsed >= TimeSpan.Zero && elapsed < TimeSpan.FromHours(24))
             return 0;
 
         var settings = ctx.Store.LoadPosSettings()

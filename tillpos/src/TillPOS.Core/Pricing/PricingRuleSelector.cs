@@ -20,6 +20,7 @@ public sealed class PricingRuleSelector(ICatalog catalog, MoneySettings money, s
             .OrderByDescending(x => x.Rule.Priority)
             .ThenByDescending(x => x.Specificity)
             .ThenByDescending(x => priceListRate - LineMath.RateAfterRule(priceListRate, conversionFactor, ToApplied(x.Rule), money))
+            .ThenBy(x => x.Rule.Name, StringComparer.Ordinal)
             .Select(x => x.Rule)
             .FirstOrDefault();
         return best is null ? null : ToApplied(best);

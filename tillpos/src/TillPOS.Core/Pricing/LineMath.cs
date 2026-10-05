@@ -8,6 +8,7 @@ public static class LineMath
     /// Amount and Rate rules are defined per stock unit, so they scale with the conversion factor.</summary>
     public static decimal RateAfterRule(decimal priceListRate, decimal conversionFactor, AppliedRule? rule, MoneySettings money)
     {
+        priceListRate = Rounder.Round(priceListRate, money);
         if (rule is null) return priceListRate;
         var rate = rule.Kind switch
         {

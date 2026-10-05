@@ -232,4 +232,56 @@ public sealed class FeedTests : IDisposable
         Assert.NotNull(Catalog().FindItem("A"));
         Assert.True(reloaded);
     }
+
+    private void UsePriceList(string list) => store.SavePosSettings(new PosSettings("Till 1", "Shop LLC", "Shop LLC", null, null, "AED", "Stores - S", list,
+        "Walk-in Customer", "UAE VAT 5%", null, false, 0m, 0m, [new PaymentMode("Cash", true)]));
+
+    [Fact]
+    public async Task Switching_price_list_back_restores_the_old_lists_prices()
+    {
+        void Price(string name, string list, string at = T1) => erp.AddRow("Item Price", new()
+        {
+            ["name"] = name, ["modified"] = at, ["item_code"] = "RICE5", ["uom"] = "Nos", ["price_list_rate"] = "2150",
+            ["valid_from"] = null, ["valid_upto"] = null, ["price_list"] = list, ["customer"] = null, ["batch_no"] = null,
+        });
+        Price("P-A0", "A", "2026-10-05 09:00:00.000000");
+        Price("P-A1", "A");
+        Price("P-A2", "A");
+        Price("P-B1", "B");
+
+        UsePriceList("A");
+        await new ItemPriceFeed(ctx).RunAsync(default);
+        Assert.Equal(new[] { "P-A0", "P-A1", "P-A2" }, store.AllPriceNames().Order());
+
+        UsePriceList("B");
+        await new ItemPriceFeed(ctx).RunAsync(default);
+        Assert.Equal(new[] { "P-B1" }, store.AllPriceNames());
+
+        UsePriceList("A");
+        await new ItemPriceFeed(ctx).RunAsync(default);
+        Assert.Equal(new[] { "P-A0", "P-A1", "P-A2" }, store.AllPriceNames().Order());
+    }
+
+    [Fact]
+    public async Task Item_group_feed_refuses_to_wipe_groups_when_server_returns_none()
+    {
+        store.ReplaceItemGroups([new ItemGroupSnapshot(new ItemGroupNode("Food", null, 1, 2), [])]);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => new ItemGroupFeed(ctx).RunAsync(default));
+
+        Assert.NotNull(Catalog().FindGroup("Food"));
+    }
+
+    [Fact]
+    public async Task Reconcile_runs_when_stored_time_is_in_the_future()
+    {
+        var now = new DateTimeOffset(2026, 10, 5, 8, 0, 0, TimeSpan.Zero);
+        erp.AddRow("Item", new() { ["name"] = "KEEP", ["modified"] = T1 });
+        store.UpsertItems([new ItemSnapshot(new Item("KEEP", "Keep", "Food", null, "Nos", false, true), [], [], [])]);
+        store.SetValue("reconciled_at", now.AddYears(2).ToString("O", System.Globalization.CultureInfo.InvariantCulture));
+
+        await new ReconcileFeed(ctx, () => now).RunAsync(default);
+
+        Assert.NotEmpty(erp.ListCalls);
+    }
 }

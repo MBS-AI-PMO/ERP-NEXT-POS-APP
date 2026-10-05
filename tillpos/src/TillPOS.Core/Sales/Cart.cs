@@ -12,7 +12,19 @@ public sealed record SaleContext(
     string Warehouse,
     string? TaxCategory,
     SalesTaxTemplate? TaxTemplate,
-    Func<DateOnly> Today);
+    Func<DateOnly> Today)
+{
+    public static SaleContext Create(ICatalog catalog, PosSettings settings, Func<string, SalesTaxTemplate?> findSalesTaxTemplate,
+        int precision, RoundingMethod rounding, Func<DateOnly> today)
+    {
+        var money = new MoneySettings(precision, rounding, settings.SmallestCurrencyFraction, settings.DisableRoundedTotal);
+        SalesTaxTemplate? template = null;
+        if (settings.TaxesAndCharges is { } name)
+            template = findSalesTaxTemplate(name)
+                ?? throw new UnsupportedTaxSetupException($"sales tax template '{name}' is not in the local catalog");
+        return new SaleContext(catalog, money, settings.PriceList, settings.Warehouse, settings.TaxCategory, template, today);
+    }
+}
 
 public sealed class CartLine
 {
@@ -80,12 +92,13 @@ public sealed class Cart(SaleContext ctx)
         var priceListRate = prices.PriceListRate(item, lineUom, cf.Value, date);
         if (priceListRate is null) return new AddResult(AddOutcome.NoPrice, null);
 
-        var rule = rules.Select(item, priceListRate.Value, cf.Value, date);
-        var rate = LineMath.RateAfterRule(priceListRate.Value, cf.Value, rule, ctx.Money);
+        var plr = Rounder.Round(priceListRate.Value, ctx.Money);
+        var rule = rules.Select(item, plr, cf.Value, date);
+        var rate = LineMath.RateAfterRule(plr, cf.Value, rule, ctx.Money);
         var itemTaxTemplate = itemTaxes.TemplateFor(item, date);
         if (itemTaxTemplate is not null && ctx.Catalog.FindItemTaxTemplate(itemTaxTemplate) is null)
             return new AddResult(AddOutcome.UnsupportedTax, null);
-        var line = new CartLine(item, lineUom, cf.Value, priceListRate.Value, rule, rate, itemTaxTemplate);
+        var line = new CartLine(item, lineUom, cf.Value, plr, rule, rate, itemTaxTemplate);
         lines.Add(line);
         return new AddResult(AddOutcome.Added, line);
     }

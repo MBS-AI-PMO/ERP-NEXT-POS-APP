@@ -99,9 +99,14 @@ public static class CatalogMapper
     private static List<string> Targets(JsonElement d, string table, string field) =>
         d.Rows(table).Select(x => x.StrOrNull(field)).OfType<string>().ToList();
 
+    private static bool HasUomRow(JsonElement d, string applyOn) =>
+        d.Rows(applyOn switch { "Item Code" => "items", "Item Group" => "item_groups", _ => "brands" })
+            .Any(r => r.StrOrNull("uom") is not null);
+
     private static string? UnsupportedReason(JsonElement d, string? applyOn, string? company)
     {
         if (applyOn is not ("Item Code" or "Item Group" or "Brand")) return $"apply_on '{applyOn}' is not supported";
+        if (HasUomRow(d, applyOn)) return "UOM-specific rules are not supported";
         if (d.StrOrNull("price_or_product_discount") == "Product") return "free-item (product) discounts are not supported";
         if (d.Dec("min_qty") > 0 || d.Dec("max_qty") > 0) return "quantity conditions are not supported";
         if (d.Dec("min_amt") > 0 || d.Dec("max_amt") > 0) return "amount conditions are not supported";
