@@ -40,6 +40,6 @@ public static class Rounder
     {
         var r = numerator % denominator;
         if (r != 0 && (r < 0) != (denominator < 0)) r += denominator;
-        return r;
+        return Round(r, precision, method);
     }
 }

@@ -22,7 +22,8 @@ public class RounderTests
     [Theory]
     [InlineData("10.12", "10.00")]
     [InlineData("10.13", "10.25")]
-    [InlineData("10.375", "10.25")]
+    [InlineData("10.38", "10.50")]
+    [InlineData("10.375", "10.26")]
     [InlineData("-10.13", "-10.25")]
     public void Rounds_to_smallest_currency_fraction_like_erpnext(string input, string expected)
     {
