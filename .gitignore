@@ -8,4 +8,3 @@ obj/
 tillpos/tools/TillPOS.SyncCli/tillpos.cli.json
 backup/
 .superpowers/
-deploy/erp-test/.env
