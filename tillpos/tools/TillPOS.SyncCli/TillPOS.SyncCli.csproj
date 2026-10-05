@@ -1,0 +1,14 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\TillPOS.Core\TillPOS.Core.csproj" />
+    <ProjectReference Include="..\..\src\TillPOS.Data\TillPOS.Data.csproj" />
+    <ProjectReference Include="..\..\src\TillPOS.Erp\TillPOS.Erp.csproj" />
+    <ProjectReference Include="..\..\src\TillPOS.Sync\TillPOS.Sync.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+</Project>
