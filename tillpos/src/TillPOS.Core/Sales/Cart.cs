@@ -39,7 +39,7 @@ public sealed class CartLine
     public string? ItemTaxTemplate { get; }
 }
 
-public enum AddOutcome { Added, UnknownBarcode, UnknownItem, ItemNotSellable, UnknownUom, NoPrice }
+public enum AddOutcome { Added, UnknownBarcode, UnknownItem, ItemNotSellable, UnknownUom, NoPrice, UnsupportedTax }
 
 public sealed record AddResult(AddOutcome Outcome, CartLine? Line);
 
@@ -82,7 +82,10 @@ public sealed class Cart(SaleContext ctx)
 
         var rule = rules.Select(item, priceListRate.Value, cf.Value, date);
         var rate = LineMath.RateAfterRule(priceListRate.Value, cf.Value, rule, ctx.Money);
-        var line = new CartLine(item, lineUom, cf.Value, priceListRate.Value, rule, rate, itemTaxes.TemplateFor(item, date));
+        var itemTaxTemplate = itemTaxes.TemplateFor(item, date);
+        if (itemTaxTemplate is not null && ctx.Catalog.FindItemTaxTemplate(itemTaxTemplate) is null)
+            return new AddResult(AddOutcome.UnsupportedTax, null);
+        var line = new CartLine(item, lineUom, cf.Value, priceListRate.Value, rule, rate, itemTaxTemplate);
         lines.Add(line);
         return new AddResult(AddOutcome.Added, line);
     }

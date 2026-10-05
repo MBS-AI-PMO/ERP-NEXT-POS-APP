@@ -61,7 +61,9 @@ public class CartTests
     {
         catalog.Items.Add(new Item("OLD", "Old item", "Food", null, "Nos", true, true));
         catalog.Barcodes.Add(new ItemBarcode("222", "OLD", null));
-        Assert.Equal(AddOutcome.ItemNotSellable, NewCart().AddBarcode("222").Outcome);
+        var cart = NewCart();
+        Assert.Equal(AddOutcome.ItemNotSellable, cart.AddBarcode("222").Outcome);
+        Assert.Empty(cart.Lines);
     }
 
     [Fact]
@@ -69,7 +71,21 @@ public class CartTests
     {
         catalog.Items.Add(new Item("NOPRICE", "No price", "Food", null, "Nos", false, true));
         catalog.Barcodes.Add(new ItemBarcode("333", "NOPRICE", null));
-        Assert.Equal(AddOutcome.NoPrice, NewCart().AddBarcode("333").Outcome);
+        var cart = NewCart();
+        Assert.Equal(AddOutcome.NoPrice, cart.AddBarcode("333").Outcome);
+        Assert.Empty(cart.Lines);
+    }
+
+    [Fact]
+    public void Item_with_unknown_item_tax_template_adds_nothing()
+    {
+        AddItem("SPECIAL", "Special item", "Food", "10", "555");
+        catalog.ItemTaxRows["SPECIAL"] = [new ItemTaxAssignment("Missing T", null, null, 1)];
+        var cart = NewCart();
+
+        Assert.Equal(AddOutcome.UnsupportedTax, cart.AddBarcode("555").Outcome);
+        Assert.Empty(cart.Lines);
+        Assert.Equal(0m, cart.Totals().GrandTotal);
     }
 
     [Fact]
