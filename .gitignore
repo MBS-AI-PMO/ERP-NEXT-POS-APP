@@ -1,0 +1,10 @@
+bin/
+obj/
+.vs/
+*.user
+*.db
+*.db-wal
+*.db-shm
+tillpos/tools/TillPOS.SyncCli/tillpos.cli.json
+backup/
+.superpowers/
