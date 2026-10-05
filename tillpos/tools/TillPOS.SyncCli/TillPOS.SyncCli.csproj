@@ -11,4 +11,8 @@
     <OutputType>Exe</OutputType>
   </PropertyGroup>
 
+  <ItemGroup>
+    <None Update="tillpos.cli.json" CopyToOutputDirectory="PreserveNewest" Condition="Exists('tillpos.cli.json')" />
+  </ItemGroup>
+
 </Project>
