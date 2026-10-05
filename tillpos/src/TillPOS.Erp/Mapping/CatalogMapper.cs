@@ -9,7 +9,7 @@ public static class CatalogMapper
 {
     public static Item Item(JsonElement r) => new(
         r.Str("name"), r.StrOrNull("item_name") ?? r.Str("name"), r.Str("item_group"), r.StrOrNull("brand"),
-        r.Str("stock_uom"), r.Bool("disabled"), r.Bool("is_sales_item"));
+        r.Str("stock_uom"), r.Bool("disabled"), r.Bool("is_sales_item") && !r.Bool("has_variants"));
 
     public static ItemBarcode? Barcode(JsonElement r) =>
         r.StrOrNull("barcode") is { } b ? new ItemBarcode(b, r.Str("name"), r.StrOrNull("barcode_uom")) : null;
@@ -27,7 +27,7 @@ public static class CatalogMapper
         new(r.Str("name"), r.StrOrNull("parent_item_group"), r.Int("lft"), r.Int("rgt"));
 
     /// <summary>Null when the rule should not exist on the till (disabled, or not a selling rule).</summary>
-    public static PricingRule? PricingRule(JsonElement d)
+    public static PricingRule? PricingRule(JsonElement d, string? company = null)
     {
         if (d.Bool("disable") || !d.Bool("selling")) return null;
         var applyOn = d.StrOrNull("apply_on");
@@ -51,7 +51,7 @@ public static class CatalogMapper
             _ => d.Dec("discount_percentage"),
         };
         return new PricingRule(d.Str("name"), on, targets, kind, value, d.Int("priority"), d.Date("valid_from"), d.Date("valid_upto"),
-            d.StrOrNull("for_price_list"), d.StrOrNull("warehouse"), UnsupportedReason(d, applyOn));
+            d.StrOrNull("for_price_list"), d.StrOrNull("warehouse"), UnsupportedReason(d, applyOn, company));
     }
 
     public static ItemTaxTemplate? ItemTaxTemplate(JsonElement d) =>
@@ -99,7 +99,7 @@ public static class CatalogMapper
     private static List<string> Targets(JsonElement d, string table, string field) =>
         d.Rows(table).Select(x => x.StrOrNull(field)).OfType<string>().ToList();
 
-    private static string? UnsupportedReason(JsonElement d, string? applyOn)
+    private static string? UnsupportedReason(JsonElement d, string? applyOn, string? company)
     {
         if (applyOn is not ("Item Code" or "Item Group" or "Brand")) return $"apply_on '{applyOn}' is not supported";
         if (d.StrOrNull("price_or_product_discount") == "Product") return "free-item (product) discounts are not supported";
@@ -108,6 +108,10 @@ public static class CatalogMapper
         if (d.StrOrNull("applicable_for") is not null) return "customer conditions are not supported";
         if (d.StrOrNull("condition") is not null) return "custom conditions are not supported";
         if (d.Bool("mixed_conditions") || d.Bool("is_cumulative")) return "mixed or cumulative conditions are not supported";
+        if (d.Bool("coupon_code_based")) return "coupon-based offers are not supported";
+        if (d.Dec("margin_rate_or_amount") > 0) return "margin rules are not supported";
+        if (d.StrOrNull("apply_rule_on_other") is not null) return "rules applied on other items are not supported";
+        if (company is not null && d.StrOrNull("company") is { } c && c != company) return $"rule belongs to company '{c}'";
         return null;
     }
 }

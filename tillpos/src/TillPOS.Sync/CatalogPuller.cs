@@ -46,7 +46,7 @@ public sealed class CatalogPuller(IReadOnlyList<ISyncFeed> feeds, Action afterPu
         new ItemGroupFeed(ctx),
         new DocFeed<ItemTaxTemplate>(ctx, "Item Tax Template", CatalogMapper.ItemTaxTemplate, ctx.Store.UpsertItemTaxTemplate, ctx.Store.DeleteItemTaxTemplate),
         new DocFeed<SalesTaxTemplate>(ctx, "Sales Taxes and Charges Template", CatalogMapper.SalesTaxTemplate, ctx.Store.UpsertSalesTaxTemplate, ctx.Store.DeleteSalesTaxTemplate),
-        new DocFeed<PricingRule>(ctx, "Pricing Rule", CatalogMapper.PricingRule, ctx.Store.UpsertPricingRule, ctx.Store.DeletePricingRule),
+        new DocFeed<PricingRule>(ctx, "Pricing Rule", d => CatalogMapper.PricingRule(d, ctx.Store.LoadPosSettings()?.Company), ctx.Store.UpsertPricingRule, ctx.Store.DeletePricingRule),
         new ItemFeed(ctx),
         new ItemPriceFeed(ctx),
         new DeletionFeed(ctx),

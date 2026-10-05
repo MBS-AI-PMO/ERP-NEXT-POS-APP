@@ -98,7 +98,7 @@ public sealed class FeedTests : IDisposable
         erp.Docs[("Pricing Rule", "R-OFF")] = new Dictionary<string, object?> { ["name"] = "R-OFF", ["apply_on"] = "Item Code", ["selling"] = 1, ["disable"] = 1 };
         store.UpsertPricingRule(new PricingRule("R-OFF", RuleApplyOn.ItemCode, ["X"], RuleKind.DiscountPercentage, 5m, 0, null, null, null, null, null));
 
-        var feed = new DocFeed<PricingRule>(ctx, "Pricing Rule", TillPOS.Erp.Mapping.CatalogMapper.PricingRule, store.UpsertPricingRule, store.DeletePricingRule);
+        var feed = new DocFeed<PricingRule>(ctx, "Pricing Rule", d => TillPOS.Erp.Mapping.CatalogMapper.PricingRule(d), store.UpsertPricingRule, store.DeletePricingRule);
         await feed.RunAsync(default);
 
         Assert.Equal("R-ON", Assert.Single(Catalog().PricingRules()).Name);
@@ -150,6 +150,69 @@ public sealed class FeedTests : IDisposable
         await new ReconcileFeed(ctx, () => now.AddHours(5)).RunAsync(default);
 
         Assert.Equal(callsAfterFirst, erp.ListCalls.Count);
+    }
+
+    [Fact]
+    public async Task Deletion_feed_keeps_documents_recreated_under_the_same_name()
+    {
+        store.UpsertItems([new ItemSnapshot(new Item("BACK", "Back", "Food", null, "Nos", false, true), [new ItemBarcode("7", "BACK", null)], [], [])]);
+        erp.AddRow("Item", new() { ["name"] = "BACK", ["modified"] = T1 });
+        erp.AddRow("Deleted Document", new() { ["name"] = "DD-2", ["modified"] = T1, ["deleted_doctype"] = "Item", ["deleted_name"] = "BACK" });
+
+        await new DeletionFeed(ctx).RunAsync(default);
+        await new DeletionFeed(ctx).RunAsync(default);
+
+        Assert.NotNull(Catalog().FindItem("BACK"));
+    }
+
+    [Fact]
+    public async Task Item_price_feed_drops_old_list_prices_when_price_list_changes()
+    {
+        void Price(string name, string list, string at = T1) => erp.AddRow("Item Price", new()
+        {
+            ["name"] = name, ["modified"] = at, ["item_code"] = "RICE5", ["uom"] = "Nos", ["price_list_rate"] = "2150",
+            ["valid_from"] = null, ["valid_upto"] = null, ["price_list"] = list, ["customer"] = null, ["batch_no"] = null,
+        });
+        Price("P-OLD", "Retail");
+        Price("P-NEW", "Retail 2");
+        Price("P-LATE", "Retail", "2026-10-05 11:00:00.000000");
+        await new ItemPriceFeed(ctx).RunAsync(default);
+        store.SavePosSettings(new PosSettings("Till 1", "Shop LLC", "Shop LLC", null, null, "AED", "Stores - S", "Retail 2",
+            "Walk-in Customer", "UAE VAT 5%", null, false, 0m, 0m, [new PaymentMode("Cash", true)]));
+
+        await new ItemPriceFeed(ctx).RunAsync(default);
+
+        Assert.Equal(new[] { "P-NEW" }, store.AllPriceNames());
+    }
+
+    private void ServerPrice(string name, string? customer = null) => erp.AddRow("Item Price", new()
+    {
+        ["name"] = name, ["modified"] = T1, ["item_code"] = "RICE5", ["uom"] = "Nos", ["price_list_rate"] = "2150",
+        ["valid_from"] = null, ["valid_upto"] = null, ["price_list"] = "Retail", ["customer"] = customer, ["batch_no"] = null,
+    });
+
+    [Fact]
+    public async Task Reconcile_backfills_prices_missing_locally()
+    {
+        erp.AddRow("Item", new() { ["name"] = "KEEP", ["modified"] = T1 });
+        store.UpsertItems([new ItemSnapshot(new Item("KEEP", "Keep", "Food", null, "Nos", false, true), [], [], [])]);
+        ServerPrice("P-1");
+        ServerPrice("P-CUST", "Big Buyer LLC");
+
+        await new ReconcileFeed(ctx, () => DateTimeOffset.UtcNow).RunAsync(default);
+
+        Assert.Equal(new[] { "P-1" }, store.AllPriceNames());
+    }
+
+    [Fact]
+    public async Task Reconcile_refuses_to_wipe_prices_when_server_returns_none()
+    {
+        erp.AddRow("Item", new() { ["name"] = "KEEP", ["modified"] = T1 });
+        store.UpsertItems([new ItemSnapshot(new Item("KEEP", "Keep", "Food", null, "Nos", false, true), [], [], [])]);
+        store.UpsertPrices([new ItemPrice("P-LOCAL", "KEEP", "Nos", 1m, null, null)]);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => new ReconcileFeed(ctx, () => DateTimeOffset.UtcNow).RunAsync(default));
+        Assert.Equal(new[] { "P-LOCAL" }, store.AllPriceNames());
     }
 
     [Fact]

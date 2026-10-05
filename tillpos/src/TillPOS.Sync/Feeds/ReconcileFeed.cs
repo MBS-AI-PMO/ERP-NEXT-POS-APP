@@ -33,8 +33,17 @@ public sealed class ReconcileFeed(SyncContext ctx, Func<DateTimeOffset> now) : I
             removed++;
         }
 
-        var remotePrices = await Names(new ListQuery("Item Price", ["name"], [["price_list", "=", settings.PriceList]], "name asc", 0, 0), ct);
-        foreach (var name in ctx.Store.AllPriceNames().Where(n => !remotePrices.Contains(n)))
+        var priceRows = await ctx.Erp.GetListAsync(new ListQuery("Item Price",
+            ["name", "item_code", "uom", "price_list_rate", "valid_from", "valid_upto", "customer", "batch_no"],
+            [["price_list", "=", settings.PriceList]], "name asc", 0, 0), ct);
+        var kept = priceRows.Where(r => r.StrOrNull("customer") is null && r.StrOrNull("batch_no") is null).ToList();
+        var localPrices = ctx.Store.AllPriceNames();
+        if (kept.Count == 0 && localPrices.Count > 0)
+            throw new InvalidOperationException("Server returned no prices; refusing to delete all local prices.");
+
+        ctx.Store.UpsertPrices(kept.Select(CatalogMapper.Price));
+        var keptNames = kept.Select(r => r.Str("name")).ToHashSet();
+        foreach (var name in localPrices.Where(n => !keptNames.Contains(n)))
         {
             ctx.Store.DeleteDocument("Item Price", name);
             removed++;

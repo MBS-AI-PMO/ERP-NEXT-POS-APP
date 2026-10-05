@@ -10,7 +10,7 @@ namespace TillPOS.Sync.Feeds;
 /// Saving an item in ERPNext updates the item's `modified` when any child row changes.</summary>
 public sealed class ItemFeed(SyncContext ctx) : ISyncFeed
 {
-    private static readonly string[] Fields = ["item_name", "item_group", "brand", "stock_uom", "disabled", "is_sales_item"];
+    private static readonly string[] Fields = ["item_name", "item_group", "brand", "stock_uom", "disabled", "is_sales_item", "has_variants"];
 
     public string Name => "Item";
 

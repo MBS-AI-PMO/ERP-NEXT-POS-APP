@@ -31,6 +31,9 @@ public class CatalogMapperTests
     [InlineData("\"applicable_for\":\"Customer\"", "customer")]
     [InlineData("\"price_or_product_discount\":\"Product\"", "free-item")]
     [InlineData("\"condition\":\"doc.total > 100\"", "custom")]
+    [InlineData("\"coupon_code_based\":1", "coupon")]
+    [InlineData("\"margin_rate_or_amount\":5", "margin")]
+    [InlineData("\"apply_rule_on_other\":\"Item Code\"", "other items")]
     public void Marks_unsupported_rules(string extra, string reasonContains)
     {
         var rule = CatalogMapper.PricingRule(J($$"""
@@ -68,6 +71,21 @@ public class CatalogMapperTests
         var company = J("""{"name":"Shop LLC","company_name":"Shop LLC","default_currency":"AED","tax_id":"100000000000003"}""");
         var ex = Assert.Throws<FormatException>(() => CatalogMapper.PosSettings(profile, company, null, null));
         Assert.Contains("default customer", ex.Message);
+    }
+
+    [Fact]
+    public void Flags_rules_from_another_company()
+    {
+        var json = """{"name":"R","apply_on":"Item Code","selling":1,"rate_or_discount":"Discount Percentage","discount_percentage":10,"company":"Other LLC"}""";
+        Assert.Contains("Other LLC", CatalogMapper.PricingRule(J(json), "Shop LLC")!.UnsupportedReason);
+        Assert.Null(CatalogMapper.PricingRule(J(json.Replace("Other LLC", "Shop LLC")), "Shop LLC")!.UnsupportedReason);
+    }
+
+    [Fact]
+    public void Template_items_are_not_sellable()
+    {
+        var item = CatalogMapper.Item(J("""{"name":"T","item_name":"T","item_group":"G","stock_uom":"Nos","is_sales_item":1,"has_variants":1}"""));
+        Assert.False(item.IsSalesItem);
     }
 
     [Fact]

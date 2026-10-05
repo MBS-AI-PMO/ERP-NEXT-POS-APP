@@ -16,7 +16,7 @@ public sealed class ItemPriceFeed(SyncContext ctx) : ISyncFeed
         var settings = ctx.Store.LoadPosSettings()
             ?? throw new InvalidOperationException("POS Profile has not been synced yet, so the price list is unknown.");
 
-        return ctx.Pager.PullAsync("Item Price", "Item Price", Fields, [], page =>
+        return ctx.Pager.PullAsync("Item Price|" + settings.PriceList, "Item Price", Fields, [], page =>
         {
             var keep = page.Where(r => r.StrOrNull("price_list") == settings.PriceList
                                        && r.StrOrNull("customer") is null
