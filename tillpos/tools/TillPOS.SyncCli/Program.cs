@@ -7,11 +7,12 @@ using TillPOS.Data;
 using TillPOS.Erp;
 using TillPOS.Erp.Mapping;
 using TillPOS.Sync;
+using TillPOS.Sync.Verification;
 using TillPOS.SyncCli;
 
 if (args.Length == 0)
 {
-    Console.WriteLine("usage: TillPOS.SyncCli pull | scan <barcode>... | basket <barcode>... | parity <barcode>...");
+    Console.WriteLine("usage: TillPOS.SyncCli pull | scan <barcode>... | basket <barcode>... | replay [count] | parity <barcode>...");
     return 1;
 }
 
@@ -118,6 +119,39 @@ switch (args[0])
             await erp.DeleteAsync("POS Invoice", name);
             Console.WriteLine($"draft {name} deleted");
         }
+    }
+    case "replay":
+    {
+        // Read-only: recalculates the newest submitted POS Invoices with the till engine and compares totals.
+        var settings = store.LoadPosSettings() ?? throw new InvalidOperationException("Run 'pull' first.");
+        var count = args.Length > 1 ? int.Parse(args[1], CultureInfo.InvariantCulture) : 20;
+        var money = new MoneySettings(config.Precision, config.Rounding, settings.SmallestCurrencyFraction);
+        var invoices = await erp.GetListAsync(new ListQuery("POS Invoice", ["name"],
+            [["docstatus", "=", 1], ["company", "=", settings.Company]], "creation desc", 0, count));
+        int matched = 0, mismatched = 0, skipped = 0;
+        foreach (var row in invoices)
+        {
+            var r = InvoiceReplay.Replay(await erp.GetDocAsync("POS Invoice", row.Str("name")), money);
+            switch (r.Outcome)
+            {
+                case ReplayOutcome.Match:
+                    matched++;
+                    Console.WriteLine($"{r.Invoice,-24} OK");
+                    break;
+                case ReplayOutcome.Skipped:
+                    skipped++;
+                    Console.WriteLine($"{r.Invoice,-24} skipped: {r.Reason}");
+                    break;
+                default:
+                    mismatched++;
+                    Console.WriteLine($"{r.Invoice,-24} MISMATCH");
+                    foreach (var f in r.Fields.Where(f => !f.Ok))
+                        Console.WriteLine($"    {f.Field,-26} till {f.Till,12:0.00}  erpnext {f.Erp,12:0.00}");
+                    break;
+            }
+        }
+        Console.WriteLine($"{invoices.Count} invoices: {matched} match, {mismatched} mismatch, {skipped} skipped");
+        return mismatched == 0 ? 0 : 1;
     }
     default:
         Console.Error.WriteLine($"unknown command '{args[0]}'");
