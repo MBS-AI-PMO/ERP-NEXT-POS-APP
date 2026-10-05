@@ -1,0 +1,61 @@
+using System.Globalization;
+using System.Text.Json;
+using TillPOS.Erp;
+
+namespace TillPOS.Sync;
+
+/// <summary>Pulls rows changed since the saved mark, ordered by (modified, name), page by page.
+/// The mark is saved after every page, so an interrupted pull resumes where it stopped.
+/// Uses `modified >= mark` and skips names already processed at the mark, so rows sharing a
+/// timestamp across a page boundary are never skipped or repeated.</summary>
+public sealed class KeysetPager(IErpClient erp, ISyncStateStore state)
+{
+    public async Task<int> PullAsync(
+        string key, string doctype, IReadOnlyList<string> fields, IReadOnlyList<object[]> extraFilters,
+        Func<IReadOnlyList<JsonElement>, Task> handlePage, int pageSize = 500, CancellationToken ct = default)
+    {
+        var mark = state.Get(key);
+        var processedAtMark = new HashSet<string>(mark.NamesAtMark);
+        var allFields = fields.Union(["name", "modified"]).ToList();
+        var size = pageSize;
+        var total = 0;
+
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            var filters = extraFilters.Append(["modified", ">=", mark.Modified]).ToList();
+            var rows = await erp.GetListAsync(new ListQuery(doctype, allFields, filters, "modified asc, name asc", 0, size), ct);
+            if (rows.Count == 0) break;
+
+            var fresh = rows.Where(r => !(Modified(r) == mark.Modified && processedAtMark.Contains(Name(r)))).ToList();
+            if (fresh.Count == 0)
+            {
+                if (rows.Count < size) break;
+                size *= 2; // a full page of rows we already processed: widen the window
+                continue;
+            }
+
+            await handlePage(fresh);
+            total += fresh.Count;
+
+            var last = Modified(rows[^1]);
+            var namesAtLast = rows.Where(r => Modified(r) == last).Select(Name);
+            processedAtMark = last == mark.Modified
+                ? [.. processedAtMark, .. namesAtLast]
+                : [.. namesAtLast];
+            mark = new SyncMark(last, processedAtMark.ToList());
+            state.Set(key, mark);
+
+            if (rows.Count < size) break;
+            size = pageSize;
+        }
+        return total;
+    }
+
+    public static string NormalizeTimestamp(string raw) =>
+        DateTime.ParseExact(raw, ["yyyy-MM-dd HH:mm:ss.FFFFFF", "yyyy-MM-dd HH:mm:ss"], CultureInfo.InvariantCulture, DateTimeStyles.None)
+            .ToString("yyyy-MM-dd HH:mm:ss.ffffff", CultureInfo.InvariantCulture);
+
+    private static string Modified(JsonElement r) => NormalizeTimestamp(r.GetProperty("modified").GetString()!);
+    private static string Name(JsonElement r) => r.GetProperty("name").GetString()!;
+}
