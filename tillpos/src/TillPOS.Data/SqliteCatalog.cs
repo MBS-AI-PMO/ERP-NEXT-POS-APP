@@ -89,7 +89,8 @@ public sealed class SqliteCatalog : ICatalog
             r => JsonSerializer.Deserialize<SalesTaxTemplate>(r.GetString(0)), ("@n", name)).FirstOrDefault();
     }
 
-    /// <summary>Name search: every typed word must prefix-match a word of the item name.</summary>
+    /// <summary>Name search: every typed word must prefix-match a word of the item name.
+    /// Disabled and non-sales items are excluded before the limit is applied.</summary>
     public IReadOnlyList<Item> Search(string text, int limit = 20)
     {
         var tokens = text.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
@@ -98,10 +99,11 @@ public sealed class SqliteCatalog : ICatalog
         if (tokens.Count == 0) return [];
         using var c = db.Open();
         return c.Query($"""
-            SELECT {ItemColumns} FROM item i
-            JOIN (SELECT rowid AS rid, rank AS score FROM item_fts WHERE item_fts MATCH @q ORDER BY rank LIMIT @l) f ON i.id = f.rid
-            WHERE i.disabled = 0
-            ORDER BY f.score
+            SELECT i.item_code, i.item_name, i.item_group, i.brand, i.stock_uom, i.disabled, i.is_sales_item
+            FROM item_fts JOIN item i ON i.id = item_fts.rowid
+            WHERE item_fts MATCH @q AND i.disabled = 0 AND i.is_sales_item = 1
+            ORDER BY item_fts.rank
+            LIMIT @l
             """, ReadItem, ("@q", string.Join(' ', tokens)), ("@l", limit));
     }
 

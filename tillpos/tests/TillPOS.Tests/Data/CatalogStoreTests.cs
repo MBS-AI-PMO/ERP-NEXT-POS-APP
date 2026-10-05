@@ -93,6 +93,18 @@ public sealed class CatalogStoreTests : IDisposable
     }
 
     [Fact]
+    public void Search_skips_disabled_and_non_sales_items_before_applying_the_limit()
+    {
+        store.UpsertItems([
+            new ItemSnapshot(new Item("OLD-RICE", "Rice", "Food", null, "Nos", true, true), [], [], []),
+            new ItemSnapshot(new Item("BAG", "Rice", "Food", null, "Nos", false, false), [], [], []),
+            new ItemSnapshot(new Item("RICE5", "Rice Basmati 5kg", "Food", null, "Nos", false, true), [], [], []),
+        ]);
+        var found = new SqliteCatalog(temp.Db).Search("rice", limit: 1);
+        Assert.Equal("RICE5", Assert.Single(found).ItemCode);
+    }
+
+    [Fact]
     public void Groups_rules_and_templates_round_trip()
     {
         store.ReplaceItemGroups([
