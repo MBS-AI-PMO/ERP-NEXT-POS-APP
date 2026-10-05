@@ -17,7 +17,10 @@ public sealed class TaxCalculator(MoneySettings money, Func<string, ItemTaxTempl
         var rows = template?.Rows.OrderBy(r => r.Idx).ToList() ?? [];
         var hasInclusive = rows.Any(r => r.IncludedInPrintRate);
         var overrides = lines
-            .Select(l => l.ItemTaxTemplate is null ? NoOverrides : findItemTaxTemplate(l.ItemTaxTemplate)?.RatesByAccount ?? NoOverrides)
+            .Select(l => l.ItemTaxTemplate is null
+                ? NoOverrides
+                : findItemTaxTemplate(l.ItemTaxTemplate)?.RatesByAccount
+                  ?? throw new UnsupportedTaxSetupException($"item tax template '{l.ItemTaxTemplate}' is not in the local catalog"))
             .ToList();
 
         var n = lines.Count;

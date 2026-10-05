@@ -49,4 +49,35 @@ public class ItemTaxResolverTests
         ];
         Assert.Equal("Current T", Resolve());
     }
+
+    [Fact]
+    public void Blank_category_row_does_not_match_a_bill_with_a_category()
+    {
+        catalog.ItemTaxRows["RICE5"] = [new ItemTaxAssignment("Zero Rated", null, null, 1)];
+        Assert.Null(Resolve("Domestic"));
+        Assert.Equal("Zero Rated", Resolve());
+    }
+
+    [Fact]
+    public void Started_dated_rows_take_precedence_over_undated_rows()
+    {
+        catalog.ItemTaxRows["RICE5"] =
+        [
+            new ItemTaxAssignment("Undated T", null, null, 1),
+            new ItemTaxAssignment("Dated T", null, new DateOnly(2026, 1, 1), 2),
+        ];
+        Assert.Equal("Dated T", Resolve());
+    }
+
+    [Fact]
+    public void Dated_rows_for_another_category_hide_undated_rows_and_fall_through_to_group()
+    {
+        catalog.ItemTaxRows["RICE5"] =
+        [
+            new ItemTaxAssignment("Undated T", null, null, 1),
+            new ItemTaxAssignment("Dated Export T", "Export", new DateOnly(2026, 1, 1), 2),
+        ];
+        catalog.GroupTaxRows["Rice"] = [new ItemTaxAssignment("Group T", null, null, 1)];
+        Assert.Equal("Group T", Resolve());
+    }
 }

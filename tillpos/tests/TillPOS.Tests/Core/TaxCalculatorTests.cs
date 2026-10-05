@@ -120,4 +120,11 @@ public class TaxCalculatorTests
         var ex = Assert.Throws<UnsupportedTaxSetupException>(() => Calc(bad, null, ("1", "1", null)));
         Assert.Contains("Actual", ex.Message);
     }
+
+    [Fact]
+    public void Unknown_item_tax_template_throws_instead_of_guessing()
+    {
+        var ex = Assert.Throws<UnsupportedTaxSetupException>(() => Calc(Inclusive, null, ("1", "10", "Missing T")));
+        Assert.Contains("Missing T", ex.Message);
+    }
 }
