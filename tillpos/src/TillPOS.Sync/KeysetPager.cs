@@ -7,14 +7,21 @@ namespace TillPOS.Sync;
 /// <summary>Pulls rows changed since the saved mark, ordered by (modified, name), page by page.
 /// The mark is saved after every page, so an interrupted pull resumes where it stopped.
 /// Uses `modified >= mark` and skips names already processed at the mark, so rows sharing a
-/// timestamp across a page boundary are never skipped or repeated.</summary>
-public sealed class KeysetPager(IErpClient erp, ISyncStateStore state)
+/// timestamp across a page boundary are never skipped or repeated.
+/// Each pull also re-reads rows modified within the overlap window before the saved mark, so rows
+/// committed late (stamped earlier than the mark) are not skipped; handlers must therefore be idempotent.</summary>
+public sealed class KeysetPager(IErpClient erp, ISyncStateStore state, TimeSpan? overlap = null)
 {
+    private readonly TimeSpan effectiveOverlap = overlap ?? TimeSpan.FromMinutes(5);
+
     public async Task<int> PullAsync(
         string key, string doctype, IReadOnlyList<string> fields, IReadOnlyList<object[]> extraFilters,
         Func<IReadOnlyList<JsonElement>, Task> handlePage, int pageSize = 500, CancellationToken ct = default)
     {
-        var mark = state.Get(key);
+        var saved = state.Get(key);
+        var mark = saved.Modified == SyncMark.Start.Modified || effectiveOverlap == TimeSpan.Zero
+            ? saved
+            : new SyncMark(Shift(saved.Modified, -effectiveOverlap), []);
         var processedAtMark = new HashSet<string>(mark.NamesAtMark);
         var allFields = fields.Union(["name", "modified"]).ToList();
         var size = pageSize;
@@ -55,6 +62,13 @@ public sealed class KeysetPager(IErpClient erp, ISyncStateStore state)
     public static string NormalizeTimestamp(string raw) =>
         DateTime.ParseExact(raw, ["yyyy-MM-dd HH:mm:ss.FFFFFF", "yyyy-MM-dd HH:mm:ss"], CultureInfo.InvariantCulture, DateTimeStyles.None)
             .ToString("yyyy-MM-dd HH:mm:ss.ffffff", CultureInfo.InvariantCulture);
+
+    private static string Shift(string normalized, TimeSpan delta)
+    {
+        var shifted = DateTime.ParseExact(normalized, "yyyy-MM-dd HH:mm:ss.ffffff", CultureInfo.InvariantCulture, DateTimeStyles.None) + delta;
+        var text = shifted.ToString("yyyy-MM-dd HH:mm:ss.ffffff", CultureInfo.InvariantCulture);
+        return string.CompareOrdinal(text, SyncMark.Start.Modified) < 0 ? SyncMark.Start.Modified : text;
+    }
 
     private static string Modified(JsonElement r) => NormalizeTimestamp(r.GetProperty("modified").GetString()!);
     private static string Name(JsonElement r) => r.GetProperty("name").GetString()!;

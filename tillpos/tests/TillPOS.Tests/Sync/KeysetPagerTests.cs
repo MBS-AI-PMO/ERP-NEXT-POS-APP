@@ -16,9 +16,15 @@ public class KeysetPagerTests
     private static string Ts(int second, int micro = 0) => $"2026-10-05 10:00:{second:00}.{micro:000000}";
 
     private Task<int> Pull(int pageSize = 2, Func<IReadOnlyList<JsonElement>, Task>? handler = null) =>
-        new KeysetPager(erp, state).PullAsync("Item", "Item", ["item_name"], [],
-            handler ?? (page => { seen.AddRange(page.Select(r => r.GetProperty("name").GetString()!)); return Task.CompletedTask; }),
+        new KeysetPager(erp, state, TimeSpan.Zero).PullAsync("Item", "Item", ["item_name"], [],
+            handler ?? Collect,
             pageSize);
+
+    private Task Collect(IReadOnlyList<JsonElement> page)
+    {
+        seen.AddRange(page.Select(r => r.GetProperty("name").GetString()!));
+        return Task.CompletedTask;
+    }
 
     [Fact]
     public async Task Pulls_every_row_across_pages_in_order()
@@ -75,6 +81,34 @@ public class KeysetPagerTests
 
         await Pull();
         Assert.Equal(new[] { "I1", "I2", "I3", "I4" }, seen);
+    }
+
+    [Fact]
+    public async Task Overlap_window_picks_up_rows_committed_late_with_an_earlier_modified()
+    {
+        var pager = new KeysetPager(erp, state, TimeSpan.FromMinutes(5));
+        Row("I1", Ts(1));
+        await pager.PullAsync("Item", "Item", ["item_name"], [], Collect, 2);
+        seen.Clear();
+
+        Row("LATE", "2026-10-05 10:00:00.500000"); // committed after the pull, stamped before the mark
+        await pager.PullAsync("Item", "Item", ["item_name"], [], Collect, 2);
+
+        Assert.Contains("LATE", seen);
+    }
+
+    [Fact]
+    public async Task Overlap_window_does_not_reread_rows_older_than_the_window()
+    {
+        var pager = new KeysetPager(erp, state, TimeSpan.FromMinutes(5));
+        Row("OLD", "2026-10-05 09:00:00.000000");
+        Row("I1", Ts(1));
+        await pager.PullAsync("Item", "Item", ["item_name"], [], Collect, 2);
+        seen.Clear();
+
+        await pager.PullAsync("Item", "Item", ["item_name"], [], Collect, 2);
+
+        Assert.DoesNotContain("OLD", seen);
     }
 
     [Theory]
