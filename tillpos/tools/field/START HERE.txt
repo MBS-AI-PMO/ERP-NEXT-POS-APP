@@ -1,0 +1,67 @@
+TILLPOS - FIELD TEST (version 0.3.1-field)
+==========================================
+
+WHAT THIS IS
+This is a test version of the till. Bills you make stay on this PC.
+Nothing is sent to ERPNext yet. Items and prices are downloaded from
+ERPNext, so please use the Wi-Fi or network cable for the first start.
+
+WHAT YOU NEED
+- A Windows 10 or Windows 11 PC (64-bit).
+- Internet for the first start.
+- The receipt printer connected and installed in Windows.
+
+HOW TO START
+1. Unzip this file anywhere, for example on the Desktop.
+2. Open the TillPOS folder and double-click TillPOS.exe.
+3. Windows may say "Windows protected your PC". This is normal for a new
+   program. Click "More info", then click "Run anyway".
+
+FIRST-TIME SETUP
+The setup screen opens by itself the first time.
+1. Pick your receipt printer from the list.
+2. Press "Test print". A test slip should come out.
+3. Check that the cash drawer opens.
+4. Press "Save".
+
+LOGIN PINs (for testing)
+- Cashier:     1234
+- Supervisor:  9876
+
+KEYS
+F2      Search for an item
+F3      Change quantity
+F11     Pay by card
+F12     Pay by cash
+Delete  Remove a line (needs the supervisor PIN)
+Enter   Confirm
+Esc     Cancel / go back
+
+BARCODE SCANNER
+The scanner must press Enter after the code. Most USB scanners do this
+already. If a scan does not add the item, check this setting.
+
+CASH DRAWER
+Connect the drawer cable to the DK (RJ11) port on the back of the receipt
+printer. The drawer opens on cash sales only.
+
+NO PRINTER CHOSEN?
+Receipts are saved as files in C:\ProgramData\TillPOS\receipts
+
+CHANGING THE PRINTER LATER
+On the Login screen press "Settings", enter the supervisor PIN, and choose
+the new printer.
+
+MORE THAN ONE TILL
+The simplest way is one Windows user per till. The till's settings are kept
+in C:\ProgramData\TillPOS.
+Do not copy the TillPOS folder to another PC after it has been run. Unzip
+the original zip file again on the other PC instead.
+
+WHAT TO SEND BACK
+- The file C:\ProgramData\TillPOS\errors.log (if it exists)
+- Photos of the printed receipts
+- The version number shown on the Login screen
+
+NOT IN THIS VERSION YET
+Returns, hold and recall, price check, and close shift.
