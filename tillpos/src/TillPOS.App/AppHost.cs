@@ -1,0 +1,99 @@
+using System.IO;
+using System.Windows.Threading;
+using TillPOS.Core.Payments;
+using TillPOS.Core.Sales;
+using TillPOS.Core.Security;
+using TillPOS.Data;
+using TillPOS.Erp;
+using TillPOS.Presentation;
+using TillPOS.Sync;
+using TillPOS.Sync.Feeds;
+
+namespace TillPOS.App;
+
+/// <summary>Builds the till: database, catalog, ERPNext client, background sync and the view models.</summary>
+public sealed class AppHost
+{
+    private readonly TillSettings settings;
+    private readonly Dispatcher dispatcher;
+    private readonly CatalogStore store;
+    private readonly SqliteCatalog catalog;
+    private readonly CashierStore cashiers;
+    private readonly ErpClient erp;
+    private readonly SyncContext syncContext;
+    private readonly TillContext ctx;
+    private readonly CancellationTokenSource stop = new();
+
+    public AppHost(TillSettings settings, Dispatcher dispatcher, IDialogs dialogs)
+    {
+        this.settings = settings;
+        this.dispatcher = dispatcher;
+        Directory.CreateDirectory(Path.GetDirectoryName(settings.DbPath)!);
+        var db = new TillDb(settings.DbPath);
+        db.Migrate();
+        store = new CatalogStore(db);
+        catalog = new SqliteCatalog(db);
+        cashiers = new CashierStore(db);
+        erp = ErpClient.Create(new ErpConnection(new Uri(settings.BaseUrl), settings.ApiKey, SecretProtector.Unprotect(settings.ApiSecretProtected)),
+            TimeSpan.FromSeconds(60));
+        syncContext = new SyncContext(erp, store, new KeysetPager(erp, new KvSyncStateStore(store)), settings.PosProfile);
+
+        Shell.TillName = $"Till {settings.TillNumber}";
+        ctx = new TillContext(
+            settings.TillNumber, new TenderModes(settings.CashMode, settings.CardMode),
+            () => SaleContext.Create(catalog, store.LoadPosSettings()!, catalog.FindSalesTaxTemplate, settings.Precision, settings.Rounding,
+                () => DateOnly.FromDateTime(DateTime.Now)),
+            text => catalog.Search(text),
+            new Authenticator(cashiers.All), new PinAttemptLimiter(() => DateTimeOffset.Now), new PinAttemptLimiter(() => DateTimeOffset.Now),
+            new ShiftStore(db), new ReceiptStore(db), new ApprovalStore(db), store,
+            new SystemClock(), new ReceiptOutput(settings, store), Shell, dialogs);
+    }
+
+    public ShellViewModel Shell { get; } = new();
+
+    public async Task StartAsync()
+    {
+        // CatalogPuller.RunAsync reports feed failures in its PullReport instead of throwing.
+        while (store.LoadPosSettings() is null)
+        {
+            Shell.Show(new StatusViewModel("Downloading items and prices from ERPNext…"));
+            string problem;
+            try
+            {
+                var report = await NewPuller().RunAsync();
+                if (store.LoadPosSettings() is not null) break;
+                problem = report.Feeds.FirstOrDefault(f => f.Error is not null)?.Error ?? "POS profile not found";
+            }
+            catch (Exception ex)
+            {
+                problem = ex.Message;
+            }
+            Shell.Show(new StatusViewModel($"Cannot reach ERPNext ({problem}). The first start needs the internet — retrying in 30 seconds."));
+            await Task.Delay(TimeSpan.FromSeconds(30));
+        }
+
+        AddLocalTestCashiersIfNoneSynced();
+        Shell.ShopName = store.LoadPosSettings()!.CompanyName;
+        Shell.Show(NewLogin());
+
+        var sync = new SyncService(NewPuller, erp, ctx.Receipts, Shell, dispatcher, TimeSpan.FromSeconds(settings.SyncIntervalSeconds));
+        _ = Task.Run(() => sync.RunAsync(stop.Token));
+    }
+
+    public void Stop() => stop.Cancel();
+
+    public object NewLogin() => new LoginViewModel(ctx, Shell.Session, NewSale);
+
+    private object NewSale() =>
+        new SaleViewModel(ctx, Shell.Session, new SupervisorGate(ctx, Shell.Session),
+            (sale, kind) => new PaymentViewModel(ctx, Shell.Session, sale, kind));
+
+    private CatalogPuller NewPuller() => CatalogPuller.CreateDefault(syncContext, catalog.Reload, null, new CashierFeed(syncContext, cashiers));
+
+    private void AddLocalTestCashiersIfNoneSynced()
+    {
+        if (cashiers.All().Count > 0 || settings.LocalTestCashiers is not { Count: > 0 } local) return;
+        cashiers.ReplaceAll(local.Where(c => PinHasher.IsValidPin(c.Pin))
+            .Select(c => new Cashier(c.Id, c.Name, null, PinHasher.Hash(c.Pin), c.IsSupervisor, true)));
+    }
+}

@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/TillPOS.App/TillPOS.App.csproj" />
     <Project Path="src/TillPOS.Core/TillPOS.Core.csproj" />
     <Project Path="src/TillPOS.Data/TillPOS.Data.csproj" />
     <Project Path="src/TillPOS.Erp/TillPOS.Erp.csproj" />

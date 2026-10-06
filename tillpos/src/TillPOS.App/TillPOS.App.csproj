@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>TillPOS</AssemblyName>
+    <RootNamespace>TillPOS.App</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\TillPOS.Core\TillPOS.Core.csproj" />
+    <ProjectReference Include="..\TillPOS.Data\TillPOS.Data.csproj" />
+    <ProjectReference Include="..\TillPOS.Erp\TillPOS.Erp.csproj" />
+    <ProjectReference Include="..\TillPOS.Sync\TillPOS.Sync.csproj" />
+    <ProjectReference Include="..\TillPOS.Printing\TillPOS.Printing.csproj" />
+    <ProjectReference Include="..\TillPOS.Presentation\TillPOS.Presentation.csproj" />
+  </ItemGroup>
+</Project>
