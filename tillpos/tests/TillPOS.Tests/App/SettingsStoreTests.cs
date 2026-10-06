@@ -61,19 +61,39 @@ public sealed class SettingsStoreTests : IDisposable
     }
 
     [Fact]
-    public void A_plain_secret_beside_the_exe_is_protected_with_its_own_value_and_programdata_is_left_alone()
+    public void A_freshly_unzipped_package_secret_replaces_the_installed_one()
+    {
+        Write(programData, Json("\"ApiSecretProtected\": \"P(old)\""));
+        Write(besideExe, Json("\"ApiSecret\": \"new\""));
+
+        var settings = Resolve()!;
+
+        Assert.Equal("P(new)", settings.ApiSecretProtected);
+        Assert.Null(settings.ApiSecret);
+        foreach (var path in new[] { programData, besideExe })
+        {
+            var text = File.ReadAllText(path);
+            Assert.Equal("P(new)", JsonDocument.Parse(text).RootElement.GetProperty("ApiSecretProtected").GetString());
+            Assert.False(HasProperty(path, "ApiSecret"), path);
+            Assert.DoesNotContain("\"new\"", text);
+            Assert.DoesNotContain("P(old)", text);
+        }
+        Assert.Empty(Directory.EnumerateFiles(root, "*.tmp", SearchOption.AllDirectories));
+    }
+
+    [Fact]
+    public void An_already_protected_package_leaves_the_installed_settings_alone()
     {
         Write(programData, Json("\"ApiSecretProtected\": \"P(installed)\""));
         var before = File.ReadAllText(programData);
-        Write(besideExe, Json("\"ApiSecret\": \"other-secret\""));
+        Write(besideExe, Json("\"ApiSecretProtected\": \"P(packaged)\""));
+        var packagedBefore = File.ReadAllText(besideExe);
 
         var settings = Resolve()!;
 
         Assert.Equal("P(installed)", settings.ApiSecretProtected);
         Assert.Equal(before, File.ReadAllText(programData));
-        Assert.Equal("P(other-secret)", JsonDocument.Parse(File.ReadAllText(besideExe)).RootElement.GetProperty("ApiSecretProtected").GetString());
-        Assert.False(HasProperty(besideExe, "ApiSecret"));
-        Assert.DoesNotContain("other-secret\"", File.ReadAllText(besideExe));
+        Assert.Equal(packagedBefore, File.ReadAllText(besideExe));
     }
 
     [Fact]

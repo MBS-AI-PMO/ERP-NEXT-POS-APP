@@ -108,9 +108,10 @@ public sealed class AppHost
             }
             catch (CryptographicException)
             {
+                // SettingsStore adopts the plain secret of a freshly unzipped package, so unzipping again recovers.
                 throw new InvalidOperationException(
-                    $"The API secret in {settingsPath} was protected on another PC. Put the plain \"ApiSecret\" back into that file " +
-                    "(or unzip the original package on this PC) and start again.");
+                    $"The API secret in {settingsPath} was protected on another PC. Unzip the original TillPOS package again on this PC " +
+                    "and start TillPOS from that folder.");
             }
         }
         return !string.IsNullOrEmpty(settings.ApiSecret) ? settings.ApiSecret : throw new InvalidOperationException("API secret missing in settings.json");

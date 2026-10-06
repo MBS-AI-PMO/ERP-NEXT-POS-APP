@@ -41,6 +41,10 @@ public static partial class SettingsStore
         if (File.Exists(programDataPath))
         {
             settings = WithDefaultDbPath(Load(programDataPath), programDataPath);
+            // A plain secret beside the exe only exists in a freshly unzipped package, so it is the newest key (key rotation,
+            // or recovering after a used folder was copied from another PC): adopt it.
+            if (!HasPlainSecret(settings) && PackagedPlainSecret(besideExePath, programDataPath) is { } fresh)
+                settings = settings with { ApiSecret = fresh };
             if (HasPlainSecret(settings))
             {
                 settings = ProtectSecret(settings, protect);
@@ -107,6 +111,24 @@ public static partial class SettingsStore
 
     private static bool HasPlainSecret(TillSettings settings) => !string.IsNullOrEmpty(settings.ApiSecret);
 
+    private static bool IsSameFile(string a, string b) => string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The plain secret of the packaged file, if it is a different file and has one. An unreadable packaged file
+    /// counts as none here (RemovePlainSecret logs the problem).</summary>
+    private static string? PackagedPlainSecret(string besideExePath, string programDataPath)
+    {
+        try
+        {
+            if (!File.Exists(besideExePath) || IsSameFile(besideExePath, programDataPath)) return null;
+            var packaged = Load(besideExePath);
+            return HasPlainSecret(packaged) ? packaged.ApiSecret : null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
     private static TillSettings ProtectSecret(TillSettings settings, Func<string, string> protect) =>
         HasPlainSecret(settings) ? settings with { ApiSecretProtected = protect(settings.ApiSecret!), ApiSecret = null } : settings;
 
@@ -124,7 +146,7 @@ public static partial class SettingsStore
         try
         {
             if (!File.Exists(besideExePath)) return;
-            if (string.Equals(Path.GetFullPath(besideExePath), Path.GetFullPath(programDataPath), StringComparison.OrdinalIgnoreCase)) return;
+            if (IsSameFile(besideExePath, programDataPath)) return;
             var packaged = Load(besideExePath);
             if (HasPlainSecret(packaged)) Save(ProtectSecret(packaged, protect), besideExePath);
         }

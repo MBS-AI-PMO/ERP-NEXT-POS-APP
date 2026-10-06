@@ -36,7 +36,8 @@ function New-RandomPin {
 
 function Resolve-Pin([string]$given, [string]$role, [string]$other) {
     if ($given) {
-        if ($given -notmatch '^\d{4,6}$') { throw "$role PIN must be 4 to 6 digits." }
+        # ASCII digits only and no trailing newline (\d would accept other scripts' digits, $ a final "\n").
+        if ($given -notmatch '^[0-9]{4,6}\z') { throw "$role PIN must be 4 to 6 digits." }
         if (Test-WeakPin $given) { Write-Warning "$role PIN $given is easy to guess." }
         return $given
     }
