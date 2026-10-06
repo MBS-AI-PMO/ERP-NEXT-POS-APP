@@ -18,11 +18,14 @@ public partial class ReceiptDialog : Window
     // A dialog is its own window, so the main window's scanner watch does not see this input.
     private readonly ScanBuffer scanBuffer = new(() => DateTimeOffset.Now);
     private readonly Func<string?> reprint;
+    private readonly bool hasPrinter;
 
-    public ReceiptDialog(IReadOnlyList<PrintLine> lines, bool hasQr, string? printError, Func<string?> reprint)
+    /// <param name="hasPrinter">False when receipts are saved as files; "Print again" then reports that instead of "Sent to printer".</param>
+    public ReceiptDialog(IReadOnlyList<PrintLine> lines, bool hasQr, string? printError, Func<string?> reprint, bool hasPrinter)
     {
         InitializeComponent();
         this.reprint = reprint;
+        this.hasPrinter = hasPrinter;
         MaxHeight = SystemParameters.WorkArea.Height * 0.9;
         foreach (var line in lines) Paper.Children.Add(LineBlock(line));
         if (hasQr) QrBox.Visibility = Visibility.Visible;
@@ -77,7 +80,7 @@ public partial class ReceiptDialog : Window
     {
         PrintAgainButton.IsEnabled = false;
         var error = reprint();
-        ShowBanner(error is null ? "Sent to printer" : PrinterProblem(error), ok: error is null);
+        ShowBanner(error is null ? (hasPrinter ? "Sent to printer" : "Saved to receipts folder") : PrinterProblem(error), ok: error is null);
         // Re-enable only after taps queued during the (blocking) print were handled, so a double tap prints once.
         Dispatcher.BeginInvoke(DispatcherPriority.Background, () => PrintAgainButton.IsEnabled = true);
     }

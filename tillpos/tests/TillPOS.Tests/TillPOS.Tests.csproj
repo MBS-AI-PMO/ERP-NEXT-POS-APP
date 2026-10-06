@@ -24,4 +24,11 @@
     <ProjectReference Include="..\..\src\TillPOS.Presentation\TillPOS.Presentation.csproj" />
   </ItemGroup>
 
+  <!-- The app is net10.0-windows (WPF) and cannot be referenced here; its settings code is plain .NET (DPAPI stays in the
+       app's SettingsStore.Windows.cs), so those two files are compiled into the tests directly. -->
+  <ItemGroup>
+    <Compile Include="..\..\src\TillPOS.App\TillSettings.cs" Link="App\Linked\TillSettings.cs" />
+    <Compile Include="..\..\src\TillPOS.App\SettingsStore.cs" Link="App\Linked\SettingsStore.cs" />
+  </ItemGroup>
+
 </Project>

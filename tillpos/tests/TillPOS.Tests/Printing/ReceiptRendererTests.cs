@@ -31,6 +31,28 @@ public class ReceiptRendererTests
         Payments = [new ReceiptPayment("Cash Counter 2 Main Entrance A", 500m)],
     };
 
+    /// <summary>A credit note as the till stores it: negative quantities, amounts, totals and payment. The milk line was sold
+    /// on offer (rate below the list price).</summary>
+    private static Receipt CreditNote() => Sale(ReceiptKind.Return, "TILL2-20261006120000-000000") with
+    {
+        Lines =
+        [
+            new ReceiptLine(1, "MILK", "FULL CREAM MILK 1L", "111", "PCS", 1m, -2m, M("6.79"), M("6.54"), M("-13.080"), "OFFER", null, false, null),
+            new ReceiptLine(2, "000089", "CUCUMBER/KIYAR", "2000089007400", "Kg", 1m, M("-0.740"), M("3.50"), M("3.50"), M("-2.590"),
+                null, null, true, null),
+        ],
+        Total = M("-15.670"),
+        NetTotal = M("-14.924"),
+        TotalTaxes = M("-0.746"),
+        GrandTotal = M("-15.670"),
+        UsesErpRoundedTotal = false,
+        RoundedTotal = 0m,
+        RoundingAdjustment = 0m,
+        Payments = [new ReceiptPayment("Cash Counter 2", M("-15.670"))],
+        Change = 0m,
+        RoundingDifference = 0m,
+    };
+
     private static List<string> Text(Receipt r, PaperWidth paper = PaperWidth.Mm80, ReceiptHeader? header = null) =>
         ReceiptRenderer.TextLines(r, header ?? Header, paper).ToList();
 
@@ -178,6 +200,42 @@ public class ReceiptRendererTests
         Assert.Contains("Tax Credit Note", text);
         Assert.Contains("Return of : TILL2-20261006120000-000000", text);
         Assert.DoesNotContain("TAX INVOICE", text);
+    }
+
+    [Theory]
+    [InlineData(PaperWidth.Mm80)]
+    [InlineData(PaperWidth.Mm58)]
+    public void Credit_note_with_negative_values_stays_inside_the_paper_and_aligned(PaperWidth paper)
+    {
+        var width = (int)paper;
+        var layout = ReceiptRenderer.Layout(CreditNote(), Header, paper);
+        var lines = Text(CreditNote(), paper);
+
+        Assert.Equal("CREDIT NOTE", Assert.Single(layout, l => l.Style == LineStyle.Title).Text);
+        Assert.All(layout, l => Assert.True(l.Text.Length <= width, $"[{l.Text}]"));
+        Assert.Contains(lines, l => l.StartsWith("VAT 5%") && l.EndsWith(" -0.746"));
+        Assert.Contains(lines, l => l.StartsWith("TOTAL AED") && l.EndsWith(" -15.67"));
+        Assert.Contains(lines, l => l.StartsWith("Cash Counter 2") && l.EndsWith(" -15.67"));
+        Assert.DoesNotContain(lines, l => l.Contains("Offer") || l.Contains("You saved"));
+
+        // Item rows and the column header share their right edges (Qty, Price at 80 mm; the amount at the paper edge).
+        var header = lines.FindIndex(l => l.StartsWith("Item") && l.Contains("Amount"));
+        var rows = new[] { lines.FindIndex(l => l.Contains("-2 ")), lines.FindIndex(l => l.Contains("-0.740 Kg")) }.Select(i => lines[i]).ToList();
+        Assert.Contains(rows, r => r.EndsWith(" -13.08"));
+        Assert.Contains(rows, r => r.EndsWith(" -2.59"));
+        foreach (var row in rows.Append(lines[header]))
+        {
+            Assert.Equal(width, row.Length);
+            if (paper == PaperWidth.Mm80)
+            {
+                Assert.True(row[27] != ' ' && row[28] == ' ', $"Qty edge: [{row}]");
+                Assert.True(row[37] != ' ' && row[38] == ' ', $"Price edge: [{row}]");
+            }
+            else
+            {
+                Assert.True(row[22] != ' ' && row[23] == ' ', $"Qty x Price edge: [{row}]");
+            }
+        }
     }
 
     [Fact]

@@ -21,12 +21,13 @@ public partial class SetupDialog : Window
         this.settings = settings;
         SaveButton.Content = firstRun ? "Save and start" : "Save and restart";
 
+        var current = settings.PrinterName ?? ""; // a JSON null must not break the window (SettingsStore.Load also maps it to "")
         var printers = InstalledPrinters(out var defaultPrinter, out var problem);
-        if (settings.PrinterName.Length > 0 && !printers.Contains(settings.PrinterName, StringComparer.OrdinalIgnoreCase))
-            printers.Insert(0, settings.PrinterName); // keep a configured printer that is not installed (yet) visible
+        if (current.Length > 0 && !printers.Contains(current, StringComparer.OrdinalIgnoreCase))
+            printers.Insert(0, current); // keep a configured printer that is not installed (yet) visible
         PrinterBox.Items.Add(NoPrinter);
         foreach (var name in printers) PrinterBox.Items.Add(name);
-        var preselect = settings.PrinterName.Length > 0 ? settings.PrinterName : firstRun ? defaultPrinter : null;
+        var preselect = current.Length > 0 ? current : firstRun ? defaultPrinter : null;
         var index = preselect is null ? -1 : printers.FindIndex(p => string.Equals(p, preselect, StringComparison.OrdinalIgnoreCase));
         PrinterBox.SelectedIndex = index + 1;
 

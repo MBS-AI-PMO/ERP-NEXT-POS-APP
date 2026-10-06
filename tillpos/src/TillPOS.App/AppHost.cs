@@ -1,4 +1,5 @@
 using System.IO;
+using System.Security.Cryptography;
 using System.Windows.Threading;
 using TillPOS.Core.Payments;
 using TillPOS.Core.Sales;
@@ -25,7 +26,8 @@ public sealed class AppHost
     private readonly TillContext ctx;
     private readonly CancellationTokenSource stop = new();
 
-    public AppHost(TillSettings settings, Dispatcher dispatcher, IDialogs dialogs, Action<Exception> logError)
+    /// <param name="settingsPath">The settings file the till was started from (named in setup error messages).</param>
+    public AppHost(TillSettings settings, string settingsPath, Dispatcher dispatcher, IDialogs dialogs, Action<Exception> logError)
     {
         this.settings = settings;
         this.dispatcher = dispatcher;
@@ -36,7 +38,7 @@ public sealed class AppHost
         store = new CatalogStore(db);
         catalog = new SqliteCatalog(db);
         cashiers = new CashierStore(db);
-        erp = ErpClient.Create(new ErpConnection(new Uri(settings.BaseUrl), settings.ApiKey, ApiSecret(settings)),
+        erp = ErpClient.Create(new ErpConnection(new Uri(settings.BaseUrl), settings.ApiKey, ApiSecret(settings, settingsPath)),
             TimeSpan.FromSeconds(60));
         syncContext = new SyncContext(erp, store, new KeysetPager(erp, new KvSyncStateStore(store)), settings.PosProfile);
 
@@ -94,11 +96,25 @@ public sealed class AppHost
             (sale, kind) => new PaymentViewModel(ctx, Shell.Session, sale, kind));
 
     /// <summary>SettingsStore has already replaced a plain secret with the protected one; the plain one is only used if
-    /// that could not happen.</summary>
-    private static string ApiSecret(TillSettings settings) =>
-        !string.IsNullOrEmpty(settings.ApiSecretProtected) ? SecretProtector.Unprotect(settings.ApiSecretProtected)
-        : !string.IsNullOrEmpty(settings.ApiSecret) ? settings.ApiSecret
-        : throw new InvalidOperationException("API secret missing in settings.json");
+    /// that could not happen. DPAPI (machine scope) cannot decrypt a value protected on another PC, e.g. when a used TillPOS
+    /// folder was copied; the message says how to recover and never contains the protected value or the secret.</summary>
+    private static string ApiSecret(TillSettings settings, string settingsPath)
+    {
+        if (!string.IsNullOrEmpty(settings.ApiSecretProtected))
+        {
+            try
+            {
+                return SecretProtector.Unprotect(settings.ApiSecretProtected);
+            }
+            catch (CryptographicException)
+            {
+                throw new InvalidOperationException(
+                    $"The API secret in {settingsPath} was protected on another PC. Put the plain \"ApiSecret\" back into that file " +
+                    "(or unzip the original package on this PC) and start again.");
+            }
+        }
+        return !string.IsNullOrEmpty(settings.ApiSecret) ? settings.ApiSecret : throw new InvalidOperationException("API secret missing in settings.json");
+    }
 
     private CatalogPuller NewPuller() => CatalogPuller.CreateDefault(syncContext, catalog.Reload, null, new CashierFeed(syncContext, cashiers));
 

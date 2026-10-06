@@ -1,0 +1,119 @@
+using System.Text.Json;
+using TillPOS.App;
+
+namespace TillPOS.Tests.App;
+
+public sealed class SettingsStoreTests : IDisposable
+{
+    private const string PlainSecret = "s3cr3t-plain-value";
+    private readonly string root = Path.Combine(Path.GetTempPath(), $"tillpos-settings-{Guid.NewGuid():N}");
+    private readonly string programData;
+    private readonly string besideExe;
+    private readonly List<Exception> logged = [];
+
+    public SettingsStoreTests()
+    {
+        Directory.CreateDirectory(Path.Combine(root, "zip"));
+        programData = Path.Combine(root, "ProgramData", "TillPOS", "settings.json");
+        besideExe = Path.Combine(root, "zip", "settings.json");
+    }
+
+    public void Dispose()
+    {
+        foreach (var file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)) File.SetAttributes(file, FileAttributes.Normal);
+        Directory.Delete(root, recursive: true);
+    }
+
+    private static string Protect(string s) => "P(" + s + ")";
+
+    private TillSettings? Resolve() => SettingsStore.Resolve(programData, besideExe, Protect, (_, ex) => logged.Add(ex));
+
+    private static void Write(string path, string json)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, json);
+    }
+
+    private static string Json(string secretField, string dbPath = "C:/ProgramData/TillPOS/till.db") =>
+        $$"""{ "BaseUrl": "https://erp.example", "ApiKey": "key1", {{secretField}}, "PosProfile": "Till 1", "TillNumber": 1, "DbPath": "{{dbPath}}" }""";
+
+    private static bool HasProperty(string path, string name) =>
+        JsonDocument.Parse(File.ReadAllText(path)).RootElement.TryGetProperty(name, out _);
+
+    [Fact]
+    public void A_packaged_plain_secret_is_protected_before_anything_is_written()
+    {
+        Write(besideExe, Json($"\"ApiSecret\": \"{PlainSecret}\""));
+
+        var settings = Resolve()!;
+
+        Assert.Equal($"P({PlainSecret})", settings.ApiSecretProtected);
+        Assert.Null(settings.ApiSecret);
+        foreach (var path in new[] { programData, besideExe })
+        {
+            var text = File.ReadAllText(path);
+            Assert.DoesNotContain(PlainSecret, text.Replace($"P({PlainSecret})", ""));
+            Assert.False(HasProperty(path, "ApiSecret"), path);
+            Assert.Equal($"P({PlainSecret})", JsonDocument.Parse(text).RootElement.GetProperty("ApiSecretProtected").GetString());
+        }
+        Assert.Empty(Directory.EnumerateFiles(root, "*.tmp", SearchOption.AllDirectories));
+        Assert.Empty(logged);
+    }
+
+    [Fact]
+    public void A_plain_secret_beside_the_exe_is_protected_with_its_own_value_and_programdata_is_left_alone()
+    {
+        Write(programData, Json("\"ApiSecretProtected\": \"P(installed)\""));
+        var before = File.ReadAllText(programData);
+        Write(besideExe, Json("\"ApiSecret\": \"other-secret\""));
+
+        var settings = Resolve()!;
+
+        Assert.Equal("P(installed)", settings.ApiSecretProtected);
+        Assert.Equal(before, File.ReadAllText(programData));
+        Assert.Equal("P(other-secret)", JsonDocument.Parse(File.ReadAllText(besideExe)).RootElement.GetProperty("ApiSecretProtected").GetString());
+        Assert.False(HasProperty(besideExe, "ApiSecret"));
+        Assert.DoesNotContain("other-secret\"", File.ReadAllText(besideExe));
+    }
+
+    [Fact]
+    public void A_read_only_packaged_file_does_not_stop_the_start()
+    {
+        Write(besideExe, Json($"\"ApiSecret\": \"{PlainSecret}\""));
+        File.SetAttributes(besideExe, FileAttributes.ReadOnly);
+
+        var settings = Resolve()!;
+
+        Assert.Equal($"P({PlainSecret})", settings.ApiSecretProtected);
+        Assert.False(HasProperty(programData, "ApiSecret"));
+        Assert.Equal($"P({PlainSecret})", JsonDocument.Parse(File.ReadAllText(programData)).RootElement.GetProperty("ApiSecretProtected").GetString());
+        Assert.Single(logged);
+        Assert.DoesNotContain(PlainSecret, logged[0].ToString());
+        Assert.Empty(Directory.EnumerateFiles(root, "*.tmp", SearchOption.AllDirectories));
+    }
+
+    [Fact]
+    public void A_blank_db_path_on_import_goes_next_to_the_programdata_settings()
+    {
+        Write(besideExe, Json("\"ApiSecretProtected\": \"P(x)\"", dbPath: ""));
+
+        var settings = Resolve()!;
+
+        Assert.Equal(Path.Combine(Path.GetDirectoryName(programData)!, "till.db"), settings.DbPath);
+        Assert.Equal(settings.DbPath, SettingsStore.Load(programData).DbPath);
+    }
+
+    [Fact]
+    public void No_settings_file_anywhere_returns_null() => Assert.Null(Resolve());
+
+    [Fact]
+    public void Null_strings_in_the_file_load_as_empty()
+    {
+        Write(programData, """{ "BaseUrl": "https://erp.example", "ApiKey": "k", "ApiSecretProtected": "P(x)", "PrinterName": null, "CashMode": null }""");
+
+        var settings = SettingsStore.Load(programData);
+
+        Assert.Equal("", settings.PrinterName);
+        Assert.Equal("", settings.CashMode);
+    }
+}

@@ -66,21 +66,33 @@ public partial class App : Application
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
         if (!settings.SetupDone)
         {
-            var setup = new SetupDialog(settings, firstRun: true);
-            if (setup.ShowDialog() != true || setup.Result is null)
+            // With OnExplicitShutdown an unhandled error here would leave a windowless process behind, holding the mutex.
+            try
             {
-                Shutdown(0);
+                var setup = new SetupDialog(settings, firstRun: true);
+                if (setup.ShowDialog() != true || setup.Result is null)
+                {
+                    Shutdown(0);
+                    return;
+                }
+                settings = setup.Result; // already saved; the till has not been built yet, so no restart is needed
+            }
+            catch (Exception ex)
+            {
+                LogError(settings, ex);
+                MessageBox.Show($"TillPOS could not start:\n{ex.Message}", "TillPOS");
+                Shutdown(1);
                 return;
             }
-            settings = setup.Result; // already saved; the till has not been built yet, so no restart is needed
         }
 
         try
         {
             var window = new MainWindow();
             // The invoice popup asks for the header only after a sale, when the host (and POS settings) exist.
-            var dialogs = new WpfDialogs(window, () => (host!.Output.Header(), settings.PaperWidth), Restart);
-            host = new AppHost(settings, Dispatcher, dialogs, ex => LogError(settings, ex));
+            var dialogs = new WpfDialogs(window, () => (host!.Output.Header(), settings.PaperWidth),
+                hasPrinter: !string.IsNullOrWhiteSpace(settings.PrinterName), Restart, ex => LogError(settings, ex));
+            host = new AppHost(settings, SettingsStore.ProgramDataPath, Dispatcher, dialogs, ex => LogError(settings, ex));
             host.Shell.Version = Version;
             window.DataContext = host.Shell;
             MainWindow = window;

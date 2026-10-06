@@ -8,8 +8,12 @@ namespace TillPOS.App;
 
 /// <param name="owner">The main window the dialogs are centred on.</param>
 /// <param name="receiptLayout">The header and paper width the receipts are printed with (for the invoice popup).</param>
+/// <param name="hasPrinter">False when receipts are saved as files (no printer configured), for the popup's wording.</param>
 /// <param name="restart">Restarts the app, after setup saved new settings (the till is built from them at start).</param>
-public sealed class WpfDialogs(Window owner, Func<(ReceiptHeader Header, PaperWidth Paper)> receiptLayout, Action restart) : IDialogs
+/// <param name="logError">Writes to errors.log.</param>
+public sealed class WpfDialogs(
+    Window owner, Func<(ReceiptHeader Header, PaperWidth Paper)> receiptLayout, bool hasPrinter, Action restart, Action<Exception> logError)
+    : IDialogs
 {
     public Task<string?> AskPinAsync(string title, string reason)
     {
@@ -25,12 +29,25 @@ public sealed class WpfDialogs(Window owner, Func<(ReceiptHeader Header, PaperWi
 
     public void Info(string message) => MessageBox.Show(owner, message, "TillPOS");
 
+    /// <summary>The bill is already saved when this runs, so a problem showing it (e.g. POS settings missing) is logged and
+    /// the popup skipped; it never fails the sale.</summary>
     public string? ShowReceipt(Receipt receipt, string? printError, Func<string?> reprint)
     {
-        var (header, paper) = receiptLayout();
-        var dialog = new ReceiptDialog(ReceiptRenderer.Layout(receipt, header, paper), header.Trn is not null, printError, reprint) { Owner = owner };
-        dialog.ShowDialog();
-        return dialog.ScannedCode;
+        try
+        {
+            var (header, paper) = receiptLayout();
+            var dialog = new ReceiptDialog(ReceiptRenderer.Layout(receipt, header, paper), header.Trn is not null, printError, reprint, hasPrinter)
+            {
+                Owner = owner,
+            };
+            dialog.ShowDialog();
+            return dialog.ScannedCode;
+        }
+        catch (Exception ex)
+        {
+            logError(ex);
+            return null;
+        }
     }
 
     /// <summary>Starts from the file on disk (not the settings the till started with), so hand edits made since are kept.</summary>

@@ -56,7 +56,8 @@ public static class ReceiptRenderer
             Add(columns.ShowsPrice
                 ? columns.Row(Qty(line), Money(line.Rate), Money(line.Amount))
                 : columns.Row($"{Qty(line)} x {Money(line.Rate)}", null, Money(line.Amount)));
-            if (line.Rate < line.PriceListRate) Add(Fit($"  Offer: {Money(-Saved(line))}", w));
+            // Offers are a sale-time saving; a credit note just refunds what was paid.
+            if (!isReturn && line.Rate < line.PriceListRate) Add(Fit($"  Offer: {Money(-Saved(line))}", w));
         }
         Rule('-');
 
@@ -78,7 +79,7 @@ public static class ReceiptRenderer
         foreach (var payment in r.Payments) Add(Pair(payment.ModeOfPayment, Money(payment.Amount), w));
         if (r.Change != 0m) Add(Pair("Change", Money(r.Change), w));
         var saved = decimal.Round(r.Lines.Where(l => l.Rate < l.PriceListRate).Sum(Saved), 3);
-        if (saved > 0m) Add(Pair("You saved", Money(saved), w));
+        if (!isReturn && saved > 0m) Add(Pair("You saved", Money(saved), w));
         Rule('-');
 
         if (h.Footer is { } footer) Centered(footer);
