@@ -34,6 +34,7 @@ public sealed class PaymentViewModelTests : IDisposable
         var receipt = Assert.Single(f.Ctx.Receipts.ListPending(10));
         Assert.Equal("simran", receipt.Cashier);
         Assert.Equal("p.simran@quickgroc.com", receipt.CashierUser);
+        Assert.Equal("Simran", receipt.CashierName);
         Assert.Equal("TILL2-SHIFT-20261007080000", receipt.ShiftClientId);
         var (printed, drawer) = Assert.Single(f.Output.Printed);
         Assert.Equal(receipt.ClientId, printed.ClientId);

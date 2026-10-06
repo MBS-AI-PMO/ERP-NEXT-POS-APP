@@ -90,7 +90,7 @@ public sealed class PaymentViewModel : ObservableObject
         Receipt receipt;
         try
         {
-            receipt = recorder.CompleteSale(sale.Cart, p, cashier.Id, shift.ClientId, cashier.User);
+            receipt = recorder.CompleteSale(sale.Cart, p, cashier.Id, shift.ClientId, cashier.User, cashier.Name);
         }
         catch (Exception ex)
         {

@@ -153,4 +153,18 @@ public class SaleRecorderTests
 
         Assert.Equal("s@x", r.CashierUser);
     }
+
+    [Fact]
+    public void Sale_stores_the_cashier_display_name_for_the_receipt()
+    {
+        var cart = NewCart();
+        cart.AddBarcode("111");
+        var plan = payments.Plan(cart.Totals().GrandTotal, Tender.Card());
+
+        var r = Recorder().CompleteSale(cart, plan, "simran", "S1", "s@x", "Test Cashier");
+
+        Assert.Equal("simran", r.Cashier);
+        Assert.Equal("Test Cashier", r.CashierName);
+        Assert.Equal("Test Cashier", store.Get(r.ClientId)!.CashierName);
+    }
 }

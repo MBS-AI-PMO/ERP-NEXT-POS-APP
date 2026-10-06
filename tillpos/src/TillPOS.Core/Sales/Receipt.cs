@@ -46,6 +46,8 @@ public sealed record Receipt(
 {
     /// <summary>The cashier's ERPNext user (uploaded as posa_cashier).</summary>
     public string? CashierUser { get; init; }
+    /// <summary>The cashier's display name printed on the receipt; older receipts fall back to <see cref="Cashier"/>.</summary>
+    public string? CashierName { get; init; }
     /// <summary>Why the items were returned (returns only).</summary>
     public string? Reason { get; init; }
 }

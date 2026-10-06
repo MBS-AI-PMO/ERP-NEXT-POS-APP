@@ -6,7 +6,8 @@ namespace TillPOS.Core.Sales;
 /// <summary>Turns a paid cart into a stored receipt (the outbox entry Plan 2b uploads) and clears the cart.</summary>
 public sealed class SaleRecorder(IReceiptStore store, int tillNumber, TenderModes modes, Func<DateTimeOffset> now)
 {
-    public Receipt CompleteSale(Cart cart, PaymentPlan plan, string cashier, string shiftClientId, string? cashierUser = null)
+    public Receipt CompleteSale(Cart cart, PaymentPlan plan, string cashier, string shiftClientId, string? cashierUser = null,
+        string? cashierName = null)
     {
         if (cart.Lines.Count == 0) throw new InvalidOperationException("The bill is empty.");
         var totals = cart.Totals();
@@ -24,6 +25,7 @@ public sealed class SaleRecorder(IReceiptStore store, int tillNumber, TenderMode
             Payments(plan, modes), plan.Change, plan.RoundingDifference, null)
         {
             CashierUser = cashierUser,
+            CashierName = cashierName,
         };
         store.Save(receipt);
         cart.Clear();

@@ -14,6 +14,15 @@ public sealed class EscPos
     public EscPos Size(bool doubleWidth, bool doubleHeight) =>
         Raw(0x1D, 0x21, (byte)((doubleWidth ? 0x10 : 0) | (doubleHeight ? 0x01 : 0)));
 
+    /// <summary>Sets alignment, bold and character size for a receipt line style; Normal resets all three.</summary>
+    public EscPos Style(LineStyle style) => style switch
+    {
+        LineStyle.Bold => Align(Alignment.Left).Bold(true).Size(false, false),
+        LineStyle.Title => Align(Alignment.Center).Bold(true).Size(true, true),
+        LineStyle.Big => Align(Alignment.Left).Bold(true).Size(false, true),
+        _ => Align(Alignment.Left).Bold(false).Size(false, false),
+    };
+
     public EscPos Line(string text = "")
     {
         foreach (var ch in text) bytes.Add(ch is >= ' ' and <= '~' ? (byte)ch : (byte)'?');
