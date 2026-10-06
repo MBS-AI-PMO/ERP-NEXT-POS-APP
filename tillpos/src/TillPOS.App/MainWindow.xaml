@@ -1,0 +1,50 @@
+<Window x:Class="TillPOS.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:TillPOS.Presentation;assembly=TillPOS.Presentation"
+        xmlns:views="clr-namespace:TillPOS.App.Views"
+        Title="TillPOS" Width="1366" Height="768" WindowState="Maximized"
+        Background="{StaticResource Ground}" FontFamily="Segoe UI" FontSize="15">
+  <Window.Resources>
+    <DataTemplate DataType="{x:Type vm:StatusViewModel}"><views:StatusView /></DataTemplate>
+    <DataTemplate DataType="{x:Type vm:LoginViewModel}"><views:LoginView /></DataTemplate>
+    <DataTemplate DataType="{x:Type vm:OpenShiftViewModel}"><views:OpenShiftView /></DataTemplate>
+    <DataTemplate DataType="{x:Type vm:SaleViewModel}"><views:SaleView /></DataTemplate>
+    <DataTemplate DataType="{x:Type vm:PaymentViewModel}"><views:PaymentView /></DataTemplate>
+  </Window.Resources>
+  <DockPanel>
+    <Border DockPanel.Dock="Top" Background="{StaticResource Ink}" Height="56" Padding="20,0">
+      <DockPanel LastChildFill="False">
+        <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+          <TextBlock Text="{Binding ShopName}" Foreground="White" FontWeight="Bold" FontSize="17" />
+          <TextBlock Text="{Binding TillName}" Foreground="#C9CFD6" Margin="12,0,0,0" />
+        </StackPanel>
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+          <TextBlock Foreground="White" Margin="0,0,24,0">
+            <Run Text="Cashier: " /><Run Text="{Binding Session.Cashier.Name, Mode=OneWay}" FontWeight="Bold" />
+          </TextBlock>
+          <Border CornerRadius="12" Background="#262C33" Padding="12,4" Margin="0,0,16,0">
+            <StackPanel Orientation="Horizontal">
+              <Ellipse Width="10" Height="10" Margin="0,0,8,0">
+                <Ellipse.Style>
+                  <Style TargetType="Ellipse">
+                    <Setter Property="Fill" Value="#F5A524" />
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding Online}" Value="True"><Setter Property="Fill" Value="#3CCB7F" /></DataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </Ellipse.Style>
+              </Ellipse>
+              <TextBlock Text="{Binding SyncStatus}" Foreground="White" />
+              <TextBlock Foreground="#C9CFD6" Margin="8,0,0,0">
+                <Run Text="· " /><Run Text="{Binding PendingUploads, Mode=OneWay}" /><Run Text=" waiting" />
+              </TextBlock>
+            </StackPanel>
+          </Border>
+          <TextBlock Text="{Binding Clock}" Foreground="White" FontFamily="Consolas" FontSize="16" />
+        </StackPanel>
+      </DockPanel>
+    </Border>
+    <ContentControl Content="{Binding Current}" Margin="16" />
+  </DockPanel>
+</Window>
