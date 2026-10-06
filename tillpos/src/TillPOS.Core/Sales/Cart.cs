@@ -24,11 +24,15 @@ public sealed record SaleContext(
                 ?? throw new UnsupportedTaxSetupException($"sales tax template '{name}' is not in the local catalog");
         return new SaleContext(catalog, money, settings.PriceList, settings.Warehouse, settings.TaxCategory, template, today);
     }
+
+    /// <summary>Units whose scale-label value is grams (quantity = value ÷ 1000); any other unit reads the value as a piece count.</summary>
+    public IReadOnlySet<string> WeightUoms { get; init; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Kg" };
 }
 
 public sealed class CartLine
 {
-    internal CartLine(Item item, string uom, decimal conversionFactor, decimal priceListRate, AppliedRule? rule, decimal rate, string? itemTaxTemplate)
+    internal CartLine(Item item, string uom, decimal conversionFactor, decimal priceListRate, AppliedRule? rule, decimal rate,
+        string? itemTaxTemplate, string? barcode, decimal? labelQty, string? uomFallbackFrom)
     {
         Item = item;
         Uom = uom;
@@ -37,21 +41,31 @@ public sealed class CartLine
         Rule = rule;
         Rate = rate;
         ItemTaxTemplate = itemTaxTemplate;
+        Barcode = barcode;
+        FromScaleLabel = labelQty is not null;
+        Qty = labelQty ?? 1m;
+        UomFallbackFrom = uomFallbackFrom;
     }
 
     public Guid Id { get; } = Guid.NewGuid();
     public Item Item { get; }
     public string Uom { get; }
     public decimal ConversionFactor { get; }
-    public decimal Qty { get; internal set; } = 1m;
+    public decimal Qty { get; internal set; }
     public decimal PriceListRate { get; }
     public AppliedRule? Rule { get; }
     /// <summary>Unit rate after the offer; fixed when the line is added (cashiers cannot change it).</summary>
     public decimal Rate { get; }
     public string? ItemTaxTemplate { get; }
+    /// <summary>The code that was scanned (a scale label keeps the full 13 digits).</summary>
+    public string? Barcode { get; }
+    /// <summary>Quantity came from a scale label; it is never merged and + / − do not apply.</summary>
+    public bool FromScaleLabel { get; }
+    /// <summary>Set when the scanned barcode's unit is not set up on the item, so the line was sold in the stock unit.</summary>
+    public string? UomFallbackFrom { get; }
 }
 
-public enum AddOutcome { Added, UnknownBarcode, UnknownItem, ItemNotSellable, UnknownUom, NoPrice, UnsupportedTax }
+public enum AddOutcome { Added, UnknownBarcode, UnknownItem, ItemNotSellable, UnknownUom, NoPrice, UnsupportedTax, InvalidScaleLabel }
 
 public sealed record AddResult(AddOutcome Outcome, CartLine? Line);
 
@@ -67,22 +81,54 @@ public sealed class Cart(SaleContext ctx)
 
     public AddResult AddBarcode(string barcode)
     {
-        var found = ctx.Catalog.FindBarcode(barcode.Trim());
-        return found is null ? new AddResult(AddOutcome.UnknownBarcode, null) : AddItem(found.ItemCode, found.Uom);
+        var code = barcode.Trim();
+        if (ctx.Catalog.FindBarcode(code) is { } exact) return AddScanned(exact, code, null);
+        if (!ScaleLabel.IsScaleLabelShape(code)) return new AddResult(AddOutcome.UnknownBarcode, null);
+
+        var label = ScaleLabel.TryParse(code);
+        if (label is null) return new AddResult(AddOutcome.InvalidScaleLabel, null);
+        foreach (var key in label.LookupKeys)
+            if (ctx.Catalog.FindBarcode(key) is { } match) return AddScanned(match, code, label);
+        return new AddResult(AddOutcome.UnknownBarcode, null);
     }
 
-    public AddResult AddItem(string itemCode, string? uom = null)
+    public AddResult AddItem(string itemCode, string? uom = null) => Add(itemCode, uom, null, null, null);
+
+    private AddResult AddScanned(ItemBarcode found, string scanned, ScaleLabel? label)
+    {
+        var uom = found.Uom;
+        string? fallbackFrom = null;
+        var item = ctx.Catalog.FindItem(found.ItemCode);
+        if (item is not null && !string.IsNullOrEmpty(uom) && ctx.Catalog.ConversionFactor(item.ItemCode, uom) is null)
+        {
+            fallbackFrom = uom; // follow the data: the barcode's unit isn't set up on the item, so sell in the stock unit
+            uom = item.StockUom;
+        }
+
+        decimal? labelQty = null;
+        if (label is not null)
+        {
+            var lineUom = string.IsNullOrEmpty(uom) ? item?.StockUom : uom;
+            labelQty = lineUom is not null && ctx.WeightUoms.Contains(lineUom) ? label.Value / 1000m : label.Value;
+        }
+        return Add(found.ItemCode, uom, scanned, labelQty, fallbackFrom);
+    }
+
+    private AddResult Add(string itemCode, string? uom, string? barcode, decimal? labelQty, string? uomFallbackFrom)
     {
         var item = ctx.Catalog.FindItem(itemCode);
         if (item is null) return new AddResult(AddOutcome.UnknownItem, null);
         if (item.Disabled || !item.IsSalesItem) return new AddResult(AddOutcome.ItemNotSellable, null);
 
         var lineUom = string.IsNullOrEmpty(uom) ? item.StockUom : uom;
-        var existing = lines.FirstOrDefault(l => l.Item.ItemCode == item.ItemCode && l.Uom == lineUom);
-        if (existing is not null)
+        if (labelQty is null)
         {
-            existing.Qty += 1m;
-            return new AddResult(AddOutcome.Added, existing);
+            var existing = lines.FirstOrDefault(l => !l.FromScaleLabel && l.Item.ItemCode == item.ItemCode && l.Uom == lineUom);
+            if (existing is not null)
+            {
+                existing.Qty += 1m;
+                return new AddResult(AddOutcome.Added, existing);
+            }
         }
 
         var cf = ctx.Catalog.ConversionFactor(item.ItemCode, lineUom);
@@ -98,7 +144,7 @@ public sealed class Cart(SaleContext ctx)
         var itemTaxTemplate = itemTaxes.TemplateFor(item, date);
         if (itemTaxTemplate is not null && ctx.Catalog.FindItemTaxTemplate(itemTaxTemplate) is null)
             return new AddResult(AddOutcome.UnsupportedTax, null);
-        var line = new CartLine(item, lineUom, cf.Value, plr, rule, rate, itemTaxTemplate);
+        var line = new CartLine(item, lineUom, cf.Value, plr, rule, rate, itemTaxTemplate, barcode, labelQty, uomFallbackFrom);
         lines.Add(line);
         return new AddResult(AddOutcome.Added, line);
     }
@@ -109,12 +155,19 @@ public sealed class Cart(SaleContext ctx)
         Find(lineId).Qty = qty;
     }
 
-    public void Increment(Guid lineId) => Find(lineId).Qty += 1m;
+    public void Increment(Guid lineId) => Countable(lineId).Qty += 1m;
 
     public void Decrement(Guid lineId)
     {
-        var line = Find(lineId);
+        var line = Countable(lineId);
         if (line.Qty > 1m) line.Qty -= 1m;
+    }
+
+    private CartLine Countable(Guid lineId)
+    {
+        var line = Find(lineId);
+        if (line.FromScaleLabel) throw new InvalidOperationException("Lines from a scale label take their quantity from the label.");
+        return line;
     }
 
     public void Remove(Guid lineId) => lines.Remove(Find(lineId));
