@@ -52,5 +52,17 @@ internal static class Migrations
         """
         CREATE TABLE held_cart (id TEXT PRIMARY KEY, label TEXT NOT NULL, held_at TEXT NOT NULL, json TEXT NOT NULL);
         """,
+        """
+        CREATE TABLE shift (
+            client_id TEXT PRIMARY KEY,
+            opened_at TEXT NOT NULL,
+            closed_at TEXT,
+            opening_json TEXT NOT NULL,
+            closing_json TEXT,
+            sync_status TEXT NOT NULL DEFAULT 'Pending',
+            erp_opening TEXT,
+            erp_closing TEXT,
+            last_error TEXT);
+        """,
     ];
 }
