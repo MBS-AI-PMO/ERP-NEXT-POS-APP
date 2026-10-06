@@ -49,5 +49,8 @@ internal static class Migrations
         CREATE INDEX ix_receipt_shift ON receipt(shift_client_id);
         CREATE INDEX ix_receipt_return_against ON receipt(return_against);
         """,
+        """
+        CREATE TABLE held_cart (id TEXT PRIMARY KEY, label TEXT NOT NULL, held_at TEXT NOT NULL, json TEXT NOT NULL);
+        """,
     ];
 }

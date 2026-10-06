@@ -174,6 +174,23 @@ public sealed class Cart(SaleContext ctx)
 
     public void Clear() => lines.Clear();
 
+    public IReadOnlyList<HeldLine> Snapshot() =>
+        lines.Select(l => new HeldLine(l.Item.ItemCode, l.Uom, l.Qty, l.Barcode, l.FromScaleLabel)).ToList();
+
+    /// <summary>Re-adds held lines at today's prices into an empty cart; returns the lines that can no longer be sold.</summary>
+    public IReadOnlyList<(HeldLine Line, AddOutcome Outcome)> Restore(IEnumerable<HeldLine> held)
+    {
+        if (lines.Count > 0) throw new InvalidOperationException("Finish or hold the current bill before recalling another.");
+        var failed = new List<(HeldLine, AddOutcome)>();
+        foreach (var h in held)
+        {
+            var result = Add(h.ItemCode, h.Uom, h.Barcode, h.FromScaleLabel ? h.Qty : null, null);
+            if (result.Outcome != AddOutcome.Added) failed.Add((h, result.Outcome));
+            else if (!h.FromScaleLabel) result.Line!.Qty = h.Qty;
+        }
+        return failed;
+    }
+
     public BillTotals Totals() =>
         taxes.Calculate(lines.Select(l => new TaxLineInput(l.Qty, l.Rate, l.ItemTaxTemplate)).ToList(), ctx.TaxTemplate);
 
