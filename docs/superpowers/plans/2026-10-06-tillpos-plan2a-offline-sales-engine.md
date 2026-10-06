@@ -16,7 +16,7 @@
 - Money is `decimal`; SQLite stores it inside JSON (System.Text.Json writes decimals exactly) or as invariant text. All formatting/parsing uses `CultureInfo.InvariantCulture` — UAE PCs may run an Arabic culture with a non-Gregorian calendar.
 - Live currency precision is **3**; tests that model live data use `new MoneySettings(3, RoundingMethod.Bankers, 0.25m)`.
 - **Follow the data** (spec §0 decision 1): never correct ERPNext data; a barcode's unit that is not set up on its item is sold in the item's stock unit and flagged.
-- **Scale labels** (decision 2): EAN-13 starting `2` = `2` + item code (6) + grams (5) + check digit; look up full code, then first 7 digits, then digits 2–7.
+- **Scale labels** (decision 2): EAN-13 starting `2` = `2` + item code (6) + value (5) + check digit; look up full code, then first 7 digits, then digits 2–7; the value is grams (qty = value ÷ 1000) when the line unit is a weight unit (default `Kg`), otherwise a piece count (CURRY LEAVES label `2000060000017` = 1 pc).
 - **Rounding** (decision 4): card exact; cash rounded to the currency's smallest fraction (AED 0.25) with ERPNext's rule (`Rounder.RoundToSmallestFraction`); split = card exact + cash remainder rounded.
 - **Supervisor approval** (spec §13b.5): line removal, bill void, return without receipt, refund above AED 50, no-sale drawer open.
 - Client IDs: receipts `TILL{n}-{yyyyMMddHHmmss}-{000000}`, shifts `TILL{n}-SHIFT-{yyyyMMddHHmmss}`.
@@ -25,7 +25,7 @@
 ## Review Focus
 
 1. **A label whose 7-digit and 6-digit keys both exist as barcodes** → the 7-digit key wins, deterministically (Task 1 test `Seven_digit_key_wins_over_six_digit_key`).
-2. **Pressing + on a weighed line** → refused with a clear message, quantity unchanged (Task 1 test `Weighed_lines_cannot_be_incremented`).
+2. **Pressing + on a line that came from a scale label** → refused with a clear message, quantity unchanged (Task 1 test `Weighed_lines_cannot_be_incremented`).
 3. **Completing a sale with a payment calculated for an older total** (cashier scanned another item after opening payment) → refused, nothing saved, cart kept (Task 3 test `Stale_payment_plan_is_refused_and_nothing_is_saved`).
 4. **Returning the same line twice across two return receipts** → the second return can only take what is left (Task 5 test `Second_return_can_only_take_what_is_left`).
 5. **Two cashiers with the same PIN** → nobody is logged in by that PIN (Task 8 test `Duplicate_pin_logs_nobody_in`).
@@ -36,8 +36,8 @@
 
 ```
 tillpos/src/TillPOS.Core/
-  Sales/ScaleLabel.cs            scale-label parsing (EAN-13 '2' + code + grams + check)
-  Sales/Cart.cs                  (modify) label/unit-fallback scanning, weighed lines, hold snapshot/restore
+  Sales/ScaleLabel.cs            scale-label parsing (EAN-13 '2' + code + value + check)
+  Sales/Cart.cs                  (modify) label/unit-fallback scanning, scale-label lines, hold snapshot/restore
   Sales/Receipt.cs               Receipt, ReceiptLine, ReceiptPayment, TenderModes, ClientIds, IReceiptStore
   Sales/SaleRecorder.cs          cart + payment plan → stored receipt
   Sales/ReturnBuilder.cs         returns against a receipt / without receipt
@@ -62,7 +62,7 @@ tillpos/tests/TillPOS.Tests/
 
 ---
 
-### Task 1: Scale labels, unit fallback and weighed lines in the cart
+### Task 1: Scale labels, unit fallback and scale-label lines in the cart
 
 **Files:**
 - Create: `tillpos/src/TillPOS.Core/Sales/ScaleLabel.cs`
@@ -72,10 +72,10 @@ tillpos/tests/TillPOS.Tests/
 **Interfaces:**
 - Consumes: `ICatalog`, `ItemBarcode`, existing `Cart`/`CartLine`/`AddOutcome`.
 - Produces:
-  - `sealed record ScaleLabel(string Code, decimal WeightKg)` with `IReadOnlyList<string> LookupKeys`, `static bool IsScaleLabelShape(string)`, `static ScaleLabel? TryParse(string)`, `static bool HasValidCheckDigit(string)`
-  - `CartLine` gains `string? Barcode`, `bool IsWeighed`, `string? UomFallbackFrom`
+  - `sealed record ScaleLabel(string Code, int Value)` with `IReadOnlyList<string> LookupKeys`, `static bool IsScaleLabelShape(string)`, `static ScaleLabel? TryParse(string)`, `static bool HasValidCheckDigit(string)`
+  - `CartLine` gains `string? Barcode`, `bool FromScaleLabel`, `string? UomFallbackFrom`
   - `AddOutcome` gains `InvalidScaleLabel` (appended last)
-  - `Cart.Increment/Decrement` throw `InvalidOperationException` for weighed lines
+  - `Cart.Increment/Decrement` throw `InvalidOperationException` for lines from a scale label; `SaleContext` gains `IReadOnlySet<string> WeightUoms` (init property, default `{ "Kg" }`, case-insensitive)
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -102,7 +102,7 @@ public class ScaleLabelTests
     {
         Assert.Equal("2000089007400", Ean("200008900740"));
         var label = ScaleLabel.TryParse("2000089007400")!;
-        Assert.Equal(M("0.740"), label.WeightKg);
+        Assert.Equal(740, label.Value);
         Assert.Equal(new[] { "2000089", "000089" }, label.LookupKeys);
     }
 
@@ -164,9 +164,23 @@ public class CartScanTests
         var line = Assert.Single(cart.Lines);
         Assert.Equal("000089", line.Item.ItemCode);
         Assert.Equal(M("0.740"), line.Qty);
-        Assert.True(line.IsWeighed);
+        Assert.True(line.FromScaleLabel);
         Assert.Equal("2000089007400", line.Barcode);
         Assert.Equal(M("2.590"), cart.Totals().GrandTotal);
+    }
+
+    [Fact]
+    public void Curry_leaves_label_on_a_piece_item_reads_the_value_as_a_count()
+    {
+        Item("000060", "CURRY LEAVES/PCS", "PCS", "1.50", ("000060", "PCS"), ("2000060", "PCS"));
+        var cart = NewCart();
+
+        cart.AddBarcode("2000060000017");
+        cart.AddBarcode(Ean("200006000003"));
+
+        Assert.Equal(new[] { 1m, 3m }, cart.Lines.Select(l => l.Qty));
+        Assert.All(cart.Lines, l => Assert.True(l.FromScaleLabel));
+        Assert.Equal(M("6.000"), cart.Totals().GrandTotal);
     }
 
     [Fact]
@@ -203,7 +217,7 @@ public class CartScanTests
 
         var line = Assert.Single(cart.Lines);
         Assert.Equal(1m, line.Qty);
-        Assert.False(line.IsWeighed);
+        Assert.False(line.FromScaleLabel);
     }
 
     [Fact]
@@ -263,7 +277,7 @@ public class CartScanTests
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `dotnet test --filter "ScaleLabelTests|CartScanTests"`
-Expected: build FAIL — `ScaleLabel` not found; `CartLine` has no `IsWeighed`.
+Expected: build FAIL — `ScaleLabel` not found; `CartLine` has no `FromScaleLabel`.
 
 - [ ] **Step 3: Implement**
 
@@ -274,9 +288,10 @@ using System.Globalization;
 
 namespace TillPOS.Core.Sales;
 
-/// <summary>A scale-printed EAN-13 label: '2' + item code (6) + weight in grams (5) + check digit,
-/// e.g. 2000089007400 = item code 000089, 0.740 kg.</summary>
-public sealed record ScaleLabel(string Code, decimal WeightKg)
+/// <summary>A scale-printed EAN-13 label: '2' + item code (6) + value (5) + check digit. The value is grams for items sold by weight
+/// and a piece count otherwise (the cart decides from the line's unit),
+/// e.g. 2000089007400 = item code 000089, 740 g (Kg item); 2000060000017 = item code 000060, 1 piece (PCS item).</summary>
+public sealed record ScaleLabel(string Code, int Value)
 {
     /// <summary>Barcodes looked up in the database, in order: the first 7 digits (2000089), then digits 2–7 (000089).</summary>
     public IReadOnlyList<string> LookupKeys => [Code[..7], Code[1..7]];
@@ -284,12 +299,12 @@ public sealed record ScaleLabel(string Code, decimal WeightKg)
     public static bool IsScaleLabelShape(string code) =>
         code.Length == 13 && code[0] == '2' && code.All(char.IsAsciiDigit);
 
-    /// <summary>Null when the code is not a scale label, its check digit is wrong, or the weight is zero.</summary>
+    /// <summary>Null when the code is not a scale label, its check digit is wrong, or the value is zero.</summary>
     public static ScaleLabel? TryParse(string code)
     {
         if (!IsScaleLabelShape(code) || !HasValidCheckDigit(code)) return null;
-        var grams = int.Parse(code.AsSpan(7, 5), CultureInfo.InvariantCulture);
-        return grams == 0 ? null : new ScaleLabel(code, grams / 1000m);
+        var value = int.Parse(code.AsSpan(7, 5), CultureInfo.InvariantCulture);
+        return value == 0 ? null : new ScaleLabel(code, value);
     }
 
     public static bool HasValidCheckDigit(string ean13)
@@ -303,13 +318,20 @@ public sealed record ScaleLabel(string Code, decimal WeightKg)
 
 In `tillpos/src/TillPOS.Core/Sales/Cart.cs`:
 
+0. Add this property inside the `SaleContext` record body (after `Create`):
+
+```csharp
+    /// <summary>Units whose scale-label value is grams (quantity = value ÷ 1000); any other unit reads the value as a piece count.</summary>
+    public IReadOnlySet<string> WeightUoms { get; init; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Kg" };
+```
+
 1. Replace the `CartLine` class with:
 
 ```csharp
 public sealed class CartLine
 {
     internal CartLine(Item item, string uom, decimal conversionFactor, decimal priceListRate, AppliedRule? rule, decimal rate,
-        string? itemTaxTemplate, string? barcode, decimal? weightKg, string? uomFallbackFrom)
+        string? itemTaxTemplate, string? barcode, decimal? labelQty, string? uomFallbackFrom)
     {
         Item = item;
         Uom = uom;
@@ -319,8 +341,8 @@ public sealed class CartLine
         Rate = rate;
         ItemTaxTemplate = itemTaxTemplate;
         Barcode = barcode;
-        IsWeighed = weightKg is not null;
-        Qty = weightKg ?? 1m;
+        FromScaleLabel = labelQty is not null;
+        Qty = labelQty ?? 1m;
         UomFallbackFrom = uomFallbackFrom;
     }
 
@@ -337,7 +359,7 @@ public sealed class CartLine
     /// <summary>The code that was scanned (a scale label keeps the full 13 digits).</summary>
     public string? Barcode { get; }
     /// <summary>Quantity came from a scale label; it is never merged and + / − do not apply.</summary>
-    public bool IsWeighed { get; }
+    public bool FromScaleLabel { get; }
     /// <summary>Set when the scanned barcode's unit is not set up on the item, so the line was sold in the stock unit.</summary>
     public string? UomFallbackFrom { get; }
 }
@@ -361,13 +383,13 @@ public enum AddOutcome { Added, UnknownBarcode, UnknownItem, ItemNotSellable, Un
         var label = ScaleLabel.TryParse(code);
         if (label is null) return new AddResult(AddOutcome.InvalidScaleLabel, null);
         foreach (var key in label.LookupKeys)
-            if (ctx.Catalog.FindBarcode(key) is { } match) return AddScanned(match, code, label.WeightKg);
+            if (ctx.Catalog.FindBarcode(key) is { } match) return AddScanned(match, code, label);
         return new AddResult(AddOutcome.UnknownBarcode, null);
     }
 
     public AddResult AddItem(string itemCode, string? uom = null) => Add(itemCode, uom, null, null, null);
 
-    private AddResult AddScanned(ItemBarcode found, string scanned, decimal? weightKg)
+    private AddResult AddScanned(ItemBarcode found, string scanned, ScaleLabel? label)
     {
         var uom = found.Uom;
         string? fallbackFrom = null;
@@ -377,19 +399,26 @@ public enum AddOutcome { Added, UnknownBarcode, UnknownItem, ItemNotSellable, Un
             fallbackFrom = uom; // follow the data: the barcode's unit isn't set up on the item, so sell in the stock unit
             uom = item.StockUom;
         }
-        return Add(found.ItemCode, uom, scanned, weightKg, fallbackFrom);
+
+        decimal? labelQty = null;
+        if (label is not null)
+        {
+            var lineUom = string.IsNullOrEmpty(uom) ? item?.StockUom : uom;
+            labelQty = lineUom is not null && ctx.WeightUoms.Contains(lineUom) ? label.Value / 1000m : label.Value;
+        }
+        return Add(found.ItemCode, uom, scanned, labelQty, fallbackFrom);
     }
 
-    private AddResult Add(string itemCode, string? uom, string? barcode, decimal? weightKg, string? uomFallbackFrom)
+    private AddResult Add(string itemCode, string? uom, string? barcode, decimal? labelQty, string? uomFallbackFrom)
     {
         var item = ctx.Catalog.FindItem(itemCode);
         if (item is null) return new AddResult(AddOutcome.UnknownItem, null);
         if (item.Disabled || !item.IsSalesItem) return new AddResult(AddOutcome.ItemNotSellable, null);
 
         var lineUom = string.IsNullOrEmpty(uom) ? item.StockUom : uom;
-        if (weightKg is null)
+        if (labelQty is null)
         {
-            var existing = lines.FirstOrDefault(l => !l.IsWeighed && l.Item.ItemCode == item.ItemCode && l.Uom == lineUom);
+            var existing = lines.FirstOrDefault(l => !l.FromScaleLabel && l.Item.ItemCode == item.ItemCode && l.Uom == lineUom);
             if (existing is not null)
             {
                 existing.Qty += 1m;
@@ -410,7 +439,7 @@ public enum AddOutcome { Added, UnknownBarcode, UnknownItem, ItemNotSellable, Un
         var itemTaxTemplate = itemTaxes.TemplateFor(item, date);
         if (itemTaxTemplate is not null && ctx.Catalog.FindItemTaxTemplate(itemTaxTemplate) is null)
             return new AddResult(AddOutcome.UnsupportedTax, null);
-        var line = new CartLine(item, lineUom, cf.Value, plr, rule, rate, itemTaxTemplate, barcode, weightKg, uomFallbackFrom);
+        var line = new CartLine(item, lineUom, cf.Value, plr, rule, rate, itemTaxTemplate, barcode, labelQty, uomFallbackFrom);
         lines.Add(line);
         return new AddResult(AddOutcome.Added, line);
     }
@@ -430,7 +459,7 @@ public enum AddOutcome { Added, UnknownBarcode, UnknownItem, ItemNotSellable, Un
     private CartLine Countable(Guid lineId)
     {
         var line = Find(lineId);
-        if (line.IsWeighed) throw new InvalidOperationException("Weighed lines take their quantity from the scale label.");
+        if (line.FromScaleLabel) throw new InvalidOperationException("Lines from a scale label take their quantity from the label.");
         return line;
     }
 ```
@@ -438,13 +467,13 @@ public enum AddOutcome { Added, UnknownBarcode, UnknownItem, ItemNotSellable, Un
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `dotnet test --filter "ScaleLabelTests|CartScanTests|CartTests"`
-Expected: PASS (new 16 + existing 9 CartTests). Then `dotnet test` — all pass, 0 warnings.
+Expected: PASS (new 17 + existing 9 CartTests). Then `dotnet test` — all pass, 0 warnings.
 
 - [ ] **Step 5: Commit**
 
 ```powershell
 git add tillpos
-git commit -m "feat(core): scale-label barcodes, unit fallback and weighed lines"
+git commit -m "feat(core): scale-label barcodes (weight or count), unit fallback"
 ```
 
 ---
@@ -678,7 +707,7 @@ git commit -m "feat(core): cash/card/split payment calculation with agreed round
 - Consumes: `Cart`, `CartLine`, `BillTotals`, `PaymentPlan`.
 - Produces (namespace `TillPOS.Core.Sales`):
   - `enum ReceiptKind { Sale, Return }`
-  - `record ReceiptLine(int LineNo, string ItemCode, string ItemName, string? Barcode, string Uom, decimal ConversionFactor, decimal Qty, decimal PriceListRate, decimal Rate, decimal Amount, string? PricingRule, string? ItemTaxTemplate, bool IsWeighed, string? UomFallbackFrom)`
+  - `record ReceiptLine(int LineNo, string ItemCode, string ItemName, string? Barcode, string Uom, decimal ConversionFactor, decimal Qty, decimal PriceListRate, decimal Rate, decimal Amount, string? PricingRule, string? ItemTaxTemplate, bool FromScaleLabel, string? UomFallbackFrom)`
   - `record ReceiptPayment(string ModeOfPayment, decimal Amount)`
   - `record Receipt(string ClientId, ReceiptKind Kind, string? ReturnAgainst, string ShiftClientId, string Cashier, DateTimeOffset CreatedAt, IReadOnlyList<ReceiptLine> Lines, decimal Total, decimal NetTotal, decimal TotalTaxes, decimal GrandTotal, bool UsesErpRoundedTotal, decimal RoundedTotal, decimal RoundingAdjustment, IReadOnlyList<ReceiptPayment> Payments, decimal Change, decimal RoundingDifference, string? ApprovedBy)`
   - `record TenderModes(string Cash, string Card)`
@@ -767,7 +796,7 @@ public class SaleRecorderTests
         Assert.Equal(new[] { new ReceiptPayment("Cash Counter 2", 20m) }, r.Payments);
         Assert.Equal(M("10.50"), r.Change);
         Assert.Equal(2, r.Lines.Count);
-        Assert.True(r.Lines[1].IsWeighed);
+        Assert.True(r.Lines[1].FromScaleLabel);
         Assert.Equal("2000089007400", r.Lines[1].Barcode);
         Assert.Equal(M("2.590"), r.Lines[1].Amount);
         Assert.Same(r, store.Get(r.ClientId));
@@ -890,7 +919,7 @@ public sealed record ReceiptLine(
     decimal Amount,
     string? PricingRule,
     string? ItemTaxTemplate,
-    bool IsWeighed,
+    bool FromScaleLabel,
     string? UomFallbackFrom);
 
 public sealed record ReceiptPayment(string ModeOfPayment, decimal Amount);
@@ -975,7 +1004,7 @@ public sealed class SaleRecorder(IReceiptStore store, int tillNumber, TenderMode
 
     internal static IReadOnlyList<ReceiptLine> ToLines(Cart cart, BillTotals totals) =>
         cart.Lines.Select((l, i) => new ReceiptLine(i + 1, l.Item.ItemCode, l.Item.ItemName, l.Barcode, l.Uom, l.ConversionFactor,
-            l.Qty, l.PriceListRate, l.Rate, totals.Lines[i].Amount, l.Rule?.RuleName, l.ItemTaxTemplate, l.IsWeighed,
+            l.Qty, l.PriceListRate, l.Rate, totals.Lines[i].Amount, l.Rule?.RuleName, l.ItemTaxTemplate, l.FromScaleLabel,
             l.UomFallbackFrom)).ToList();
 
     internal static IReadOnlyList<ReceiptPayment> Payments(PaymentPlan plan, TenderModes modes)
@@ -1516,9 +1545,9 @@ git commit -m "feat(core): returns with and without receipt, supervisor limits"
 - Test: `tillpos/tests/TillPOS.Tests/Data/HeldCartStoreTests.cs`
 
 **Interfaces:**
-- Consumes: Task 1 `Cart.Add` (private) and `CartLine.IsWeighed/Barcode`.
+- Consumes: Task 1 `Cart.Add` (private) and `CartLine.FromScaleLabel/Barcode`.
 - Produces:
-  - namespace `TillPOS.Core.Sales`: `record HeldLine(string ItemCode, string Uom, decimal Qty, string? Barcode, bool IsWeighed)`, `record HeldCart(string Id, string Label, DateTimeOffset HeldAt, IReadOnlyList<HeldLine> Lines)`; `Cart.Snapshot()`, `Cart.Restore(IEnumerable<HeldLine>)` returning `IReadOnlyList<(HeldLine Line, AddOutcome Outcome)>` of lines that could not be restored
+  - namespace `TillPOS.Core.Sales`: `record HeldLine(string ItemCode, string Uom, decimal Qty, string? Barcode, bool FromScaleLabel)`, `record HeldCart(string Id, string Label, DateTimeOffset HeldAt, IReadOnlyList<HeldLine> Lines)`; `Cart.Snapshot()`, `Cart.Restore(IEnumerable<HeldLine>)` returning `IReadOnlyList<(HeldLine Line, AddOutcome Outcome)>` of lines that could not be restored
   - namespace `TillPOS.Data`: `sealed class HeldCartStore(TillDb db)` — `HeldCart Hold(Cart cart, string label, DateTimeOffset at)`, `IReadOnlyList<HeldCart> List()`, `HeldCart? Take(string id)`
 
 - [ ] **Step 1: Write the failing tests**
@@ -1576,7 +1605,7 @@ public sealed class HeldCartStoreTests : IDisposable
         Assert.Empty(fresh.Restore(taken.Lines));
         Assert.Equal(2m, fresh.Lines[0].Qty);
         Assert.Equal(M("0.740"), fresh.Lines[1].Qty);
-        Assert.True(fresh.Lines[1].IsWeighed);
+        Assert.True(fresh.Lines[1].FromScaleLabel);
         Assert.Empty(store.List());
         Assert.Null(store.Take(held.Id));
     }
@@ -1620,7 +1649,7 @@ Expected: build FAIL — `HeldCartStore`, `Cart.Restore` not found.
 ```csharp
 namespace TillPOS.Core.Sales;
 
-public sealed record HeldLine(string ItemCode, string Uom, decimal Qty, string? Barcode, bool IsWeighed);
+public sealed record HeldLine(string ItemCode, string Uom, decimal Qty, string? Barcode, bool FromScaleLabel);
 
 /// <summary>A parked bill (hold F5 / recall F7). Lines are re-priced when recalled.</summary>
 public sealed record HeldCart(string Id, string Label, DateTimeOffset HeldAt, IReadOnlyList<HeldLine> Lines);
@@ -1630,7 +1659,7 @@ Add to `Cart` in `tillpos/src/TillPOS.Core/Sales/Cart.cs`:
 
 ```csharp
     public IReadOnlyList<HeldLine> Snapshot() =>
-        lines.Select(l => new HeldLine(l.Item.ItemCode, l.Uom, l.Qty, l.Barcode, l.IsWeighed)).ToList();
+        lines.Select(l => new HeldLine(l.Item.ItemCode, l.Uom, l.Qty, l.Barcode, l.FromScaleLabel)).ToList();
 
     /// <summary>Re-adds held lines at today's prices into an empty cart; returns the lines that can no longer be sold.</summary>
     public IReadOnlyList<(HeldLine Line, AddOutcome Outcome)> Restore(IEnumerable<HeldLine> held)
@@ -1639,9 +1668,9 @@ Add to `Cart` in `tillpos/src/TillPOS.Core/Sales/Cart.cs`:
         var failed = new List<(HeldLine, AddOutcome)>();
         foreach (var h in held)
         {
-            var result = Add(h.ItemCode, h.Uom, h.Barcode, h.IsWeighed ? h.Qty : null, null);
+            var result = Add(h.ItemCode, h.Uom, h.Barcode, h.FromScaleLabel ? h.Qty : null, null);
             if (result.Outcome != AddOutcome.Added) failed.Add((h, result.Outcome));
-            else if (!h.IsWeighed) result.Line!.Qty = h.Qty;
+            else if (!h.FromScaleLabel) result.Line!.Qty = h.Qty;
         }
         return failed;
     }

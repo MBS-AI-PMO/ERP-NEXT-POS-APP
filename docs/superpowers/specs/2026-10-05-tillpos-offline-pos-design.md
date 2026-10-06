@@ -25,7 +25,7 @@ The Master Specification is the product authority for Phase 1A requirements; thi
 ### Decisions recorded 2026-10-06
 
 1. **Follow the data.** The till never corrects or second-guesses ERPNext data: whatever item ERPNext returns for a barcode is what is sold, at that item's price. (Data clean-up, if any, is the back office's business, not the till's.)
-2. **Scale labels** (example: CUCUMBER label `2000089007400` → 3.50/kg × 0.740 kg = 2.59): EAN-13 starting with `2` = **`2` + item code (6) + weight in grams (5) + check digit**. The till looks the label up against the barcodes in the database — first the full 13 digits, then the first 7 digits (e.g. `2000089`), then digits 2–7 (e.g. `000089`) — and uses the first match; quantity = weight digits ÷ 1000 kg. Check digit is validated; an invalid check digit is treated as a mis-scan.
+2. **Scale labels** (example: CUCUMBER label `2000089007400` → 3.50/kg × 0.740 kg = 2.59): EAN-13 starting with `2` = **`2` + item code (6) + value (5) + check digit**. The value is **grams for items sold by weight (Kg)** and a **piece count for items sold by piece (PCS/Nos)** — e.g. CURRY LEAVES label `2000060000017` = 1 pc × 1.50 = 1.50. The till looks the label up against the barcodes in the database — first the full 13 digits, then the first 7 digits (e.g. `2000089`), then digits 2–7 (e.g. `000089`) — and uses the first match; quantity = value ÷ 1000 for Kg items, the value as a count otherwise (on live, 534 scale items are Kg, 88 PCS, 4 Nos). Check digit is validated; an invalid check digit is treated as a mis-scan.
 3. **Barcode with a unit the item doesn't have** (118 such barcodes on live): follow the data — sell the barcode's item in its **stock UOM** at its stock-UOM price instead of refusing it, and log it.
 4. **Payment rounding:** **card = exact total, no rounding. Cash = rounded to AED 0.25** (AED's smallest fraction in ERPNext), using **ERPNext's rounding rule** so totals always agree with ERPNext. **Split:** card part exact, the cash remainder rounded to 0.25.
 5. **Releases (Phase 1A):**
@@ -281,7 +281,7 @@ Details decided for both:
 3. **Shifts upload** (2b): `POS Opening Shift` / `POS Closing Shift` are created under the till's ERPNext user; each invoice carries `posa_pos_opening_shift` and `posa_cashier`.
 4. **Payments in ERPNext terms:** cash-only bills use ERPNext's rounded total (rounding adjustment → Round Off account); card-only bills set `disable_rounded_total = 1`; the cash amount on an invoice is the cash tendered and `change_amount` the change, as POS Awesome does. How the small rounding difference of a **split** bill is posted (write-off vs. change) is a 2b test-site check.
 5. **Supervisor approval needed for** (Master Spec §5): removing a line, voiding the bill, a return without receipt, a refund above AED 50, opening the drawer without a sale. Each approval is logged locally (who, what, amount, when) and uploaded in 2b.
-6. **Weighed lines** keep the label's weight as quantity and are never merged with another line; + / − do not apply to them.
+6. **Lines from a scale label** take their quantity from the label (grams ÷ 1000 for Kg items, a piece count for PCS/Nos items) and are never merged with another line; + / − do not apply to them.
 
 ## 14. Verification items for the implementation plan
 
