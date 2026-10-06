@@ -13,7 +13,7 @@ public sealed class ReceiptOutput(TillSettings settings, CatalogStore store) : I
     public void Print(Receipt receipt, bool openDrawer)
     {
         var pos = store.LoadPosSettings() ?? throw new InvalidOperationException("POS settings are not downloaded yet.");
-        var header = new ReceiptHeader(pos.CompanyName, pos.AddressText, pos.TaxId, $"Till {settings.TillNumber}", settings.ReceiptFooter);
+        var header = new ReceiptHeader(pos.CompanyName, pos.AddressText ?? settings.ShopAddress, pos.TaxId ?? settings.Trn, $"Till {settings.TillNumber}", settings.ReceiptFooter);
         if (string.IsNullOrWhiteSpace(settings.PrinterName))
         {
             var folder = Path.Combine(Path.GetDirectoryName(settings.DbPath)!, "receipts");

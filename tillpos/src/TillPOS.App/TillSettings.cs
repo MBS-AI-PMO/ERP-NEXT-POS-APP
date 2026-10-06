@@ -9,7 +9,8 @@ namespace TillPOS.App;
 public sealed record LocalTestCashier(string Id, string Name, string Pin, bool IsSupervisor);
 
 /// <summary>Per-till settings (settings.json). ApiSecretProtected is DPAPI-protected (see SecretProtector).
-/// LocalTestCashiers are only used while ERPNext has no POS Cashier list yet (testing; removed in Plan 4).</summary>
+/// LocalTestCashiers are only used while ERPNext has no POS Cashier list yet (testing; removed in Plan 4).
+/// Trn / ShopAddress are used on receipts only when ERPNext has none (Company Tax ID / POS Profile company address).</summary>
 public sealed record TillSettings(
     string BaseUrl,
     string ApiKey,
@@ -25,7 +26,9 @@ public sealed record TillSettings(
     RoundingMethod Rounding = RoundingMethod.Bankers,
     string DbPath = @"C:\ProgramData\TillPOS\till.db",
     int SyncIntervalSeconds = 90,
-    IReadOnlyList<LocalTestCashier>? LocalTestCashiers = null)
+    IReadOnlyList<LocalTestCashier>? LocalTestCashiers = null,
+    string? Trn = null,
+    string? ShopAddress = null)
 {
     public static string DefaultPath =>
         Environment.GetEnvironmentVariable("TILLPOS_SETTINGS")
