@@ -239,7 +239,7 @@ Full results: `docs/erp-api-notes.md`. Facts that change or sharpen this spec:
 ### Open decisions (needed before Plan 2/3)
 
 - **D1 — Weighed items:** how is the weight captured today? (a) scale-printed labels with the weight inside the barcode (give the label format: prefix, item-code digits, weight/price digits, check digit), (b) cashier types the weight after scanning, or (c) a scale connected to the till PC. The till will support the chosen way; (a) and (b) need no extra hardware integration.
-- **D2 — Shifts:** recommended: the till opens/closes shifts as **POS Awesome `POS Opening Shift` / `POS Closing Shift`** and sets `posa_pos_opening_shift` on each POS Invoice, so the back office keeps one shift and closing process for both POS Awesome and TillPOS. Alternative: ERPNext's standard POS Opening/Closing Entry (as originally written in §6.2), which would split shift reporting in two.
+- **D2 — Shifts: DECIDED 2026-10-06 — use POS Awesome shifts (recommended option below).** Recommended: the till opens/closes shifts as **POS Awesome `POS Opening Shift` / `POS Closing Shift`** and sets `posa_pos_opening_shift` on each POS Invoice, so the back office keeps one shift and closing process for both POS Awesome and TillPOS. Alternative: ERPNext's standard POS Opening/Closing Entry (as originally written in §6.2), which would split shift reporting in two.
 
 ## 14. Verification items for the implementation plan
 
