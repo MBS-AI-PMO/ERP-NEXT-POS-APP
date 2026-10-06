@@ -40,21 +40,21 @@ public sealed class LoginViewModel : ObservableObject
     {
         var typed = Pin;
         Pin = "";
-        if (ctx.Limiter.IsLocked)
+        if (ctx.LoginLimiter.IsLocked)
         {
-            Message = $"Too many wrong PINs — wait {Math.Ceiling(ctx.Limiter.Remaining.TotalSeconds).ToString(CultureInfo.InvariantCulture)} s.";
+            Message = $"Too many wrong PINs — wait {Math.Ceiling(ctx.LoginLimiter.Remaining.TotalSeconds).ToString(CultureInfo.InvariantCulture)} s.";
             return;
         }
 
         var cashier = ctx.Authenticator.Login(typed);
         if (cashier is null)
         {
-            ctx.Limiter.Failed();
+            ctx.LoginLimiter.Failed();
             Message = "Wrong PIN.";
             return;
         }
 
-        ctx.Limiter.Succeeded();
+        ctx.LoginLimiter.Succeeded();
         Message = "";
         session.Cashier = cashier;
         session.Shift = ctx.Shifts.Current();

@@ -10,9 +10,9 @@ public sealed class SupervisorGate(TillContext ctx, SessionState session)
     public async Task<string?> ApproveAsync(ApprovalAction action, string reason, string? receiptClientId = null, string? itemCode = null,
         decimal amount = 0m)
     {
-        if (ctx.Limiter.IsLocked)
+        if (ctx.SupervisorLimiter.IsLocked)
         {
-            ctx.Dialogs.Info($"Too many wrong PINs. Try again in {Math.Ceiling(ctx.Limiter.Remaining.TotalSeconds).ToString(CultureInfo.InvariantCulture)} s.");
+            ctx.Dialogs.Info($"Too many wrong PINs. Try again in {Math.Ceiling(ctx.SupervisorLimiter.Remaining.TotalSeconds).ToString(CultureInfo.InvariantCulture)} s.");
             return null;
         }
 
@@ -22,13 +22,13 @@ public sealed class SupervisorGate(TillContext ctx, SessionState session)
         var supervisor = ctx.Authenticator.Supervisor(pin);
         if (supervisor is null)
         {
-            ctx.Limiter.Failed();
+            ctx.SupervisorLimiter.Failed();
             Log(ApprovalAction.FailedSupervisorPin, "", reason, receiptClientId, itemCode, amount);
             ctx.Dialogs.Info("That is not a supervisor PIN.");
             return null;
         }
 
-        ctx.Limiter.Succeeded();
+        ctx.SupervisorLimiter.Succeeded();
         Log(action, supervisor.Id, reason, receiptClientId, itemCode, amount);
         return supervisor.Id;
     }

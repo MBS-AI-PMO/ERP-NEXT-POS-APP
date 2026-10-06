@@ -38,7 +38,32 @@ public sealed class SupervisorGateTests : IDisposable
 
         Assert.Null(await gate.ApproveAsync(ApprovalAction.BillVoid, "Void bill"));
 
-        Assert.Equal(ApprovalAction.FailedSupervisorPin, Assert.Single(f.Ctx.Approvals.Unsynced()).Action);
+        var record = Assert.Single(f.Ctx.Approvals.Unsynced());
+        Assert.Equal(ApprovalAction.FailedSupervisorPin, record.Action);
+        Assert.Equal("simran", record.CashierId);
+        Assert.Equal("TILL2-SHIFT-20261007080000", record.ShiftClientId);
+    }
+
+    [Fact]
+    public async Task A_successful_login_does_not_reset_supervisor_pin_failures()
+    {
+        for (var i = 0; i < 4; i++)
+        {
+            f.Dialogs.Pins.Enqueue("0000");
+            await gate.ApproveAsync(ApprovalAction.LineVoid, "x");
+        }
+        var login = new LoginViewModel(f.Ctx, f.Session, () => new object());
+        foreach (var c in "1111") login.DigitCommand.Execute(c.ToString());
+        login.LoginCommand.Execute(null);
+        f.Dialogs.Pins.Enqueue("0000");
+        await gate.ApproveAsync(ApprovalAction.LineVoid, "x");
+        f.Dialogs.Pins.Enqueue("9999");
+        var asked = f.Dialogs.PinRequests;
+
+        Assert.Null(await gate.ApproveAsync(ApprovalAction.LineVoid, "x"));
+
+        Assert.Equal(asked, f.Dialogs.PinRequests);
+        Assert.Contains(f.Dialogs.Infos, m => m.Contains("Too many wrong PINs"));
     }
 
     [Fact]

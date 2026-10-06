@@ -41,7 +41,7 @@ public sealed class PresentationFixture : IDisposable
             () => new SaleContext(Catalog, new MoneySettings(3, RoundingMethod.Bankers, 0.25m), "Standard Selling", "Stores - AAML",
                 null, Vat, () => new DateOnly(2026, 10, 7)),
             text => Catalog.Items.Where(i => i.ItemName.Contains(text, StringComparison.OrdinalIgnoreCase)).ToList(),
-            new Authenticator(() => [Simran, Sup]), new PinAttemptLimiter(() => Clock.Now),
+            new Authenticator(() => [Simran, Sup]), new PinAttemptLimiter(() => Clock.Now), new PinAttemptLimiter(() => Clock.Now),
             new ShiftStore(db), new ReceiptStore(db), new ApprovalStore(db), new CatalogStore(db),
             Clock, Output, Navigator, Dialogs);
     }
