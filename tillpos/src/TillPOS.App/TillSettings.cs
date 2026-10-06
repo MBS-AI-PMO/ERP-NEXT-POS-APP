@@ -10,7 +10,7 @@ public sealed record LocalTestCashier(string Id, string Name, string Pin, bool I
 
 /// <summary>Per-till settings (settings.json). ApiSecretProtected is DPAPI-protected (see SecretProtector).
 /// LocalTestCashiers are only used while ERPNext has no POS Cashier list yet (testing; removed in Plan 4).
-/// Trn / ShopAddress are used on receipts only when ERPNext has none (Company Tax ID / POS Profile company address).</summary>
+/// Trn / ShopAddress are used on receipts only when ERPNext has none (Company Tax ID / POS Profile company address). ShopPhone is printed under the address when set.</summary>
 public sealed record TillSettings(
     string BaseUrl,
     string ApiKey,
@@ -28,7 +28,8 @@ public sealed record TillSettings(
     int SyncIntervalSeconds = 90,
     IReadOnlyList<LocalTestCashier>? LocalTestCashiers = null,
     string? Trn = null,
-    string? ShopAddress = null)
+    string? ShopAddress = null,
+    string? ShopPhone = null)
 {
     public static string DefaultPath =>
         Environment.GetEnvironmentVariable("TILLPOS_SETTINGS")

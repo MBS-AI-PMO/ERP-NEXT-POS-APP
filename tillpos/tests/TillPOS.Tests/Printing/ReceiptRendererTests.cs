@@ -19,6 +19,15 @@ public class ReceiptRendererTests
         [new ReceiptPayment("Cash Counter 2", 20m)], M("3.75"), M("0.080"), null);
 
     [Fact]
+    public void Phone_is_printed_under_the_address_only_when_set()
+    {
+        var with = ReceiptRenderer.TextLines(Sale(), Header with { Phone = "+971 6 000 0000" }, PaperWidth.Mm80);
+        var address = with.ToList().FindIndex(l => l.Contains("Ajman"));
+        Assert.Contains("Tel: +971 6 000 0000", with[address + 1]);
+        Assert.DoesNotContain(ReceiptRenderer.TextLines(Sale(), Header, PaperWidth.Mm80), l => l.Contains("Tel:"));
+    }
+
+    [Fact]
     public void Sale_receipt_has_the_tax_invoice_parts()
     {
         var text = string.Join("\n", ReceiptRenderer.TextLines(Sale(), Header, PaperWidth.Mm80));

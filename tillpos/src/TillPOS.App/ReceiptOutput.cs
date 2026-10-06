@@ -14,7 +14,7 @@ public sealed class ReceiptOutput(TillSettings settings, CatalogStore store) : I
     {
         var pos = store.LoadPosSettings() ?? throw new InvalidOperationException("POS settings are not downloaded yet.");
         var header = new ReceiptHeader(pos.CompanyName, FirstNonBlank(pos.AddressText, settings.ShopAddress), FirstNonBlank(pos.TaxId, settings.Trn),
-            $"Till {settings.TillNumber}", settings.ReceiptFooter);
+            $"Till {settings.TillNumber}", settings.ReceiptFooter, FirstNonBlank(null, settings.ShopPhone));
         if (string.IsNullOrWhiteSpace(settings.PrinterName))
         {
             var folder = Path.Combine(Path.GetDirectoryName(settings.DbPath)!, "receipts");

@@ -5,7 +5,7 @@ namespace TillPOS.Printing;
 
 public enum PaperWidth { Mm80 = 48, Mm58 = 32 }
 
-public sealed record ReceiptHeader(string CompanyName, string? Address, string? Trn, string TillName, string? Footer);
+public sealed record ReceiptHeader(string CompanyName, string? Address, string? Trn, string TillName, string? Footer, string? Phone = null);
 
 /// <summary>UAE simplified tax invoice / tax credit note layout (spec §9), as plain text lines and as ESC/POS bytes.</summary>
 public static class ReceiptRenderer
@@ -16,6 +16,7 @@ public static class ReceiptRenderer
         var lines = new List<string>();
         lines.AddRange(Wrap(h.CompanyName, w).Select(x => Center(x, w)));
         if (h.Address is { } address) lines.AddRange(Wrap(address, w).Select(x => Center(x, w)));
+        if (h.Phone is { } phone) lines.Add(Center("Tel: " + phone, w));
         if (h.Trn is { } trn) lines.Add(Center("TRN: " + trn, w));
         lines.Add(Center(r.Kind == ReceiptKind.Return ? "TAX CREDIT NOTE" : "TAX INVOICE", w));
         lines.Add(Pair("No.", r.ClientId, w));
