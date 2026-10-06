@@ -13,7 +13,9 @@ public sealed record Cashier(string Id, string Name, string? User, string PinHas
 public sealed record ApprovalRecord(
     string Id,
     ApprovalAction Action,
+    string CashierId,
     string SupervisorId,
+    string ShiftClientId,
     string? ReceiptClientId,
     string? ItemCode,
     decimal Amount,
@@ -41,10 +43,20 @@ public static class PinHasher
     {
         var parts = stored.Split('$');
         if (parts.Length != 4 || parts[0] != "pbkdf2-sha256") return false;
-        var iterations = int.Parse(parts[1], CultureInfo.InvariantCulture);
-        var salt = Convert.FromBase64String(parts[2]);
-        var expected = Convert.FromBase64String(parts[3]);
-        var actual = Rfc2898DeriveBytes.Pbkdf2(pin, salt, iterations, HashAlgorithmName.SHA256, expected.Length);
+        if (!int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var iterations) || iterations is < 1 or > 1_000_000)
+            return false;
+        byte[] salt, expected;
+        try
+        {
+            salt = Convert.FromBase64String(parts[2]);
+            expected = Convert.FromBase64String(parts[3]);
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+        if (salt.Length == 0 || expected.Length != HashBytes) return false;
+        var actual = Rfc2898DeriveBytes.Pbkdf2(pin, salt, iterations, HashAlgorithmName.SHA256, HashBytes);
         return CryptographicOperations.FixedTimeEquals(actual, expected);
     }
 }

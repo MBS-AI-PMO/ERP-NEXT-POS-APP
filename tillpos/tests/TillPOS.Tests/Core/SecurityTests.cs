@@ -52,4 +52,19 @@ public class SecurityTests
 
     [Fact]
     public void Invalid_pin_is_not_hashed() => Assert.Throws<ArgumentException>(() => PinHasher.Hash("12"));
+
+    [Theory]
+    [InlineData("garbage")]
+    [InlineData("pbkdf2-sha256$abc$AAAA$AAAA")]
+    [InlineData("pbkdf2-sha256$0$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")]
+    [InlineData("pbkdf2-sha256$10000$not base64!$AAAA")]
+    [InlineData("pbkdf2-sha256$10000$AAAAAAAAAAAAAAAAAAAAAA==$AAAA")]
+    public void Malformed_stored_hash_never_verifies(string stored) => Assert.False(PinHasher.Verify("1234", stored));
+
+    [Fact]
+    public void A_corrupt_cashier_row_does_not_block_other_logins()
+    {
+        var auth = new Authenticator(() => [new Cashier("bad", "Bad", null, "pbkdf2-sha256$0$x$y", false, true), C("ben", "2222")]);
+        Assert.Equal("ben", auth.Login("2222")!.Id);
+    }
 }
