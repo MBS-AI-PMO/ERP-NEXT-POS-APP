@@ -21,6 +21,7 @@
     <ProjectReference Include="..\..\src\TillPOS.Erp\TillPOS.Erp.csproj" />
     <ProjectReference Include="..\..\src\TillPOS.Sync\TillPOS.Sync.csproj" />
     <ProjectReference Include="..\..\src\TillPOS.Printing\TillPOS.Printing.csproj" />
+    <ProjectReference Include="..\..\src\TillPOS.Presentation\TillPOS.Presentation.csproj" />
   </ItemGroup>
 
 </Project>

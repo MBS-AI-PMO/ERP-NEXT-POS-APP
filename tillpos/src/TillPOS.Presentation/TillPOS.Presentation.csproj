@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\TillPOS.Core\TillPOS.Core.csproj" />
+    <ProjectReference Include="..\TillPOS.Data\TillPOS.Data.csproj" />
+    <ProjectReference Include="..\TillPOS.Sync\TillPOS.Sync.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+  </ItemGroup>
+
+</Project>
