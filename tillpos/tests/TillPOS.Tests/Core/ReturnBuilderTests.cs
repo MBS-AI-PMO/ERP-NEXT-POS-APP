@@ -26,6 +26,9 @@ public class ReturnBuilderTests
         catalog.Items.Add(new Item("TV", "Television", "Household", null, "PCS", false, true));
         catalog.Prices.Add(new ItemPrice("P-TV", "TV", "PCS", M("899"), null, null));
         catalog.Barcodes.Add(new ItemBarcode("999", "TV", null));
+        catalog.Items.Add(new Item("000089", "CUCUMBER/KIYAR", "Food", null, "Kg", false, true));
+        catalog.Prices.Add(new ItemPrice("P-CUC", "000089", "Kg", M("3.50"), null, null));
+        catalog.Barcodes.Add(new ItemBarcode("000089", "000089", "Kg"));
         ctx = new SaleContext(catalog, Money, "Standard Selling", "Stores - AAML", null, Vat, () => new DateOnly(2026, 10, 6));
     }
 
@@ -143,5 +146,33 @@ public class ReturnBuilderTests
         var cart = new Cart(ctx);
         cart.AddBarcode("111");
         Assert.Throws<ApprovalRequiredException>(() => Builder().BuildWithoutReceipt(cart, TenderKind.Cash, "c", "S2", "  "));
+    }
+
+    [Fact]
+    public void A_weighed_line_sold_at_whole_kilos_can_still_be_returned_in_part()
+    {
+        var cart = new Cart(ctx);
+        cart.AddBarcode(ScaleLabelTests.Ean("200008901000"));
+        var sale = new SaleRecorder(store, 2, Modes, () => At.AddHours(-1)).CompleteSale(cart,
+            new PaymentCalculator(Money).Plan(cart.Totals().GrandTotal, Tender.Card()), "c", "S1");
+        Assert.Equal(1m, sale.Lines[0].Qty);
+
+        var ret = Builder().Build(sale, [new ReturnLineRequest(1, M("0.400"))], TenderKind.Card, "c", "S2", null);
+
+        Assert.Equal(M("-0.400"), Assert.Single(ret.Lines).Qty);
+    }
+
+    [Fact]
+    public void Return_stores_reason_and_cashier_user()
+    {
+        var ret = Builder().Build(SellMilk(1), [new ReturnLineRequest(1, 1m)], TenderKind.Card, "c", "S2", null, "Damaged", "s@x");
+        Assert.Equal("Damaged", ret.Reason);
+        Assert.Equal("s@x", ret.CashierUser);
+
+        var cart = new Cart(ctx);
+        cart.AddBarcode("111");
+        var noReceipt = Builder().BuildWithoutReceipt(cart, TenderKind.Cash, "c", "S2", "SUP-1", "Expired", "s@x");
+        Assert.Equal("Expired", noReceipt.Reason);
+        Assert.Equal("s@x", noReceipt.CashierUser);
     }
 }

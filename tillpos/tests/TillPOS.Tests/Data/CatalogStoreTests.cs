@@ -21,6 +21,15 @@ public sealed class CatalogStoreTests : IDisposable
         []);
 
     [Fact]
+    public void Connections_use_full_synchronous_commits()
+    {
+        using var c = temp.Db.Open();
+        using var cmd = c.CreateCommand();
+        cmd.CommandText = "PRAGMA synchronous";
+        Assert.Equal(2L, Convert.ToInt64(cmd.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    [Fact]
     public void Migrate_is_idempotent()
     {
         temp.Db.Migrate();

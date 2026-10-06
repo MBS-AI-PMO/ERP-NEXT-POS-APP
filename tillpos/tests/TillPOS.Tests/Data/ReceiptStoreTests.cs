@@ -25,9 +25,11 @@ public sealed class ReceiptStoreTests : IDisposable
     [Fact]
     public void Receipt_round_trips_with_exact_decimals()
     {
-        var r = Sale("TILL2-1");
+        var r = Sale("TILL2-1") with { CashierUser = "s@x", Reason = "Damaged" };
         store.Save(r);
         var back = store.Get("TILL2-1")!;
+        Assert.Equal("s@x", back.CashierUser);
+        Assert.Equal("Damaged", back.Reason);
         Assert.Equal(r with { Lines = back.Lines, Payments = back.Payments }, back);
         Assert.Equal(r.Lines, back.Lines);
         Assert.Equal(r.Payments, back.Payments);

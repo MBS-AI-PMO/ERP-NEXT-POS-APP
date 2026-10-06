@@ -11,7 +11,7 @@ public sealed class TillDb(string path)
     {
         var c = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = Path, Pooling = true }.ToString());
         c.Open();
-        c.Exec(null, "PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;");
+        c.Exec(null, "PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000; PRAGMA synchronous = FULL;");
         return c;
     }
 

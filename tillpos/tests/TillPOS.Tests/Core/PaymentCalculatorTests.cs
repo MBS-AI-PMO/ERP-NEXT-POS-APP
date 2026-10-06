@@ -94,4 +94,8 @@ public class PaymentCalculatorTests
     [Fact]
     public void Refund_needs_a_negative_total() =>
         Assert.Throws<ArgumentOutOfRangeException>(() => calc.PlanRefund(M("5"), TenderKind.Cash));
+
+    [Fact]
+    public void Split_whose_cash_part_rounds_to_zero_is_refused() =>
+        Assert.Throws<ArgumentOutOfRangeException>(() => calc.Plan(M("10.10"), Tender.Split(M("10.00"), 0m)));
 }

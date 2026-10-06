@@ -109,7 +109,9 @@ public sealed class Cart(SaleContext ctx)
         if (label is not null)
         {
             var lineUom = string.IsNullOrEmpty(uom) ? item?.StockUom : uom;
-            labelQty = lineUom is not null && ctx.WeightUoms.Contains(lineUom) ? label.Value / 1000m : label.Value;
+            var weighed = (lineUom is not null && ctx.WeightUoms.Contains(lineUom))
+                || (fallbackFrom is not null && ctx.WeightUoms.Contains(fallbackFrom));
+            labelQty = weighed ? label.Value / 1000m : label.Value;
         }
         return Add(found.ItemCode, uom, scanned, labelQty, fallbackFrom);
     }
@@ -152,7 +154,7 @@ public sealed class Cart(SaleContext ctx)
     public void SetQty(Guid lineId, decimal qty)
     {
         if (qty <= 0) throw new ArgumentOutOfRangeException(nameof(qty), "Quantity must be greater than zero.");
-        Find(lineId).Qty = qty;
+        Countable(lineId).Qty = qty;
     }
 
     public void Increment(Guid lineId) => Countable(lineId).Qty += 1m;

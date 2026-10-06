@@ -60,7 +60,10 @@ public sealed class PaymentCalculator(MoneySettings money)
     {
         if (tender.CardAmount <= 0m || tender.CardAmount >= grandTotal)
             throw new ArgumentOutOfRangeException(nameof(tender), "The card part must be more than zero and less than the bill total.");
-        return WithCash(grandTotal, TenderKind.Split, tender.CardAmount, grandTotal - tender.CardAmount, tender.CashTendered);
+        var remainder = grandTotal - tender.CardAmount;
+        if (Rounder.RoundToSmallestFraction(remainder, money) <= 0m)
+            throw new ArgumentOutOfRangeException(nameof(tender), "The cash part rounds to zero; take the whole amount by card.");
+        return WithCash(grandTotal, TenderKind.Split, tender.CardAmount, remainder, tender.CashTendered);
     }
 
     private PaymentPlan WithCash(decimal grandTotal, TenderKind kind, decimal card, decimal exactCash, decimal tendered)

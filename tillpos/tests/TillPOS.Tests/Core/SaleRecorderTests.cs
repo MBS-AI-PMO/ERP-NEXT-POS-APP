@@ -141,4 +141,16 @@ public class SaleRecorderTests
         }
         finally { Thread.CurrentThread.CurrentCulture = saved; }
     }
+
+    [Fact]
+    public void Sale_stores_the_cashier_user()
+    {
+        var cart = NewCart();
+        cart.AddBarcode("111");
+        var plan = payments.Plan(cart.Totals().GrandTotal, Tender.Card());
+
+        var r = Recorder().CompleteSale(cart, plan, "Simran", "S1", "s@x");
+
+        Assert.Equal("s@x", r.CashierUser);
+    }
 }

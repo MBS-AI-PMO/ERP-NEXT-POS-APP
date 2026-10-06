@@ -24,6 +24,7 @@ public static class ShiftCalculator
     public static ShiftClosing Close(ShiftOpening opening, IReadOnlyList<Receipt> receipts, IReadOnlyDictionary<string, decimal> counted,
         TenderModes modes, DateTimeOffset closedAt, MoneySettings money)
     {
+        receipts = receipts.Where(r => r.ShiftClientId == opening.ClientId).ToList();
         var names = new List<string> { modes.Cash, modes.Card };
         foreach (var name in opening.OpeningAmounts.Select(p => p.ModeOfPayment)
                      .Concat(receipts.SelectMany(r => r.Payments).Select(p => p.ModeOfPayment))
@@ -36,7 +37,7 @@ public static class ShiftCalculator
             var taken = receipts.SelectMany(r => r.Payments).Where(p => p.ModeOfPayment == name).Sum(p => p.Amount);
             var change = name == modes.Cash ? receipts.Sum(r => r.Change) : 0m;
             var expected = Rounder.Round(start + taken - change, money);
-            var count = counted.TryGetValue(name, out var c) ? c : 0m;
+            var count = counted.TryGetValue(name, out var c) ? Rounder.Round(c, money) : 0m;
             return new ShiftModeSummary(name, start, expected, count, Rounder.Round(count - expected, money));
         }).ToList();
 

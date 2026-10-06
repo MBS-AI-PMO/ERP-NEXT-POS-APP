@@ -50,4 +50,21 @@ public class ShiftCalculatorTests
         Assert.Equal(-10m, closing.Modes.Single(m => m.ModeOfPayment == "Credit Card").Difference);
         Assert.Contains(closing.Modes, m => m.ModeOfPayment == "Cash Counter 2" && m.Expected == 0m);
     }
+
+    [Fact]
+    public void Receipts_from_another_shift_are_ignored_and_counted_amounts_are_rounded()
+    {
+        var opening = new ShiftOpening("S1", "c", At, [new ReceiptPayment("Cash Counter 2", 100m)]);
+        var other = R(ReceiptKind.Sale, 50m, M("47.619"), 0m, new ReceiptPayment("Cash Counter 2", 50m)) with { ShiftClientId = "OTHER" };
+
+        var closing = ShiftCalculator.Close(opening, [other], new Dictionary<string, decimal> { ["Cash Counter 2"] = M("100.0004") },
+            Modes, At, Money);
+
+        var cash = closing.Modes.Single(m => m.ModeOfPayment == "Cash Counter 2");
+        Assert.Equal(100m, cash.Expected);
+        Assert.Equal(M("100.000"), cash.Counted);
+        Assert.Equal(0m, cash.Difference);
+        Assert.Equal(0, closing.Sales);
+        Assert.Equal(0m, closing.GrandTotal);
+    }
 }

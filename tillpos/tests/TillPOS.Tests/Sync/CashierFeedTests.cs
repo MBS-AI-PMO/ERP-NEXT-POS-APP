@@ -81,4 +81,45 @@ public sealed class CashierFeedTests : IDisposable
         Assert.Contains("POS Cashier", ex.Message);
         Assert.Equal("kept", Assert.Single(cashiers.All()).Id);
     }
+
+    private void KeepLocal() => cashiers.ReplaceAll([new Cashier("kept", "Kept", null, PinHasher.Hash("1234"), false, true)]);
+
+    [Fact]
+    public async Task All_rows_invalid_while_a_local_list_exists_throws_and_keeps_the_list()
+    {
+        KeepLocal();
+        Row("a", null);
+        Row("b", "12");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => feed.RunAsync(default));
+
+        Assert.Equal("kept", Assert.Single(cashiers.All()).Id);
+    }
+
+    [Fact]
+    public async Task Empty_server_list_while_a_local_list_exists_throws_and_keeps_the_list()
+    {
+        KeepLocal();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => feed.RunAsync(default));
+
+        Assert.Equal("kept", Assert.Single(cashiers.All()).Id);
+    }
+
+    [Fact]
+    public async Task Empty_server_list_and_empty_local_list_is_fine() =>
+        Assert.Equal(0, await feed.RunAsync(default));
+
+    [Fact]
+    public async Task Result_counts_stored_skipped_and_shared_pins()
+    {
+        Row("a", "1234");
+        Row("b", "1234");
+        Row("c", "5678");
+        Row("d", null);
+
+        Assert.Equal(3, await feed.RunAsync(default));
+
+        Assert.Equal(new CashierFeedResult(3, 1, 1), feed.LastResult);
+    }
 }

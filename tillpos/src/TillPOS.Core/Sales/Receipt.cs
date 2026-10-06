@@ -42,7 +42,13 @@ public sealed record Receipt(
     IReadOnlyList<ReceiptPayment> Payments,
     decimal Change,
     decimal RoundingDifference,
-    string? ApprovedBy);
+    string? ApprovedBy)
+{
+    /// <summary>The cashier's ERPNext user (uploaded as posa_cashier).</summary>
+    public string? CashierUser { get; init; }
+    /// <summary>Why the items were returned (returns only).</summary>
+    public string? Reason { get; init; }
+}
 
 /// <summary>The POS Profile payment modes the till uses for cash and card.</summary>
 public sealed record TenderModes(string Cash, string Card);

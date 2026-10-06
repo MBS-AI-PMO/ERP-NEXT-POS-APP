@@ -141,4 +141,31 @@ public class CartScanTests
         Assert.Throws<InvalidOperationException>(() => cart.Decrement(id));
         Assert.Equal(M("0.740"), cart.Lines[0].Qty);
     }
+
+    [Fact]
+    public void Scale_label_on_a_barcode_whose_kg_unit_fell_back_to_pcs_still_reads_grams()
+    {
+        Item("003497", "YELLOW DAMIATY CHEESE", "PCS", "16.00", ("003497", "Kg"));
+        var cart = NewCart();
+
+        Assert.Equal(AddOutcome.Added, cart.AddBarcode(Ean("200349700250")).Outcome);
+
+        var line = Assert.Single(cart.Lines);
+        Assert.Equal("PCS", line.Uom);
+        Assert.Equal("Kg", line.UomFallbackFrom);
+        Assert.Equal(M("0.250"), line.Qty);
+        Assert.True(line.FromScaleLabel);
+        Assert.Equal(M("4.000"), cart.Totals().Lines[0].Amount);
+    }
+
+    [Fact]
+    public void Weighed_lines_cannot_be_retyped()
+    {
+        Item("000089", "CUCUMBER/KIYAR", "Kg", "3.50", ("000089", "Kg"));
+        var cart = NewCart();
+        var id = cart.AddBarcode("2000089007400").Line!.Id;
+
+        Assert.Throws<InvalidOperationException>(() => cart.SetQty(id, 0.2m));
+        Assert.Equal(M("0.740"), cart.Lines[0].Qty);
+    }
 }

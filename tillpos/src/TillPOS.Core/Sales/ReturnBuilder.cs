@@ -19,7 +19,7 @@ public sealed class ReturnBuilder(IReceiptStore store, SaleContext ctx, int till
     }
 
     public Receipt Build(Receipt original, IReadOnlyList<ReturnLineRequest> requests, TenderKind refundKind, string cashier,
-        string shiftClientId, string? approvedBy)
+        string shiftClientId, string? approvedBy, string? reason = null, string? cashierUser = null)
     {
         if (original.Kind != ReceiptKind.Sale) throw new InvalidOperationException("Only a sale can be returned.");
         if (requests.Count == 0 || requests.Any(r => r.Qty <= 0m))
@@ -32,27 +32,28 @@ public sealed class ReturnBuilder(IReceiptStore store, SaleContext ctx, int till
         {
             var sold = original.Lines.SingleOrDefault(l => l.LineNo == request.LineNo)
                 ?? throw new ArgumentException($"Line {request.LineNo} is not on receipt {original.ClientId}.", nameof(requests));
-            if (sold.Qty == decimal.Truncate(sold.Qty) && request.Qty != decimal.Truncate(request.Qty))
+            if (!sold.FromScaleLabel && sold.Qty == decimal.Truncate(sold.Qty) && request.Qty != decimal.Truncate(request.Qty))
                 throw new ArgumentException($"{sold.ItemName} is returned in whole units.", nameof(requests));
             var left = Returnable(original, request.LineNo);
             if (request.Qty > left) throw new InvalidOperationException($"Only {left} of {sold.ItemName} can still be returned.");
             lines.Add(sold with { Qty = -request.Qty, Amount = 0m });
         }
         var alreadyRefunded = -store.ReturnsAgainst(original.ClientId).Sum(r => r.GrandTotal);
-        return Finish(lines, original.ClientId, refundKind, cashier, shiftClientId, approvedBy, alwaysNeedsApproval: false, alreadyRefunded);
+        return Finish(lines, original.ClientId, refundKind, cashier, shiftClientId, approvedBy, alwaysNeedsApproval: false, alreadyRefunded, reason, cashierUser);
     }
 
-    public Receipt BuildWithoutReceipt(Cart cart, TenderKind refundKind, string cashier, string shiftClientId, string? approvedBy)
+    public Receipt BuildWithoutReceipt(Cart cart, TenderKind refundKind, string cashier, string shiftClientId, string? approvedBy,
+        string? reason = null, string? cashierUser = null)
     {
         if (cart.Lines.Count == 0) throw new InvalidOperationException("Scan the items being returned first.");
         var lines = SaleRecorder.ToLines(cart, cart.Totals()).Select(l => l with { Qty = -l.Qty, Amount = 0m }).ToList();
-        var receipt = Finish(lines, null, refundKind, cashier, shiftClientId, approvedBy, alwaysNeedsApproval: true, alreadyRefunded: 0m);
+        var receipt = Finish(lines, null, refundKind, cashier, shiftClientId, approvedBy, alwaysNeedsApproval: true, alreadyRefunded: 0m, reason, cashierUser);
         cart.Clear();
         return receipt;
     }
 
     private Receipt Finish(List<ReceiptLine> lines, string? returnAgainst, TenderKind refundKind, string cashier, string shiftClientId,
-        string? approvedBy, bool alwaysNeedsApproval, decimal alreadyRefunded)
+        string? approvedBy, bool alwaysNeedsApproval, decimal alreadyRefunded, string? reason, string? cashierUser)
     {
         var totals = new TaxCalculator(ctx.Money, ctx.Catalog.FindItemTaxTemplate)
             .Calculate(lines.Select(l => new TaxLineInput(l.Qty, l.Rate, l.ItemTaxTemplate)).ToList(), ctx.TaxTemplate);
@@ -74,7 +75,11 @@ public sealed class ReturnBuilder(IReceiptStore store, SaleContext ctx, int till
             plan.UsesErpRoundedTotal,
             plan.UsesErpRoundedTotal ? plan.AmountDue : 0m,
             plan.UsesErpRoundedTotal ? plan.RoundingDifference : 0m,
-            SaleRecorder.Payments(plan, modes), 0m, plan.RoundingDifference, approved ? approvedBy : null);
+            SaleRecorder.Payments(plan, modes), 0m, plan.RoundingDifference, approved ? approvedBy : null)
+        {
+            CashierUser = cashierUser,
+            Reason = reason,
+        };
         store.Save(receipt);
         return receipt;
     }
