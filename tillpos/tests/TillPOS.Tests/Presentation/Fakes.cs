@@ -12,6 +12,8 @@ public sealed class FakeDialogs : IDialogs
     public List<(Receipt Receipt, string? PrintError)> Receipts { get; } = [];
     public Queue<string?> ReceiptScans { get; } = new();
     public Func<string?>? LastReprint { get; private set; }
+    public int SetupRequests { get; private set; }
+    public Queue<bool> SetupResults { get; } = new();
 
     public Task<string?> AskPinAsync(string title, string reason)
     {
@@ -27,6 +29,12 @@ public sealed class FakeDialogs : IDialogs
         Receipts.Add((receipt, printError));
         LastReprint = reprint;
         return ReceiptScans.Count > 0 ? ReceiptScans.Dequeue() : null;
+    }
+
+    public bool ShowSetup()
+    {
+        SetupRequests++;
+        return SetupResults.Count > 0 && SetupResults.Dequeue();
     }
 }
 

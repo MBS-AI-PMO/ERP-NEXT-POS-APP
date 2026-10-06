@@ -1,0 +1,34 @@
+<Window x:Class="TillPOS.App.Dialogs.SetupDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="TillPOS setup" Width="520" SizeToContent="Height" WindowStartupLocation="CenterScreen" ResizeMode="NoResize"
+        FontFamily="Segoe UI" FontSize="16" Background="{StaticResource Ground}">
+  <StackPanel Margin="20">
+    <TextBlock Text="Till setup" FontSize="24" FontWeight="Bold" />
+    <TextBlock Text="Choose the receipt printer, test it, then save." Foreground="{StaticResource Muted}" Margin="0,4,0,16" />
+
+    <TextBlock Text="Receipt printer" FontWeight="SemiBold" />
+    <ComboBox x:Name="PrinterBox" Height="40" Margin="0,6,0,14" VerticalContentAlignment="Center" />
+
+    <TextBlock Text="Paper width" FontWeight="SemiBold" />
+    <StackPanel Orientation="Horizontal" Margin="0,6,0,14">
+      <RadioButton x:Name="Paper80" Content="80 mm" GroupName="Paper" Margin="0,0,24,0" VerticalContentAlignment="Center" />
+      <RadioButton x:Name="Paper58" Content="58 mm" GroupName="Paper" VerticalContentAlignment="Center" />
+    </StackPanel>
+
+    <TextBlock Text="Till number (1–99)" FontWeight="SemiBold" />
+    <TextBox x:Name="TillBox" Width="100" Height="40" HorizontalAlignment="Left" MaxLength="2" Margin="0,6,0,14"
+             VerticalContentAlignment="Center" FontSize="18" />
+
+    <CheckBox x:Name="PreviewBox" Content="Show invoice on screen after each sale" VerticalContentAlignment="Center" Margin="0,0,0,16" />
+
+    <Button x:Name="TestButton" Style="{StaticResource KeyButton}" Content="Test print" Width="160" HorizontalAlignment="Left"
+            Margin="0" Click="TestPrintClick" />
+    <TextBlock x:Name="StatusText" TextWrapping="Wrap" MinHeight="24" Margin="0,8,0,8" FontWeight="SemiBold" />
+
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
+      <Button Style="{StaticResource KeyButton}" Content="Cancel" Width="120" IsCancel="True" />
+      <Button x:Name="SaveButton" Style="{StaticResource PrimaryButton}" Content="Save and start" Width="220" Click="SaveClick" />
+    </StackPanel>
+  </StackPanel>
+</Window>

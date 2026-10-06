@@ -1,3 +1,4 @@
+using TillPOS.Core.Security;
 using TillPOS.Presentation;
 
 namespace TillPOS.Tests.Presentation;
@@ -65,6 +66,32 @@ public sealed class LoginViewModelTests : IDisposable
         foreach (var c in "12345678") vm.DigitCommand.Execute(c.ToString());
         Assert.Equal("123456", vm.Pin);
         Assert.Equal("●●●●●●", vm.PinMask);
+    }
+
+    [Fact]
+    public async Task Settings_with_a_supervisor_pin_opens_setup_once_and_logs_the_approval()
+    {
+        f.Dialogs.Pins.Enqueue("9999");
+
+        await Login().SettingsCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, f.Dialogs.SetupRequests);
+        var record = Assert.Single(f.Ctx.Approvals.Unsynced());
+        Assert.Equal(ApprovalAction.SettingsChange, record.Action);
+        Assert.Equal("sup", record.SupervisorId);
+        Assert.Equal("", record.CashierId);
+        Assert.Equal("", record.ShiftClientId);
+    }
+
+    [Fact]
+    public async Task Settings_with_a_cashier_pin_does_not_open_setup()
+    {
+        f.Dialogs.Pins.Enqueue("1111");
+
+        await Login().SettingsCommand.ExecuteAsync(null);
+
+        Assert.Equal(0, f.Dialogs.SetupRequests);
+        Assert.Equal(ApprovalAction.FailedSupervisorPin, Assert.Single(f.Ctx.Approvals.Unsynced()).Action);
     }
 
     [Fact]

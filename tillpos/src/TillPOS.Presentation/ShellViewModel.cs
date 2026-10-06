@@ -12,6 +12,7 @@ public sealed class ShellViewModel : ObservableObject, INavigator
     private bool online;
     private int pendingUploads;
     private string clock = "";
+    private string version = "";
 
     public SessionState Session { get; } = new();
     public object? Current { get => current; private set => SetProperty(ref current, value); }
@@ -21,6 +22,8 @@ public sealed class ShellViewModel : ObservableObject, INavigator
     public bool Online { get => online; set => SetProperty(ref online, value); }
     public int PendingUploads { get => pendingUploads; set => SetProperty(ref pendingUploads, value); }
     public string Clock { get => clock; set => SetProperty(ref clock, value); }
+    /// <summary>The build (e.g. "0.3.1-field"), shown on the login screen so field feedback can name it.</summary>
+    public string Version { get => version; set => SetProperty(ref version, value); }
 
     public void Show(object viewModel) => Current = viewModel;
 }

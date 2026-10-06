@@ -36,7 +36,7 @@ public sealed class AppHost
         store = new CatalogStore(db);
         catalog = new SqliteCatalog(db);
         cashiers = new CashierStore(db);
-        erp = ErpClient.Create(new ErpConnection(new Uri(settings.BaseUrl), settings.ApiKey, SecretProtector.Unprotect(settings.ApiSecretProtected)),
+        erp = ErpClient.Create(new ErpConnection(new Uri(settings.BaseUrl), settings.ApiKey, ApiSecret(settings)),
             TimeSpan.FromSeconds(60));
         syncContext = new SyncContext(erp, store, new KeysetPager(erp, new KvSyncStateStore(store)), settings.PosProfile);
 
@@ -92,6 +92,13 @@ public sealed class AppHost
     private object NewSale() =>
         new SaleViewModel(ctx, Shell.Session, new SupervisorGate(ctx, Shell.Session),
             (sale, kind) => new PaymentViewModel(ctx, Shell.Session, sale, kind));
+
+    /// <summary>SettingsStore has already replaced a plain secret with the protected one; the plain one is only used if
+    /// that could not happen.</summary>
+    private static string ApiSecret(TillSettings settings) =>
+        !string.IsNullOrEmpty(settings.ApiSecretProtected) ? SecretProtector.Unprotect(settings.ApiSecretProtected)
+        : !string.IsNullOrEmpty(settings.ApiSecret) ? settings.ApiSecret
+        : throw new InvalidOperationException("API secret missing in settings.json");
 
     private CatalogPuller NewPuller() => CatalogPuller.CreateDefault(syncContext, catalog.Reload, null, new CashierFeed(syncContext, cashiers));
 

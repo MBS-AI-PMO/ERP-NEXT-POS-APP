@@ -1,6 +1,7 @@
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using TillPOS.Core.Security;
 
 namespace TillPOS.Presentation;
 
@@ -21,7 +22,12 @@ public sealed class LoginViewModel : ObservableObject
         BackspaceCommand = new RelayCommand(() => { if (Pin.Length > 0) Pin = Pin[..^1]; });
         ClearCommand = new RelayCommand(() => Pin = "");
         LoginCommand = new RelayCommand(Login);
+        SettingsCommand = new AsyncRelayCommand(OpenSettingsAsync);
     }
+
+    /// <summary>Till setup (printer, paper, till number), supervisor only. Nobody is logged in here, so the approval is
+    /// logged without a cashier or shift.</summary>
+    public AsyncRelayCommand SettingsCommand { get; }
 
     public string Pin
     {
@@ -35,6 +41,14 @@ public sealed class LoginViewModel : ObservableObject
     public RelayCommand BackspaceCommand { get; }
     public RelayCommand ClearCommand { get; }
     public RelayCommand LoginCommand { get; }
+
+    private async Task OpenSettingsAsync()
+    {
+        Pin = "";
+        var gate = new SupervisorGate(ctx, new SessionState());
+        if (await gate.ApproveAsync(ApprovalAction.SettingsChange, "Change till settings") is null) return;
+        ctx.Dialogs.ShowSetup();
+    }
 
     public void Login()
     {

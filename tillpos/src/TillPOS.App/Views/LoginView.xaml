@@ -5,24 +5,32 @@
     <KeyBinding Key="Enter" Command="{Binding LoginCommand}" />
     <KeyBinding Key="Back" Command="{Binding BackspaceCommand}" />
   </UserControl.InputBindings>
-  <StackPanel Width="380" HorizontalAlignment="Center" VerticalAlignment="Center">
-    <TextBlock Text="Enter your PIN" FontSize="26" FontWeight="Bold" HorizontalAlignment="Center" />
-    <TextBlock Text="{Binding PinMask}" FontSize="32" HorizontalAlignment="Center" Margin="0,12" MinHeight="44" />
-    <TextBlock Text="{Binding Message}" Foreground="{StaticResource Danger}" HorizontalAlignment="Center" MinHeight="22" />
-    <UniformGrid Columns="3" Margin="0,8">
-      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="1" Command="{Binding DigitCommand}" CommandParameter="1" />
-      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="2" Command="{Binding DigitCommand}" CommandParameter="2" />
-      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="3" Command="{Binding DigitCommand}" CommandParameter="3" />
-      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="4" Command="{Binding DigitCommand}" CommandParameter="4" />
-      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="5" Command="{Binding DigitCommand}" CommandParameter="5" />
-      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="6" Command="{Binding DigitCommand}" CommandParameter="6" />
-      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="7" Command="{Binding DigitCommand}" CommandParameter="7" />
-      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="8" Command="{Binding DigitCommand}" CommandParameter="8" />
-      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="9" Command="{Binding DigitCommand}" CommandParameter="9" />
-      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="C" Command="{Binding ClearCommand}" />
-      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="0" Command="{Binding DigitCommand}" CommandParameter="0" />
-      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="⌫" Command="{Binding BackspaceCommand}" />
-    </UniformGrid>
-    <Button Style="{StaticResource PrimaryButton}" Content="Log in" Height="64" Command="{Binding LoginCommand}" />
-  </StackPanel>
+  <Grid>
+    <StackPanel Width="380" HorizontalAlignment="Center" VerticalAlignment="Center">
+      <TextBlock Text="Enter your PIN" FontSize="26" FontWeight="Bold" HorizontalAlignment="Center" />
+      <TextBlock Text="{Binding PinMask}" FontSize="32" HorizontalAlignment="Center" Margin="0,12" MinHeight="44" />
+      <TextBlock Text="{Binding Message}" Foreground="{StaticResource Danger}" HorizontalAlignment="Center" MinHeight="22" />
+      <UniformGrid Columns="3" Margin="0,8">
+        <Button Focusable="False" Style="{StaticResource KeyButton}" Content="1" Command="{Binding DigitCommand}" CommandParameter="1" />
+        <Button Focusable="False" Style="{StaticResource KeyButton}" Content="2" Command="{Binding DigitCommand}" CommandParameter="2" />
+        <Button Focusable="False" Style="{StaticResource KeyButton}" Content="3" Command="{Binding DigitCommand}" CommandParameter="3" />
+        <Button Focusable="False" Style="{StaticResource KeyButton}" Content="4" Command="{Binding DigitCommand}" CommandParameter="4" />
+        <Button Focusable="False" Style="{StaticResource KeyButton}" Content="5" Command="{Binding DigitCommand}" CommandParameter="5" />
+        <Button Focusable="False" Style="{StaticResource KeyButton}" Content="6" Command="{Binding DigitCommand}" CommandParameter="6" />
+        <Button Focusable="False" Style="{StaticResource KeyButton}" Content="7" Command="{Binding DigitCommand}" CommandParameter="7" />
+        <Button Focusable="False" Style="{StaticResource KeyButton}" Content="8" Command="{Binding DigitCommand}" CommandParameter="8" />
+        <Button Focusable="False" Style="{StaticResource KeyButton}" Content="9" Command="{Binding DigitCommand}" CommandParameter="9" />
+        <Button Focusable="False" Style="{StaticResource KeyButton}" Content="C" Command="{Binding ClearCommand}" />
+        <Button Focusable="False" Style="{StaticResource KeyButton}" Content="0" Command="{Binding DigitCommand}" CommandParameter="0" />
+        <Button Focusable="False" Style="{StaticResource KeyButton}" Content="⌫" Command="{Binding BackspaceCommand}" />
+      </UniformGrid>
+      <Button Style="{StaticResource PrimaryButton}" Content="Log in" Height="64" Command="{Binding LoginCommand}" />
+      <!-- The build, so field feedback can name it (ShellViewModel.Version, the window's DataContext). -->
+      <TextBlock Text="{Binding DataContext.Version, RelativeSource={RelativeSource AncestorType=Window}, StringFormat='TillPOS {0}'}"
+                 Foreground="{StaticResource Muted}" FontSize="12" HorizontalAlignment="Center" Margin="0,12,0,0" />
+    </StackPanel>
+    <!-- Supervisor only (asks for a supervisor PIN). Not focusable, so Enter and scanner keys never press it. -->
+    <Button Style="{StaticResource KeyButton}" Content="Settings" Focusable="False" FontSize="14" MinHeight="40"
+            HorizontalAlignment="Right" VerticalAlignment="Bottom" Padding="14,0" Command="{Binding SettingsCommand}" />
+  </Grid>
 </UserControl>
