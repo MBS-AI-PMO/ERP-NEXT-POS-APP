@@ -6,6 +6,22 @@
 
 ---
 
+## 0. Current focus (recorded 2026-10-06)
+
+**We are building the till / cash counter system only — Phase 1A (Al Ain Market cash counters).** Everything in this spec and in Plans 1–4 is for the till.
+
+The company-wide roadmap is in `docs/Master Technical Specification & Architecture Blueprint_ Unified POS System.docx`:
+
+| Phase | What | Status |
+|---|---|---|
+| **1A — Al Ain Market cash counters** | Offline-first supermarket till | **Current work** |
+| 1B — QuickGroc dark store | Picker / fulfilment mode | Future — not planned or built now |
+| 2 — Kattcho cloud kitchen | KOT routing, modifiers, aggregator orders | Future — not planned or built now |
+
+The Master Specification is the product authority for Phase 1A requirements; this spec is the detailed till design and is being aligned with it. Only "don't paint ourselves into a corner" choices are made for 1B/2 (e.g. no till-only assumptions baked into shared sync code); no 1B/2 features are built.
+
+**Open alignment questions with the Master Specification (Phase 1A):** target till hardware (Celeron J1900/J6412 4 GB with a 90 MB RAM budget vs. i5 8 GB), cash-vs-card rounding rule, which Master Spec features go into the first release vs. a follow-up release, and the scale-barcode label format.
+
 ## 1. Problem and goal
 
 The shop runs ERPNext 15.114.0 / Frappe 15.113.0 / POS Awesome 15.35.2 on a Docker server. The 4 till machines (Intel i5 3rd gen, 2 cores, 8 GB RAM, touchscreen, USB thermal printer, USB barcode scanner, cash drawer on the printer) cannot run POS Awesome fast enough: loading ~12,000 items in the browser makes billing slow. The same POS runs fine on a modern laptop, and all POS Awesome tuning has already been tried.
