@@ -121,4 +121,27 @@ public class ReturnBuilderTests
         var ret = Builder().Build(SellMilk(1), [new ReturnLineRequest(1, 1m)], TenderKind.Card, "c", "S2", null);
         Assert.Throws<InvalidOperationException>(() => Builder().Build(ret, [new ReturnLineRequest(1, 1m)], TenderKind.Card, "c", "S2", null));
     }
+
+    [Fact]
+    public void Splitting_a_refund_into_small_returns_still_needs_a_supervisor()
+    {
+        var sale = SellMilk(10);                                   // 10 × 6.79 = 67.90
+        Builder().Build(sale, [new ReturnLineRequest(1, 7m)], TenderKind.Card, "c", "S2", null);   // 47.53 — allowed
+        Assert.Throws<ApprovalRequiredException>(() =>
+            Builder().Build(sale, [new ReturnLineRequest(1, 1m)], TenderKind.Card, "c", "S2", null)); // total 54.32 > 50
+        Builder().Build(sale, [new ReturnLineRequest(1, 1m)], TenderKind.Card, "c", "S2", "SUP-1");
+    }
+
+    [Fact]
+    public void Whole_unit_lines_cannot_be_returned_in_fractions() =>
+        Assert.Throws<ArgumentException>(() =>
+            Builder().Build(SellMilk(2), [new ReturnLineRequest(1, M("0.5"))], TenderKind.Card, "c", "S2", null));
+
+    [Fact]
+    public void Blank_supervisor_id_is_not_an_approval()
+    {
+        var cart = new Cart(ctx);
+        cart.AddBarcode("111");
+        Assert.Throws<ApprovalRequiredException>(() => Builder().BuildWithoutReceipt(cart, TenderKind.Cash, "c", "S2", "  "));
+    }
 }
