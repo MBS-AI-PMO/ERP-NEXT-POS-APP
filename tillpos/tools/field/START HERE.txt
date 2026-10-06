@@ -1,4 +1,4 @@
-TILLPOS - FIELD TEST (version 0.3.1-field)
+TILLPOS - FIELD TEST (version {{VERSION}})
 ==========================================
 
 WHAT THIS IS
@@ -22,11 +22,13 @@ The setup screen opens by itself the first time.
 1. Pick your receipt printer from the list.
 2. Press "Test print". A test slip should come out.
 3. Check that the cash drawer opens.
-4. Press "Save".
+4. Press "Save and start".
+If the test print fails, check that the printer is on and try again. To start
+without a printer, choose "(No printer - save receipts as files)" in the list.
 
-LOGIN PINs (for testing)
-- Cashier:     1234
-- Supervisor:  9876
+LOGIN PINs (for testing - made for this package only, keep them private)
+- Cashier:     {{CASHIER_PIN}}
+- Supervisor:  {{SUPERVISOR_PIN}}
 
 KEYS
 F2      Search for an item
