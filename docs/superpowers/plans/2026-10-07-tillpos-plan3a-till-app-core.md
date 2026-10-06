@@ -784,7 +784,7 @@ git commit -m "feat(printing): UAE tax invoice receipt layout"
   - `interface IDialogs { Task<string?> AskPinAsync(string title, string reason); Task<decimal?> AskNumberAsync(string title, string prompt); void Info(string message); }`
   - `interface IClock { DateTimeOffset Now { get; } }`
   - `interface IReceiptOutput { void Print(Receipt receipt, bool openDrawer); }`
-  - `record TillContext(int TillNumber, TenderModes Modes, Func<SaleContext> NewSaleContext, Func<string, IReadOnlyList<Item>> Search, Authenticator Authenticator, PinAttemptLimiter Limiter, ShiftStore Shifts, ReceiptStore Receipts, ApprovalStore Approvals, CatalogStore Kv, IClock Clock, IReceiptOutput Output, INavigator Navigator, IDialogs Dialogs)`
+  - `record TillContext(int TillNumber, TenderModes Modes, Func<SaleContext> NewSaleContext, Func<string, IReadOnlyList<Item>> Search, Authenticator Authenticator, PinAttemptLimiter LoginLimiter, PinAttemptLimiter SupervisorLimiter, ShiftStore Shifts, ReceiptStore Receipts, ApprovalStore Approvals, CatalogStore Kv, IClock Clock, IReceiptOutput Output, INavigator Navigator, IDialogs Dialogs)`
   - `sealed class SessionState : ObservableObject` — `Cashier? Cashier`, `ShiftOpening? Shift`
   - `sealed class ShellViewModel : ObservableObject, INavigator` — `object? Current`, `SessionState Session`, `string ShopName`, `string TillName`, `string SyncStatus`, `bool Online`, `int PendingUploads`, `string Clock`
   - `sealed record StatusViewModel(string Message)`
@@ -904,7 +904,7 @@ public sealed class PresentationFixture : IDisposable
             () => new SaleContext(Catalog, new MoneySettings(3, RoundingMethod.Bankers, 0.25m), "Standard Selling", "Stores - AAML",
                 null, Vat, () => new DateOnly(2026, 10, 7)),
             text => Catalog.Items.Where(i => i.ItemName.Contains(text, StringComparison.OrdinalIgnoreCase)).ToList(),
-            new Authenticator(() => [Simran, Sup]), new PinAttemptLimiter(() => Clock.Now),
+            new Authenticator(() => [Simran, Sup]), new PinAttemptLimiter(() => Clock.Now), new PinAttemptLimiter(() => Clock.Now),
             new ShiftStore(db), new ReceiptStore(db), new ApprovalStore(db), new CatalogStore(db),
             Clock, Output, Navigator, Dialogs);
     }
@@ -1152,7 +1152,8 @@ public sealed record TillContext(
     Func<SaleContext> NewSaleContext,
     Func<string, IReadOnlyList<Item>> Search,
     Authenticator Authenticator,
-    PinAttemptLimiter Limiter,
+    PinAttemptLimiter LoginLimiter,
+    PinAttemptLimiter SupervisorLimiter,
     ShiftStore Shifts,
     ReceiptStore Receipts,
     ApprovalStore Approvals,
@@ -1341,9 +1342,9 @@ public sealed class SupervisorGate(TillContext ctx, SessionState session)
     public async Task<string?> ApproveAsync(ApprovalAction action, string reason, string? receiptClientId = null, string? itemCode = null,
         decimal amount = 0m)
     {
-        if (ctx.Limiter.IsLocked)
+        if (ctx.SupervisorLimiter.IsLocked)
         {
-            ctx.Dialogs.Info($"Too many wrong PINs. Try again in {Math.Ceiling(ctx.Limiter.Remaining.TotalSeconds).ToString(CultureInfo.InvariantCulture)} s.");
+            ctx.Dialogs.Info($"Too many wrong PINs. Try again in {Math.Ceiling(ctx.SupervisorLimiter.Remaining.TotalSeconds).ToString(CultureInfo.InvariantCulture)} s.");
             return null;
         }
 
@@ -1353,13 +1354,13 @@ public sealed class SupervisorGate(TillContext ctx, SessionState session)
         var supervisor = ctx.Authenticator.Supervisor(pin);
         if (supervisor is null)
         {
-            ctx.Limiter.Failed();
+            ctx.SupervisorLimiter.Failed();
             Log(ApprovalAction.FailedSupervisorPin, "", reason, receiptClientId, itemCode, amount);
             ctx.Dialogs.Info("That is not a supervisor PIN.");
             return null;
         }
 
-        ctx.Limiter.Succeeded();
+        ctx.SupervisorLimiter.Succeeded();
         Log(action, supervisor.Id, reason, receiptClientId, itemCode, amount);
         return supervisor.Id;
     }
@@ -1544,21 +1545,21 @@ public sealed class LoginViewModel : ObservableObject
     {
         var typed = Pin;
         Pin = "";
-        if (ctx.Limiter.IsLocked)
+        if (ctx.LoginLimiter.IsLocked)
         {
-            Message = $"Too many wrong PINs — wait {Math.Ceiling(ctx.Limiter.Remaining.TotalSeconds).ToString(CultureInfo.InvariantCulture)} s.";
+            Message = $"Too many wrong PINs — wait {Math.Ceiling(ctx.LoginLimiter.Remaining.TotalSeconds).ToString(CultureInfo.InvariantCulture)} s.";
             return;
         }
 
         var cashier = ctx.Authenticator.Login(typed);
         if (cashier is null)
         {
-            ctx.Limiter.Failed();
+            ctx.LoginLimiter.Failed();
             Message = "Wrong PIN.";
             return;
         }
 
-        ctx.Limiter.Succeeded();
+        ctx.LoginLimiter.Succeeded();
         Message = "";
         session.Cashier = cashier;
         session.Shift = ctx.Shifts.Current();
@@ -2691,7 +2692,7 @@ public sealed class AppHost
             () => SaleContext.Create(catalog, store.LoadPosSettings()!, catalog.FindSalesTaxTemplate, settings.Precision, settings.Rounding,
                 () => DateOnly.FromDateTime(DateTime.Now)),
             text => catalog.Search(text),
-            new Authenticator(cashiers.All), new PinAttemptLimiter(() => DateTimeOffset.Now),
+            new Authenticator(cashiers.All), new PinAttemptLimiter(() => DateTimeOffset.Now), new PinAttemptLimiter(() => DateTimeOffset.Now),
             new ShiftStore(db), new ReceiptStore(db), new ApprovalStore(db), store,
             new SystemClock(), new ReceiptOutput(settings, store), Shell, dialogs);
     }
