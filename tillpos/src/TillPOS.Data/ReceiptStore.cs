@@ -41,6 +41,12 @@ public sealed class ReceiptStore(TillDb db) : IReceiptStore
     public IReadOnlyList<Receipt> ReturnsAgainst(string clientId) => Query("WHERE return_against = @p ORDER BY created_at", clientId);
     public IReadOnlyList<Receipt> ByShift(string shiftClientId) => Query("WHERE shift_client_id = @p ORDER BY created_at", shiftClientId);
 
+    public int CountPending()
+    {
+        using var c = db.Open();
+        return Convert.ToInt32(c.Scalar(null, "SELECT COUNT(*) FROM receipt WHERE sync_status = 'Pending'"), CultureInfo.InvariantCulture);
+    }
+
     public IReadOnlyList<Receipt> ListPending(int limit)
     {
         using var c = db.Open();

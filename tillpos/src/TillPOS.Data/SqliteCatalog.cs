@@ -12,10 +12,15 @@ public sealed class SqliteCatalog : ICatalog
 {
     private const string ItemColumns = "item_code, item_name, item_group, brand, stock_uom, disabled, is_sales_item";
     private readonly TillDb db;
-    private Dictionary<string, ItemGroupNode> groups = [];
-    private Dictionary<string, List<ItemTaxAssignment>> groupTaxes = [];
-    private List<PricingRule> rules = [];
-    private Dictionary<string, ItemTaxTemplate> itemTaxTemplates = [];
+
+    private sealed record CachedTables(
+        IReadOnlyDictionary<string, ItemGroupNode> Groups,
+        IReadOnlyDictionary<string, List<ItemTaxAssignment>> GroupTaxes,
+        IReadOnlyList<PricingRule> Rules,
+        IReadOnlyDictionary<string, ItemTaxTemplate> ItemTaxTemplates);
+
+    private volatile CachedTables cache = new(
+        new Dictionary<string, ItemGroupNode>(), new Dictionary<string, List<ItemTaxAssignment>>(), [], new Dictionary<string, ItemTaxTemplate>());
 
     public SqliteCatalog(TillDb db)
     {
@@ -23,17 +28,20 @@ public sealed class SqliteCatalog : ICatalog
         Reload();
     }
 
+    /// <summary>Reloads the cached tables and swaps them in one assignment, so a background sync never
+    /// exposes a half-updated mix to the till's UI thread.</summary>
     public void Reload()
     {
         using var c = db.Open();
-        groups = c.Query("SELECT name, parent, lft, rgt FROM item_group",
+        var groups = c.Query("SELECT name, parent, lft, rgt FROM item_group",
             r => new ItemGroupNode(r.GetString(0), Str(r, 1), r.GetInt32(2), r.GetInt32(3))).ToDictionary(g => g.Name);
-        groupTaxes = c.Query("SELECT parent, item_tax_template, tax_category, valid_from, idx FROM item_tax WHERE parent_type = 'Item Group'",
+        var groupTaxes = c.Query("SELECT parent, item_tax_template, tax_category, valid_from, idx FROM item_tax WHERE parent_type = 'Item Group'",
                 r => (Parent: r.GetString(0), Row: ReadTax(r, 1)))
             .GroupBy(x => x.Parent).ToDictionary(g => g.Key, g => g.Select(x => x.Row).ToList());
-        rules = c.Query("SELECT json FROM pricing_rule", r => JsonSerializer.Deserialize<PricingRule>(r.GetString(0))!);
-        itemTaxTemplates = c.Query("SELECT json FROM item_tax_template", r => JsonSerializer.Deserialize<ItemTaxTemplate>(r.GetString(0))!)
+        var rules = c.Query("SELECT json FROM pricing_rule", r => JsonSerializer.Deserialize<PricingRule>(r.GetString(0))!);
+        var itemTaxTemplates = c.Query("SELECT json FROM item_tax_template", r => JsonSerializer.Deserialize<ItemTaxTemplate>(r.GetString(0))!)
             .ToDictionary(t => t.Name);
+        cache = new CachedTables(groups, groupTaxes, rules, itemTaxTemplates);
     }
 
     public Item? FindItem(string itemCode)
@@ -66,9 +74,9 @@ public sealed class SqliteCatalog : ICatalog
             r => new ItemPrice(r.GetString(0), r.GetString(1), Str(r, 2), Dec(r, 3), Date(r, 4), Date(r, 5)), ("@c", itemCode));
     }
 
-    public ItemGroupNode? FindGroup(string name) => groups.GetValueOrDefault(name);
+    public ItemGroupNode? FindGroup(string name) => cache.Groups.GetValueOrDefault(name);
 
-    public IReadOnlyList<PricingRule> PricingRules() => rules;
+    public IReadOnlyList<PricingRule> PricingRules() => cache.Rules;
 
     public IReadOnlyList<ItemTaxAssignment> ItemTaxes(string itemCode)
     {
@@ -78,9 +86,9 @@ public sealed class SqliteCatalog : ICatalog
     }
 
     public IReadOnlyList<ItemTaxAssignment> ItemGroupTaxes(string itemGroup) =>
-        groupTaxes.TryGetValue(itemGroup, out var rows) ? rows : [];
+        cache.GroupTaxes.TryGetValue(itemGroup, out var rows) ? rows : [];
 
-    public ItemTaxTemplate? FindItemTaxTemplate(string name) => itemTaxTemplates.GetValueOrDefault(name);
+    public ItemTaxTemplate? FindItemTaxTemplate(string name) => cache.ItemTaxTemplates.GetValueOrDefault(name);
 
     public SalesTaxTemplate? FindSalesTaxTemplate(string name)
     {

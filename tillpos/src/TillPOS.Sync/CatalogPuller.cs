@@ -40,7 +40,7 @@ public sealed class CatalogPuller(IReadOnlyList<ISyncFeed> feeds, Action afterPu
         return new PullReport(results);
     }
 
-    public static CatalogPuller CreateDefault(SyncContext ctx, Action afterPull, Func<DateTimeOffset>? now = null) => new(
+    public static CatalogPuller CreateDefault(SyncContext ctx, Action afterPull, Func<DateTimeOffset>? now = null, params ISyncFeed[] extraFeeds) => new(
     [
         new PosProfileFeed(ctx),
         new ItemGroupFeed(ctx),
@@ -51,5 +51,6 @@ public sealed class CatalogPuller(IReadOnlyList<ISyncFeed> feeds, Action afterPu
         new ItemPriceFeed(ctx),
         new DeletionFeed(ctx),
         new ReconcileFeed(ctx, now ?? (() => DateTimeOffset.UtcNow)),
+        .. extraFeeds,
     ], afterPull);
 }

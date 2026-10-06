@@ -118,4 +118,13 @@ public sealed class ReceiptStoreTests : IDisposable
         Assert.Equal("RET", Assert.Single(store.ReturnsAgainst("SALE")).ClientId);
         Assert.Equal("SALE", Assert.Single(store.ByShift("S1")).ClientId);
     }
+
+    [Fact]
+    public void Counts_pending_receipts()
+    {
+        store.Save(Sale("A"));
+        store.Save(Sale("B", minute: 1));
+        store.MarkSynced("A", "ACC-1");
+        Assert.Equal(1, store.CountPending());
+    }
 }
