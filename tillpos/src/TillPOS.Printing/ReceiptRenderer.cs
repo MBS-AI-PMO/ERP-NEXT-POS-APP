@@ -31,10 +31,14 @@ public static class ReceiptRenderer
         lines.Add(new string('-', w));
         lines.Add(Pair("Total incl. VAT", Money(r.GrandTotal), w));
         lines.Add(Pair("VAT included", Money(r.TotalTaxes), w));
-        if (r.UsesErpRoundedTotal && r.RoundingAdjustment != 0m)
+        // Cash bills use ERPNext's rounded total; split bills round only the cash part. Either way show what was
+        // actually due, so the payment lines minus change add up on paper.
+        var rounding = r.UsesErpRoundedTotal ? r.RoundingAdjustment : r.RoundingDifference;
+        var amountDue = r.UsesErpRoundedTotal ? r.RoundedTotal : r.GrandTotal + r.RoundingDifference;
+        if (amountDue != r.GrandTotal)
         {
-            lines.Add(Pair("Rounding", Money(r.RoundingAdjustment), w));
-            lines.Add(Pair("Amount due", Money(r.RoundedTotal), w));
+            lines.Add(Pair("Rounding", Money(rounding), w));
+            lines.Add(Pair("Amount due", Money(amountDue), w));
         }
         foreach (var payment in r.Payments) lines.Add(Pair(payment.ModeOfPayment, Money(payment.Amount), w));
         if (r.Change != 0m) lines.Add(Pair("Change", Money(r.Change), w));
@@ -49,8 +53,8 @@ public static class ReceiptRenderer
         foreach (var line in TextLines(r, h, paper)) printer.Line(line);
         if (h.Trn is { } trn)
         {
-            var total = r.UsesErpRoundedTotal ? r.RoundedTotal : r.GrandTotal;
-            printer.Align(Alignment.Center).Qr(FtaQr.Encode(h.CompanyName, trn, r.CreatedAt, total, r.TotalTaxes)).Align(Alignment.Left);
+            // Field 4 is the VAT-inclusive invoice value (consistent with field 5); cash rounding is a payment adjustment.
+            printer.Align(Alignment.Center).Qr(FtaQr.Encode(h.CompanyName, trn, r.CreatedAt, r.GrandTotal, r.TotalTaxes)).Align(Alignment.Left);
         }
         printer.Feed(3).Cut();
         if (openDrawer) printer.KickDrawer();

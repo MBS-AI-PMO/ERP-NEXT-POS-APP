@@ -10,18 +10,18 @@
     <TextBox x:Name="CashBox" Text="{Binding OpeningCash.Text, UpdateSourceTrigger=PropertyChanged}" FontSize="28" Height="56" FontFamily="Consolas" />
     <TextBlock Text="{Binding Message}" Foreground="{StaticResource Danger}" MinHeight="22" Margin="0,4" />
     <UniformGrid Columns="3">
-      <Button Style="{StaticResource KeyButton}" Content="1" Command="{Binding KeyCommand}" CommandParameter="1" />
-      <Button Style="{StaticResource KeyButton}" Content="2" Command="{Binding KeyCommand}" CommandParameter="2" />
-      <Button Style="{StaticResource KeyButton}" Content="3" Command="{Binding KeyCommand}" CommandParameter="3" />
-      <Button Style="{StaticResource KeyButton}" Content="4" Command="{Binding KeyCommand}" CommandParameter="4" />
-      <Button Style="{StaticResource KeyButton}" Content="5" Command="{Binding KeyCommand}" CommandParameter="5" />
-      <Button Style="{StaticResource KeyButton}" Content="6" Command="{Binding KeyCommand}" CommandParameter="6" />
-      <Button Style="{StaticResource KeyButton}" Content="7" Command="{Binding KeyCommand}" CommandParameter="7" />
-      <Button Style="{StaticResource KeyButton}" Content="8" Command="{Binding KeyCommand}" CommandParameter="8" />
-      <Button Style="{StaticResource KeyButton}" Content="9" Command="{Binding KeyCommand}" CommandParameter="9" />
-      <Button Style="{StaticResource KeyButton}" Content="." Command="{Binding KeyCommand}" CommandParameter="." />
-      <Button Style="{StaticResource KeyButton}" Content="0" Command="{Binding KeyCommand}" CommandParameter="0" />
-      <Button Style="{StaticResource KeyButton}" Content="⌫" Command="{Binding KeyCommand}" CommandParameter="⌫" />
+      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="1" Command="{Binding KeyCommand}" CommandParameter="1" />
+      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="2" Command="{Binding KeyCommand}" CommandParameter="2" />
+      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="3" Command="{Binding KeyCommand}" CommandParameter="3" />
+      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="4" Command="{Binding KeyCommand}" CommandParameter="4" />
+      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="5" Command="{Binding KeyCommand}" CommandParameter="5" />
+      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="6" Command="{Binding KeyCommand}" CommandParameter="6" />
+      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="7" Command="{Binding KeyCommand}" CommandParameter="7" />
+      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="8" Command="{Binding KeyCommand}" CommandParameter="8" />
+      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="9" Command="{Binding KeyCommand}" CommandParameter="9" />
+      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="." Command="{Binding KeyCommand}" CommandParameter="." />
+      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="0" Command="{Binding KeyCommand}" CommandParameter="0" />
+      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="⌫" Command="{Binding KeyCommand}" CommandParameter="⌫" />
     </UniformGrid>
     <Button Style="{StaticResource PrimaryButton}" Content="Open shift" Height="64" Command="{Binding OpenCommand}" />
   </StackPanel>

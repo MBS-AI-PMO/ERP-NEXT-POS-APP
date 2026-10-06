@@ -7,10 +7,10 @@
     <TextBlock x:Name="ReasonText" TextWrapping="Wrap" FontWeight="SemiBold" Margin="0,0,0,12" />
     <PasswordBox x:Name="PinBox" FontSize="24" Height="48" MaxLength="6" />
     <UniformGrid Columns="3" Margin="0,12,0,0">
-      <Button Style="{StaticResource KeyButton}" Content="1" Click="Digit" /><Button Style="{StaticResource KeyButton}" Content="2" Click="Digit" /><Button Style="{StaticResource KeyButton}" Content="3" Click="Digit" />
-      <Button Style="{StaticResource KeyButton}" Content="4" Click="Digit" /><Button Style="{StaticResource KeyButton}" Content="5" Click="Digit" /><Button Style="{StaticResource KeyButton}" Content="6" Click="Digit" />
-      <Button Style="{StaticResource KeyButton}" Content="7" Click="Digit" /><Button Style="{StaticResource KeyButton}" Content="8" Click="Digit" /><Button Style="{StaticResource KeyButton}" Content="9" Click="Digit" />
-      <Button Style="{StaticResource KeyButton}" Content="Cancel" IsCancel="True" /><Button Style="{StaticResource KeyButton}" Content="0" Click="Digit" /><Button Style="{StaticResource PrimaryButton}" Content="OK" IsDefault="True" Click="Ok" />
+      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="1" Click="Digit" /><Button Focusable="False" Style="{StaticResource KeyButton}" Content="2" Click="Digit" /><Button Focusable="False" Style="{StaticResource KeyButton}" Content="3" Click="Digit" />
+      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="4" Click="Digit" /><Button Focusable="False" Style="{StaticResource KeyButton}" Content="5" Click="Digit" /><Button Focusable="False" Style="{StaticResource KeyButton}" Content="6" Click="Digit" />
+      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="7" Click="Digit" /><Button Focusable="False" Style="{StaticResource KeyButton}" Content="8" Click="Digit" /><Button Focusable="False" Style="{StaticResource KeyButton}" Content="9" Click="Digit" />
+      <Button Style="{StaticResource KeyButton}" Content="Cancel" IsCancel="True" /><Button Focusable="False" Style="{StaticResource KeyButton}" Content="0" Click="Digit" /><Button Style="{StaticResource PrimaryButton}" Content="OK" IsDefault="True" Click="Ok" />
     </UniformGrid>
   </StackPanel>
 </Window>

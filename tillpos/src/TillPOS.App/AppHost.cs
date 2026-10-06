@@ -46,7 +46,7 @@ public sealed class AppHost
             () => SaleContext.Create(catalog, store.LoadPosSettings()!, catalog.FindSalesTaxTemplate, settings.Precision, settings.Rounding,
                 () => DateOnly.FromDateTime(DateTime.Now)),
             text => catalog.Search(text),
-            new Authenticator(cashiers.All), new PinAttemptLimiter(() => DateTimeOffset.Now), new PinAttemptLimiter(() => DateTimeOffset.Now),
+            new Authenticator(LoginCashiers(cashiers, settings)), new PinAttemptLimiter(() => DateTimeOffset.Now), new PinAttemptLimiter(() => DateTimeOffset.Now),
             new ShiftStore(db), new ReceiptStore(db), new ApprovalStore(db), store,
             new SystemClock(), new ReceiptOutput(settings, store), Shell, dialogs);
     }
@@ -74,7 +74,6 @@ public sealed class AppHost
             await Task.Delay(TimeSpan.FromSeconds(30));
         }
 
-        AddLocalTestCashiersIfNoneSynced();
         Shell.ShopName = store.LoadPosSettings()!.CompanyName;
         Shell.Show(NewLogin());
 
@@ -92,10 +91,18 @@ public sealed class AppHost
 
     private CatalogPuller NewPuller() => CatalogPuller.CreateDefault(syncContext, catalog.Reload, null, new CashierFeed(syncContext, cashiers));
 
-    private void AddLocalTestCashiersIfNoneSynced()
+    /// <summary>The synced ERPNext cashiers; while none have synced yet, the settings' local test cashiers (hashed once,
+    /// kept in memory only and never written to the database). They stop working as soon as ERPNext cashiers sync.</summary>
+    private static Func<IReadOnlyList<Cashier>> LoginCashiers(CashierStore cashiers, TillSettings settings)
     {
-        if (cashiers.All().Count > 0 || settings.LocalTestCashiers is not { Count: > 0 } local) return;
-        cashiers.ReplaceAll(local.Where(c => PinHasher.IsValidPin(c.Pin))
-            .Select(c => new Cashier(c.Id, c.Name, null, PinHasher.Hash(c.Pin), c.IsSupervisor, true)));
+        IReadOnlyList<Cashier> localHashed = (settings.LocalTestCashiers ?? [])
+            .Where(c => PinHasher.IsValidPin(c.Pin))
+            .Select(c => new Cashier(c.Id, c.Name, null, PinHasher.Hash(c.Pin), c.IsSupervisor, true))
+            .ToList();
+        return () =>
+        {
+            var synced = cashiers.All();
+            return synced.Count > 0 ? synced : localHashed;
+        };
     }
 }

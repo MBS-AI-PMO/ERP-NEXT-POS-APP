@@ -67,6 +67,56 @@ public class ReceiptRendererTests
     }
 
     [Fact]
+    public void Qr_total_is_the_grand_total_even_when_cash_was_rounded()
+    {
+        var receipt = Sale();
+        var bytes = ReceiptRenderer.EscPosBytes(receipt, Header, PaperWidth.Mm80, false);
+
+        var expected = FtaQr.Encode(Header.CompanyName, Header.Trn!, receipt.CreatedAt, receipt.GrandTotal, receipt.TotalTaxes);
+        var rounded = FtaQr.Encode(Header.CompanyName, Header.Trn!, receipt.CreatedAt, receipt.RoundedTotal, receipt.TotalTaxes);
+        Assert.True(EscPosTests.Contains(bytes, System.Text.Encoding.ASCII.GetBytes(expected)));
+        Assert.False(EscPosTests.Contains(bytes, System.Text.Encoding.ASCII.GetBytes(rounded)));
+    }
+
+    [Fact]
+    public void Split_receipt_with_a_rounding_difference_shows_rounding_and_amount_due()
+    {
+        var split = Sale() with
+        {
+            UsesErpRoundedTotal = false,
+            RoundedTotal = 0m,
+            RoundingAdjustment = 0m,
+            Payments = [new ReceiptPayment("Credit Card", 10m), new ReceiptPayment("Cash Counter 2", 10m)],
+            Change = M("3.75"),
+            RoundingDifference = M("0.080"),
+        };
+
+        var lines = ReceiptRenderer.TextLines(split, Header, PaperWidth.Mm80);
+
+        Assert.Contains(lines, l => l.StartsWith("Rounding") && l.EndsWith(" 0.08"));
+        Assert.Contains(lines, l => l.StartsWith("Amount due") && l.EndsWith(" 16.25"));
+    }
+
+    [Fact]
+    public void Card_receipt_has_no_rounding_lines()
+    {
+        var card = Sale() with
+        {
+            UsesErpRoundedTotal = false,
+            RoundedTotal = 0m,
+            RoundingAdjustment = 0m,
+            Payments = [new ReceiptPayment("Credit Card", M("16.170"))],
+            Change = 0m,
+            RoundingDifference = 0m,
+        };
+
+        var text = string.Join("\n", ReceiptRenderer.TextLines(card, Header, PaperWidth.Mm80));
+
+        Assert.DoesNotContain("Rounding", text);
+        Assert.DoesNotContain("Amount due", text);
+    }
+
+    [Fact]
     public void Without_a_trn_there_is_no_qr_code() =>
         Assert.False(EscPosTests.Contains(ReceiptRenderer.EscPosBytes(Sale(), Header with { Trn = null }, PaperWidth.Mm80, false),
             [0x1D, 0x28, 0x6B]));

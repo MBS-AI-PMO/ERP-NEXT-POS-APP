@@ -45,6 +45,18 @@ public class PinAttemptLimiterTests
     }
 
     [Fact]
+    public void Remaining_reads_the_clock_once_so_it_is_never_negative()
+    {
+        // Each clock read moves time on: the lock is taken at `now`, then reads return 59.5 s and 61 s later.
+        var ticks = new Queue<DateTimeOffset>([now, now.AddSeconds(59.5), now.AddSeconds(61)]);
+        var end = now.AddSeconds(61);
+        var limiter = new PinAttemptLimiter(() => ticks.Count > 0 ? ticks.Dequeue() : end);
+        for (var i = 0; i < 5; i++) limiter.Failed(); // only the fifth failure reads the clock
+
+        Assert.Equal(TimeSpan.FromSeconds(0.5), limiter.Remaining);
+    }
+
+    [Fact]
     public void Failed_supervisor_pin_is_an_approval_action() =>
         Assert.Equal("FailedSupervisorPin", ApprovalAction.FailedSupervisorPin.ToString());
 }

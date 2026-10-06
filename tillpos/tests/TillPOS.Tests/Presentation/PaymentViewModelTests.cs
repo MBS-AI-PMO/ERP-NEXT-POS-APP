@@ -102,6 +102,8 @@ public sealed class PaymentViewModelTests : IDisposable
         Assert.Single(f.Ctx.Receipts.ListPending(10));
         Assert.True(sale.MessageIsError);
         Assert.Contains("printer failed", sale.Message);
+        Assert.Contains("reprint is not available yet", sale.Message);
+        Assert.DoesNotContain("Ctrl+P", sale.Message);
         Assert.Same(sale, f.Navigator.Current);
     }
 

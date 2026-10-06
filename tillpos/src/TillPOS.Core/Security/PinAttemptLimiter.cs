@@ -1,7 +1,7 @@
 namespace TillPOS.Core.Security;
 
 /// <summary>Throttles wrong PINs: after <c>maxFailures</c> consecutive failures the PIN prompt is locked for the lockout period.
-/// One instance is shared by the login screen and the supervisor prompt of a till.</summary>
+/// Use one instance per PIN prompt: the login screen and the supervisor prompt each have their own.</summary>
 public sealed class PinAttemptLimiter(Func<DateTimeOffset> now, int maxFailures = 5, TimeSpan? lockout = null)
 {
     private readonly TimeSpan lockFor = lockout ?? TimeSpan.FromSeconds(60);
@@ -10,7 +10,14 @@ public sealed class PinAttemptLimiter(Func<DateTimeOffset> now, int maxFailures 
 
     public bool IsLocked => lockedUntil is { } until && now() < until;
 
-    public TimeSpan Remaining => IsLocked ? lockedUntil!.Value - now() : TimeSpan.Zero;
+    public TimeSpan Remaining
+    {
+        get
+        {
+            var time = now();
+            return lockedUntil is { } until && time < until ? until - time : TimeSpan.Zero;
+        }
+    }
 
     public void Failed()
     {

@@ -16,21 +16,21 @@
         </StackPanel>
       </Border>
       <UniformGrid Columns="3" Margin="0,12">
-        <Button Style="{StaticResource KeyButton}" Height="60" Content="Cash" Command="{Binding SetKindCommand}" CommandParameter="Cash" />
-        <Button Style="{StaticResource KeyButton}" Height="60" Content="Card" Command="{Binding SetKindCommand}" CommandParameter="Card" />
-        <Button Style="{StaticResource KeyButton}" Height="60" Content="Split: card + cash" Command="{Binding SetKindCommand}" CommandParameter="Split" />
+        <Button Focusable="False" Style="{StaticResource KeyButton}" Height="60" Content="Cash" Command="{Binding SetKindCommand}" CommandParameter="Cash" />
+        <Button Focusable="False" Style="{StaticResource KeyButton}" Height="60" Content="Card" Command="{Binding SetKindCommand}" CommandParameter="Card" />
+        <Button Focusable="False" Style="{StaticResource KeyButton}" Height="60" Content="Split: card + cash" Command="{Binding SetKindCommand}" CommandParameter="Split" />
       </UniformGrid>
       <StackPanel Visibility="{Binding IsSplit, Converter={StaticResource BoolToVisibility}}">
         <TextBlock Text="Card part (charge on the card machine)" />
-        <TextBox Text="{Binding Card.Text, UpdateSourceTrigger=PropertyChanged}" FontSize="26" Height="52" FontFamily="Consolas" GotFocus="CardFocused" />
+        <TextBox x:Name="CardBox" Text="{Binding Card.Text, UpdateSourceTrigger=PropertyChanged}" FontSize="26" Height="52" FontFamily="Consolas" GotFocus="CardFocused" />
       </StackPanel>
       <TextBlock Text="Cash received" Margin="0,8,0,0" />
-      <TextBox Text="{Binding Cash.Text, UpdateSourceTrigger=PropertyChanged}" FontSize="26" Height="52" FontFamily="Consolas" GotFocus="CashFocused" />
+      <TextBox x:Name="CashBox" Text="{Binding Cash.Text, UpdateSourceTrigger=PropertyChanged}" FontSize="26" Height="52" FontFamily="Consolas" GotFocus="CashFocused" />
       <ItemsControl ItemsSource="{Binding QuickCash}" Margin="0,8">
         <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
         <ItemsControl.ItemTemplate>
           <DataTemplate>
-            <Button Style="{StaticResource KeyButton}" Content="{Binding}"
+            <Button Focusable="False" Style="{StaticResource KeyButton}" Content="{Binding}"
                     Command="{Binding DataContext.QuickCashCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" />
           </DataTemplate>
         </ItemsControl.ItemTemplate>
@@ -43,18 +43,18 @@
       </DockPanel>
     </StackPanel>
     <UniformGrid Grid.Column="1" Columns="3" VerticalAlignment="Top">
-      <Button Style="{StaticResource KeyButton}" Height="72" Content="1" Command="{Binding KeyCommand}" CommandParameter="1" />
-      <Button Style="{StaticResource KeyButton}" Height="72" Content="2" Command="{Binding KeyCommand}" CommandParameter="2" />
-      <Button Style="{StaticResource KeyButton}" Height="72" Content="3" Command="{Binding KeyCommand}" CommandParameter="3" />
-      <Button Style="{StaticResource KeyButton}" Height="72" Content="4" Command="{Binding KeyCommand}" CommandParameter="4" />
-      <Button Style="{StaticResource KeyButton}" Height="72" Content="5" Command="{Binding KeyCommand}" CommandParameter="5" />
-      <Button Style="{StaticResource KeyButton}" Height="72" Content="6" Command="{Binding KeyCommand}" CommandParameter="6" />
-      <Button Style="{StaticResource KeyButton}" Height="72" Content="7" Command="{Binding KeyCommand}" CommandParameter="7" />
-      <Button Style="{StaticResource KeyButton}" Height="72" Content="8" Command="{Binding KeyCommand}" CommandParameter="8" />
-      <Button Style="{StaticResource KeyButton}" Height="72" Content="9" Command="{Binding KeyCommand}" CommandParameter="9" />
-      <Button Style="{StaticResource KeyButton}" Height="72" Content="." Command="{Binding KeyCommand}" CommandParameter="." />
-      <Button Style="{StaticResource KeyButton}" Height="72" Content="0" Command="{Binding KeyCommand}" CommandParameter="0" />
-      <Button Style="{StaticResource KeyButton}" Height="72" Content="⌫" Command="{Binding KeyCommand}" CommandParameter="⌫" />
+      <Button Focusable="False" Style="{StaticResource KeyButton}" Height="72" Content="1" Command="{Binding KeyCommand}" CommandParameter="1" />
+      <Button Focusable="False" Style="{StaticResource KeyButton}" Height="72" Content="2" Command="{Binding KeyCommand}" CommandParameter="2" />
+      <Button Focusable="False" Style="{StaticResource KeyButton}" Height="72" Content="3" Command="{Binding KeyCommand}" CommandParameter="3" />
+      <Button Focusable="False" Style="{StaticResource KeyButton}" Height="72" Content="4" Command="{Binding KeyCommand}" CommandParameter="4" />
+      <Button Focusable="False" Style="{StaticResource KeyButton}" Height="72" Content="5" Command="{Binding KeyCommand}" CommandParameter="5" />
+      <Button Focusable="False" Style="{StaticResource KeyButton}" Height="72" Content="6" Command="{Binding KeyCommand}" CommandParameter="6" />
+      <Button Focusable="False" Style="{StaticResource KeyButton}" Height="72" Content="7" Command="{Binding KeyCommand}" CommandParameter="7" />
+      <Button Focusable="False" Style="{StaticResource KeyButton}" Height="72" Content="8" Command="{Binding KeyCommand}" CommandParameter="8" />
+      <Button Focusable="False" Style="{StaticResource KeyButton}" Height="72" Content="9" Command="{Binding KeyCommand}" CommandParameter="9" />
+      <Button Focusable="False" Style="{StaticResource KeyButton}" Height="72" Content="." Command="{Binding KeyCommand}" CommandParameter="." />
+      <Button Focusable="False" Style="{StaticResource KeyButton}" Height="72" Content="0" Command="{Binding KeyCommand}" CommandParameter="0" />
+      <Button Focusable="False" Style="{StaticResource KeyButton}" Height="72" Content="⌫" Command="{Binding KeyCommand}" CommandParameter="⌫" />
     </UniformGrid>
   </Grid>
 </UserControl>

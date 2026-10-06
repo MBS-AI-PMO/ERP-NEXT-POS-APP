@@ -59,16 +59,16 @@
                 <TextBlock Text="{Binding Barcode}" FontSize="12" Foreground="{StaticResource Muted}" FontFamily="Consolas" />
               </StackPanel>
               <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                <Button Style="{StaticResource KeyButton}" Content="−" MinHeight="44" MinWidth="44"
+                <Button Focusable="False" Style="{StaticResource KeyButton}" Content="−" MinHeight="44" MinWidth="44"
                         Command="{Binding DataContext.DecrementCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding Id}" />
                 <TextBlock Text="{Binding Qty}" Width="70" TextAlignment="Center" VerticalAlignment="Center" Style="{StaticResource Money}" />
-                <Button Style="{StaticResource KeyButton}" Content="+" MinHeight="44" MinWidth="44"
+                <Button Focusable="False" Style="{StaticResource KeyButton}" Content="+" MinHeight="44" MinWidth="44"
                         Command="{Binding DataContext.IncrementCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding Id}" />
               </StackPanel>
               <TextBlock Grid.Column="3" Text="{Binding Price}" TextAlignment="Right" VerticalAlignment="Center" Style="{StaticResource Money}" />
               <TextBlock Grid.Column="4" Text="{Binding Offer}" TextAlignment="Right" VerticalAlignment="Center" Foreground="{StaticResource Warn}" />
               <TextBlock Grid.Column="5" Text="{Binding Amount}" TextAlignment="Right" VerticalAlignment="Center" FontSize="17" Style="{StaticResource Money}" />
-              <Button Grid.Column="6" Style="{StaticResource DangerButton}" Content="✕" MinHeight="44" MinWidth="44"
+              <Button Focusable="False" Grid.Column="6" Style="{StaticResource DangerButton}" Content="✕" MinHeight="44" MinWidth="44"
                       Command="{Binding DataContext.RemoveCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding Id}" />
             </Grid>
           </DataTemplate>

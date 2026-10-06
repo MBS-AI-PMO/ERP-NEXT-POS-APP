@@ -61,5 +61,7 @@ public partial class MainWindow : Window
         beforeBurst = null;
         e.Handled = true;
         if (DataContext is ShellViewModel { Current: SaleViewModel sale }) sale.Scan(code);
+        // The login screen took the scan's digits as PIN digits; throw them away.
+        else if (DataContext is ShellViewModel { Current: LoginViewModel login }) login.ClearCommand.Execute(null);
     }
 }

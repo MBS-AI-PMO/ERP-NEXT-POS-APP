@@ -4,6 +4,9 @@ namespace TillPOS.App;
 
 public partial class App : Application
 {
+    private const string SingleInstanceName = @"Global\TillPOS.SingleInstance";
+    // Held for the life of the process; Windows releases it when the process exits.
+    private static Mutex? singleInstance;
     private AppHost? host;
 
     protected override async void OnStartup(StartupEventArgs e)
@@ -14,6 +17,13 @@ public partial class App : Application
             Clipboard.SetText(SecretProtector.Protect(secret));
             MessageBox.Show("The protected secret was copied to the clipboard. Paste it into settings.json as ApiSecretProtected.", "TillPOS");
             Shutdown();
+            return;
+        }
+
+        if (!TryClaimSingleInstance())
+        {
+            MessageBox.Show("TillPOS is already running.", "TillPOS");
+            Shutdown(0);
             return;
         }
 
@@ -59,6 +69,20 @@ public partial class App : Application
     {
         host?.Stop();
         base.OnExit(e);
+    }
+
+    /// <summary>Two copies on one till would share the database, printer and drawer; only the first may run.</summary>
+    private static bool TryClaimSingleInstance()
+    {
+        try
+        {
+            singleInstance = new Mutex(initiallyOwned: true, SingleInstanceName, out var createdNew);
+            return createdNew;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false; // another Windows user's session already holds it
+        }
     }
 
     private static void LogError(TillSettings settings, Exception ex)

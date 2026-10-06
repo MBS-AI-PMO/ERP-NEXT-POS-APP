@@ -18,6 +18,7 @@ public sealed record SaleLine(Guid Id, int No, string Name, string? Barcode, str
 public sealed class SaleViewModel : ObservableObject
 {
     public const string AutosaveKey = "current_cart";
+    private const decimal MaxQty = 999m;
     private readonly TillContext ctx;
     private readonly SessionState session;
     private readonly SupervisorGate gate;
@@ -138,6 +139,8 @@ public sealed class SaleViewModel : ObservableObject
         if (line.FromScaleLabel) { Error("Lines from a scale label take their quantity from the label."); return; }
         var qty = await ctx.Dialogs.AskNumberAsync("Quantity", line.Item.ItemName);
         if (qty is not { } newQty || newQty <= 0m) return;
+        if (newQty > MaxQty) { Error("Quantity must be 999 or less."); return; }
+        if (newQty != decimal.Truncate(newQty) && !saleContext.WeightUoms.Contains(line.Uom)) { Error("This item is sold in whole units."); return; }
         if (newQty < line.Qty &&
             await gate.ApproveAsync(ApprovalAction.LineVoid, $"Lower {line.Item.ItemName} to {newQty.ToString(CultureInfo.InvariantCulture)}",
                 null, line.Item.ItemCode, (line.Qty - newQty) * line.Rate) is null)
@@ -177,7 +180,7 @@ public sealed class SaleViewModel : ObservableObject
     {
         Refresh();
         if (printError is null) Info($"Saved {receipt.ClientId}. Change {Format.Money(receipt.Change)}");
-        else Error($"Saved {receipt.ClientId}, but the printer failed ({printError}). Reprint with Ctrl+P.");
+        else Error($"Saved {receipt.ClientId}, but the printer failed ({printError}). Note bill number {receipt.ClientId} — reprint is not available yet.");
         ctx.Navigator.Show(this);
     }
 
@@ -197,8 +200,15 @@ public sealed class SaleViewModel : ObservableObject
 
     private void Changed()
     {
-        ctx.Kv.SetValue(AutosaveKey, JsonSerializer.Serialize(Cart.Snapshot()));
         Refresh();
+        try
+        {
+            ctx.Kv.SetValue(AutosaveKey, JsonSerializer.Serialize(Cart.Snapshot()));
+        }
+        catch (Exception)
+        {
+            Error("Could not save the unfinished bill — finish this sale normally.");
+        }
     }
 
     private void RestoreAutosave()
@@ -224,6 +234,7 @@ public sealed class SaleViewModel : ObservableObject
     private void Refresh()
     {
         var totals = Cart.Totals();
+        var selectedId = SelectedLine?.Id;
         Lines.Clear();
         for (var i = 0; i < Cart.Lines.Count; i++)
         {
@@ -234,7 +245,7 @@ public sealed class SaleViewModel : ObservableObject
             Lines.Add(new SaleLine(l.Id, i + 1, l.Item.ItemName, l.Barcode, qty, Format.Money(l.Rate), l.Rule?.Label ?? "",
                 Format.Money(totals.Lines[i].Amount), l.FromScaleLabel));
         }
-        if (SelectedLine is { } sel && Lines.All(l => l.Id != sel.Id)) SelectedLine = null;
+        SelectedLine = Lines.FirstOrDefault(l => l.Id == selectedId);
         ItemCount = Cart.Lines.Count.ToString(CultureInfo.InvariantCulture);
         Discount = Format.Money(Cart.DiscountSaved());
         Vat = Format.Money(totals.TotalTaxes);

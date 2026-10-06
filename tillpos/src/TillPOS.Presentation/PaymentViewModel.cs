@@ -99,7 +99,14 @@ public sealed class PaymentViewModel : ObservableObject
         }
         completed = true;
         CompleteCommand.NotifyCanExecuteChanged();
-        sale.ClearAutosave();
+        try
+        {
+            sale.ClearAutosave();
+        }
+        catch (Exception)
+        {
+            // The bill is saved and the cart is empty; the next change on the sale screen rewrites the autosave.
+        }
         string? printError = null;
         try
         {

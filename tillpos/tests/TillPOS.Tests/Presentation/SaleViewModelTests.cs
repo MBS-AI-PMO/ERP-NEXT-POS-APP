@@ -133,6 +133,65 @@ public sealed class SaleViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task A_quantity_over_999_is_refused()
+    {
+        var vm = NewSale();
+        vm.Scan("111");
+        f.Dialogs.Numbers.Enqueue(5000m);
+
+        await vm.SetQtyAsync(vm.Lines[0].Id);
+
+        Assert.Equal("1", vm.Lines[0].Qty);
+        Assert.True(vm.MessageIsError);
+        Assert.Equal("Quantity must be 999 or less.", vm.Message);
+        Assert.Equal(0, f.Dialogs.PinRequests);
+    }
+
+    [Fact]
+    public async Task A_fractional_quantity_of_a_piece_item_is_refused()
+    {
+        var vm = NewSale();
+        vm.Scan("111");
+        f.Dialogs.Numbers.Enqueue(1.5m);
+
+        await vm.SetQtyAsync(vm.Lines[0].Id);
+
+        Assert.Equal("1", vm.Lines[0].Qty);
+        Assert.True(vm.MessageIsError);
+        Assert.Equal("This item is sold in whole units.", vm.Message);
+        Assert.Equal(0, f.Dialogs.PinRequests);
+    }
+
+    [Fact]
+    public async Task A_fractional_quantity_of_a_weight_item_is_accepted()
+    {
+        var vm = NewSale();
+        vm.AddFromSearch("000089");
+        f.Dialogs.Numbers.Enqueue(1.250m);
+
+        await vm.SetQtyAsync(vm.Lines[0].Id);
+
+        Assert.Equal("1.250 Kg", vm.Lines[0].Qty);
+        Assert.False(vm.MessageIsError);
+    }
+
+    [Fact]
+    public void The_selected_line_stays_selected_after_a_change()
+    {
+        var vm = NewSale();
+        vm.Scan("111");
+        vm.Scan("2000089007400");
+        vm.SelectedLine = vm.Lines[0];
+
+        vm.Increment(vm.Lines[0].Id);
+
+        Assert.NotNull(vm.SelectedLine);
+        Assert.Equal("111", vm.SelectedLine!.Barcode);
+        Assert.Equal("2", vm.SelectedLine.Qty);
+        Assert.Same(vm.Lines[0], vm.SelectedLine);
+    }
+
+    [Fact]
     public void Plus_on_a_scale_label_line_is_refused()
     {
         var vm = NewSale();
