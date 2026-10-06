@@ -116,7 +116,7 @@ The shop runs ERPNext 15.114.0 / Frappe 15.113.0 / POS Awesome 15.35.2 on a Dock
 4. **Custom fields** (Customize Form):
    - POS Invoice: `custom_offline_id` (Data, unique, read only), `custom_cashier` (Data, read only), `custom_till` (Data, read only).
    - POS Opening Entry and POS Closing Entry: `custom_offline_id` (Data, unique, read only).
-5. **Custom DocType `POS Cashier`** (created with "Custom?" ticked): `cashier_name` (Data), `pin` (Data, permission level 1), `is_supervisor` (Check), `enabled` (Check). Permission level 1 is readable only by System Manager and `TillPOS Device`, so other ERPNext users cannot see PINs. The till stores only a salted hash of each PIN locally.
+5. **Custom DocType `POS Cashier`** (created with "Custom?" ticked): `cashier_name` (Data), `user` (Link → User; the cashier's ERPNext user, recorded on invoices as `posa_cashier`), `pin` (Data, permission level 1; 4–6 digits, unique), `is_supervisor` (Check), `enabled` (Check). Permission level 1 is readable only by System Manager and `TillPOS Device`, so other ERPNext users cannot see PINs. The till stores only a salted hash of each PIN locally.
    *Note:* a 4-digit PIN is a convenience lock against casual misuse, not strong security; the protection that matters is that only admins and till devices can read the field.
 
 ## 5. Local database (SQLite, one file per till)
@@ -266,6 +266,22 @@ Full results: `docs/erp-api-notes.md`. Facts that change or sharpen this spec:
 
 - **D1 — Weighed items:** how is the weight captured today? (a) scale-printed labels with the weight inside the barcode (give the label format: prefix, item-code digits, weight/price digits, check digit), (b) cashier types the weight after scanning, or (c) a scale connected to the till PC. The till will support the chosen way; (a) and (b) need no extra hardware integration.
 - **D2 — Shifts: DECIDED 2026-10-06 — use POS Awesome shifts (recommended option below).** Recommended: the till opens/closes shifts as **POS Awesome `POS Opening Shift` / `POS Closing Shift`** and sets `posa_pos_opening_shift` on each POS Invoice, so the back office keeps one shift and closing process for both POS Awesome and TillPOS. Alternative: ERPNext's standard POS Opening/Closing Entry (as originally written in §6.2), which would split shift reporting in two.
+
+## 13b. Plan 2 design details (2026-10-06)
+
+Plan 2 is split in two so each part is testable on its own:
+
+- **Plan 2a — offline sales engine** (no ERPNext writes): scale labels and unit fallback in the cart; cash/card/split payment calculation; recording completed bills in an outbox with client IDs; returns (with and without receipt); hold & recall; shift open/close with blind count; supervisor PINs and the approval log; the cashier list download.
+- **Plan 2b — upload to ERPNext** (needs a writable test site): POS Invoice upload, POS Awesome shift upload, recent-receipts download for cross-till returns, upload-problems handling, approvals upload.
+
+Details decided for both:
+
+1. **Client ID** per bill: `TILL{n}-{yyyyMMddHHmmss}-{6-digit sequence}` (Master Spec format), printed on the receipt. For upload, POS Awesome already stores a client request ID on every POS Invoice (`posa_client_request_id`); Plan 2b will use that field instead of adding `custom_pos_client_id`, if a test-site check confirms it can be looked up reliably — otherwise it falls back to the Master Spec's `custom_pos_client_id`.
+2. **Cashiers:** the `POS Cashier` list (spec §4) gets a `user` link to the cashier's ERPNext user, because POS Awesome records the cashier on each invoice as an ERPNext user (`posa_cashier`). Supervisors are cashiers with `is_supervisor`. PINs are 4–6 digits and must be unique; the till stores only salted PBKDF2 hashes.
+3. **Shifts upload** (2b): `POS Opening Shift` / `POS Closing Shift` are created under the till's ERPNext user; each invoice carries `posa_pos_opening_shift` and `posa_cashier`.
+4. **Payments in ERPNext terms:** cash-only bills use ERPNext's rounded total (rounding adjustment → Round Off account); card-only bills set `disable_rounded_total = 1`; the cash amount on an invoice is the cash tendered and `change_amount` the change, as POS Awesome does. How the small rounding difference of a **split** bill is posted (write-off vs. change) is a 2b test-site check.
+5. **Supervisor approval needed for** (Master Spec §5): removing a line, voiding the bill, a return without receipt, a refund above AED 50, opening the drawer without a sale. Each approval is logged locally (who, what, amount, when) and uploaded in 2b.
+6. **Weighed lines** keep the label's weight as quantity and are never merged with another line; + / − do not apply to them.
 
 ## 14. Verification items for the implementation plan
 
