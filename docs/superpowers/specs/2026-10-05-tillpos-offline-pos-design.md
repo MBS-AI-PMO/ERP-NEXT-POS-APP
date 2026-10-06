@@ -225,6 +225,22 @@ All touch targets ≥ 44 px; every action has a keyboard shortcut; the scanner w
 4. **Paper width:** configurable, 80 mm default, 58 mm supported.
 5. **Tills run Windows 11 (some may run Windows 10)** — both are compatible with .NET 10 self-contained `win-x64`.
 
+## 13a. Live findings (read-only checks on erp.quickgroc.com, 2026-10-06)
+
+Full results: `docs/erp-api-notes.md`. Facts that change or sharpen this spec:
+
+1. **Currency precision is 3**, not 2. All till money maths runs at precision 3 (configurable; verified: 40/40 real invoices recalculated identically).
+2. **No Pricing Rules, POS Offers or POS Coupons exist.** Offers today are made by the admin editing Item Prices; the till already handles that. Pricing Rule support stays for when they are used.
+3. **Weighed items are sold** (571 `Kg` items; weights like 0.305 kg on real bills, recorded with the item's short barcode such as `2000088`). This replaces the earlier answer "everything is a fixed-price pack". The till must accept weighed lines — **open decision D1** below.
+4. **Shifts use POS Awesome's own doctypes:** `POS Opening Shift` (42) / `POS Closing Shift` (37), linked from each POS Invoice via `posa_pos_opening_shift`; ERPNext `POS Opening Entry` / `POS Closing Entry` have never been used (0). Consolidation into Sales Invoices happens via POS Awesome's closing (`POS Invoice Merge Log`: 9; 1,967 POS Invoices consolidated). §6.2 assumed ERPNext's entries — **open decision D2** below.
+5. **Real counters round the total** (`disable_rounded_total = 0`); the "Test Counter" profile does not. Each till's POS Profile should be copied from a real counter.
+6. **118 barcodes point to a UOM the item does not have**; the till refuses them (no guessing). The admin should fix them in ERPNext (list provided locally).
+
+### Open decisions (needed before Plan 2/3)
+
+- **D1 — Weighed items:** how is the weight captured today? (a) scale-printed labels with the weight inside the barcode (give the label format: prefix, item-code digits, weight/price digits, check digit), (b) cashier types the weight after scanning, or (c) a scale connected to the till PC. The till will support the chosen way; (a) and (b) need no extra hardware integration.
+- **D2 — Shifts:** recommended: the till opens/closes shifts as **POS Awesome `POS Opening Shift` / `POS Closing Shift`** and sets `posa_pos_opening_shift` on each POS Invoice, so the back office keeps one shift and closing process for both POS Awesome and TillPOS. Alternative: ERPNext's standard POS Opening/Closing Entry (as originally written in §6.2), which would split shift reporting in two.
+
 ## 14. Verification items for the implementation plan
 
 These are known ERPNext v15 API details to confirm against the test site in the first tasks of the plan, each with a stated fallback:
