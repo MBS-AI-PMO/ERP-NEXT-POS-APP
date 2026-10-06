@@ -108,6 +108,7 @@ public sealed class SaleViewModel : ObservableObject
 
     public void Increment(Guid id)
     {
+        if (Find(id) is null) return;
         try
         {
             Cart.Increment(id);
@@ -121,7 +122,7 @@ public sealed class SaleViewModel : ObservableObject
 
     public async Task DecrementAsync(Guid id)
     {
-        var line = Find(id);
+        if (Find(id) is not { } line) return;
         if (line.FromScaleLabel) { Error("Lines from a scale label take their quantity from the label."); return; }
         if (line.Qty <= 1m) return;
         if (await gate.ApproveAsync(ApprovalAction.LineVoid, $"Reduce {line.Item.ItemName}", null, line.Item.ItemCode, line.Rate) is null) return;
@@ -131,7 +132,7 @@ public sealed class SaleViewModel : ObservableObject
 
     public async Task SetQtyAsync(Guid id)
     {
-        var line = Find(id);
+        if (Find(id) is not { } line) return;
         if (line.FromScaleLabel) { Error("Lines from a scale label take their quantity from the label."); return; }
         var qty = await ctx.Dialogs.AskNumberAsync("Quantity", line.Item.ItemName);
         if (qty is not { } newQty || newQty <= 0m) return;
@@ -145,7 +146,7 @@ public sealed class SaleViewModel : ObservableObject
 
     public async Task RemoveLineAsync(Guid id)
     {
-        var line = Find(id);
+        if (Find(id) is not { } line) return;
         if (await gate.ApproveAsync(ApprovalAction.LineVoid, $"Remove {line.Item.ItemName}", null, line.Item.ItemCode, line.Qty * line.Rate) is null)
             return;
         Cart.Remove(id);
@@ -167,10 +168,11 @@ public sealed class SaleViewModel : ObservableObject
         ctx.Navigator.Show(newPayment(this, kind));
     }
 
+    public void ClearAutosave() => ctx.Kv.SetValue(AutosaveKey, "[]");
+
     /// <summary>Called by the payment screen after the bill was saved (the cart is already empty).</summary>
     public void SaleCompleted(Receipt receipt, string? printError)
     {
-        ctx.Kv.SetValue(AutosaveKey, "[]");
         Refresh();
         if (printError is null) Info($"Saved {receipt.ClientId}. Change {Format.Money(receipt.Change)}");
         else Error($"Saved {receipt.ClientId}, but the printer failed ({printError}). Reprint with Ctrl+P.");
@@ -200,11 +202,21 @@ public sealed class SaleViewModel : ObservableObject
     private void RestoreAutosave()
     {
         if (ctx.Kv.GetValue(AutosaveKey) is not { } json) return;
-        var held = JsonSerializer.Deserialize<List<HeldLine>>(json) ?? [];
-        if (held.Count == 0) return;
-        var failed = Cart.Restore(held);
-        if (failed.Count > 0) Error($"{failed.Count} item(s) from the unfinished bill can no longer be sold.");
-        else Info("Unfinished bill restored.");
+        try
+        {
+            var held = JsonSerializer.Deserialize<List<HeldLine>>(json) ?? [];
+            if (held.Count == 0) return;
+            var failed = Cart.Restore(held);
+            if (failed.Count > 0) Error($"{failed.Count} item(s) from the unfinished bill can no longer be sold.");
+            else Info("Unfinished bill restored.");
+        }
+        catch (Exception)
+        {
+            ctx.Kv.SetValue("current_cart_bad", json);
+            ClearAutosave();
+            Cart.Clear();
+            Error("The unfinished bill could not be restored.");
+        }
     }
 
     private void Refresh()
@@ -220,13 +232,14 @@ public sealed class SaleViewModel : ObservableObject
             Lines.Add(new SaleLine(l.Id, i + 1, l.Item.ItemName, l.Barcode, qty, Format.Money(l.Rate), l.Rule?.Label ?? "",
                 Format.Money(totals.Lines[i].Amount), l.FromScaleLabel));
         }
+        if (SelectedLine is { } sel && Lines.All(l => l.Id != sel.Id)) SelectedLine = null;
         ItemCount = Cart.Lines.Count.ToString(CultureInfo.InvariantCulture);
         Discount = Format.Money(Cart.DiscountSaved());
         Vat = Format.Money(totals.TotalTaxes);
         Total = Format.Money(totals.GrandTotal);
     }
 
-    private CartLine Find(Guid id) => Cart.Lines.First(l => l.Id == id);
+    private CartLine? Find(Guid id) => Cart.Lines.FirstOrDefault(l => l.Id == id);
 
     private void Info(string text) { Message = text; MessageIsError = false; }
 

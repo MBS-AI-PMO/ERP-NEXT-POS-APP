@@ -17,6 +17,7 @@ public sealed class PaymentViewModel : ObservableObject
     private readonly decimal grandTotal;
     private TenderKind kind;
     private bool editCard;
+    private bool completed;
     private PaymentPlan? plan;
     private string message = "";
 
@@ -34,7 +35,7 @@ public sealed class PaymentViewModel : ObservableObject
         SetKindCommand = new RelayCommand<string>(k => { if (Enum.TryParse<TenderKind>(k, out var parsed)) Kind = parsed; });
         QuickCashCommand = new RelayCommand<decimal>(amount => Cash.Set(amount));
         KeyCommand = new RelayCommand<string>(Key);
-        CompleteCommand = new RelayCommand(Complete);
+        CompleteCommand = new RelayCommand(Complete, () => !completed);
         BackCommand = new RelayCommand(() => ctx.Navigator.Show(sale));
 
         kind = initialKind;
@@ -73,14 +74,32 @@ public sealed class PaymentViewModel : ObservableObject
 
     public void Complete()
     {
-        if (Plan is not { } p) return;
+        if (completed || Plan is not { } p) return;
         if (!p.IsComplete)
         {
             Message = $"Still to pay {Format.Money(p.Shortfall)}";
             return;
         }
 
-        var receipt = recorder.CompleteSale(sale.Cart, p, session.Cashier!.Id, session.Shift!.ClientId, session.Cashier.User);
+        if (session.Cashier is not { } cashier || session.Shift is not { } shift)
+        {
+            Message = "No open shift — log in again.";
+            return;
+        }
+
+        Receipt receipt;
+        try
+        {
+            receipt = recorder.CompleteSale(sale.Cart, p, cashier.Id, shift.ClientId, cashier.User);
+        }
+        catch (Exception ex)
+        {
+            Message = $"Could not save the bill: {ex.Message}";
+            return;
+        }
+        completed = true;
+        CompleteCommand.NotifyCanExecuteChanged();
+        sale.ClearAutosave();
         string? printError = null;
         try
         {

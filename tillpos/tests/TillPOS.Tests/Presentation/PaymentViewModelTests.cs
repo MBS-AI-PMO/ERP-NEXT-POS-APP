@@ -106,6 +106,42 @@ public sealed class PaymentViewModelTests : IDisposable
     }
 
     [Fact]
+    public void Autosave_is_cleared_before_printing()
+    {
+        var checkedInHook = false;
+        f.Output.OnPrint = () =>
+        {
+            Assert.Equal("[]", f.Ctx.Kv.GetValue(SaleViewModel.AutosaveKey));
+            var fresh = new SaleViewModel(f.Ctx, f.Session, new SupervisorGate(f.Ctx, f.Session), (s, k) => "x");
+            Assert.Empty(fresh.Lines);
+            checkedInHook = true;
+        };
+        Pay(TenderKind.Card).CompleteCommand.Execute(null);
+        Assert.True(checkedInHook);
+    }
+
+    [Fact]
+    public void Completing_twice_saves_one_bill()
+    {
+        var vm = Pay(TenderKind.Card);
+        vm.CompleteCommand.Execute(null);
+        vm.Complete();
+        Assert.Single(f.Ctx.Receipts.ListPending(10));
+        Assert.Single(f.Output.Printed);
+    }
+
+    [Fact]
+    public void Save_failure_stays_on_payment_with_a_message()
+    {
+        var vm = Pay(TenderKind.Card);
+        sale.Cart.Clear();
+        vm.CompleteCommand.Execute(null);
+        Assert.StartsWith("Could not save the bill", vm.Message);
+        Assert.Empty(f.Ctx.Receipts.ListPending(10));
+        Assert.NotSame(sale, f.Navigator.Current);
+    }
+
+    [Fact]
     public void Back_returns_to_the_sale_without_saving()
     {
         var vm = Pay(TenderKind.Cash);

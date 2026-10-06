@@ -35,9 +35,11 @@ public sealed class FakeOutput : IReceiptOutput
 {
     public List<(Receipt Receipt, bool OpenDrawer)> Printed { get; } = [];
     public bool Fail { get; set; }
+    public Action? OnPrint { get; set; }
 
     public void Print(Receipt receipt, bool openDrawer)
     {
+        OnPrint?.Invoke();
         if (Fail) throw new InvalidOperationException("Printer offline");
         Printed.Add((receipt, openDrawer));
     }

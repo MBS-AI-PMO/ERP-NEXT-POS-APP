@@ -152,6 +152,28 @@ public sealed class SaleViewModelTests : IDisposable
     }
 
     [Fact]
+    public void Corrupt_autosave_starts_an_empty_bill()
+    {
+        f.Ctx.Kv.SetValue(SaleViewModel.AutosaveKey, "{not json");
+        var vm = NewSale();
+        Assert.Empty(vm.Lines);
+        Assert.True(vm.MessageIsError);
+        Assert.Equal("{not json", f.Ctx.Kv.GetValue("current_cart_bad"));
+    }
+
+    [Fact]
+    public async Task Removing_with_a_stale_selection_does_nothing()
+    {
+        var vm = NewSale();
+        vm.Scan("111");
+        vm.SelectedLine = vm.Lines[0];
+        f.Dialogs.Pins.Enqueue("9999");
+        await vm.VoidBillAsync();
+        await vm.RemoveSelectedCommand.ExecuteAsync(null);
+        Assert.Null(vm.SelectedLine);
+    }
+
+    [Fact]
     public void Search_finds_items_and_adds_one()
     {
         var vm = NewSale();
