@@ -38,3 +38,11 @@ No `errors.log` was written during the run.
 - M12: network off, then on again. The header should go Offline, then back to Online, and selling should keep working.
 - Typing the PIN on a physical keyboard on the login screen. On-screen buttons work; the automation could not exercise keyboard focus reliably on that screen.
 - A real thermal printer: set `"PrinterName"` to the Windows printer name. Check the QR code prints once a TRN exists, and that the drawer opens on cash only.
+- Printer offline / out of paper / unplugged: the till should say the printer failed (the bill is still saved), not queue the job. Some USB printer drivers don't report status. If printing is refused even when the printer is fine, tell us the printer model.
+- Scan while the quantity box (F3) or a supervisor PIN box is open: the box should clear and stay open.
+
+## After the final review (fix wave 1012053), re-checked live
+
+- Keyboard only: F12, type 20, Enter completes the sale. The cash box has focus automatically.
+- Delete with an empty scan box opens the supervisor prompt for the last line. A scan into that prompt keeps it open and logs no failed PIN. Esc keeps the line.
+- Test cashiers from settings.json are no longer saved into the database. They work only until ERPNext cashiers sync, and settings edits apply on restart. Delete an old test `till.db` once, if you used one before this change.
