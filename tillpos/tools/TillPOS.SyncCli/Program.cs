@@ -123,7 +123,11 @@ switch (args[0])
     case "replay":
     {
         // Read-only: recalculates the newest submitted POS Invoices with the till engine and compares totals.
-        var settings = store.LoadPosSettings() ?? throw new InvalidOperationException("Run 'pull' first.");
+        // Needs only the POS Profile/Company/Currency settings, so it fetches just those if no pull has run yet.
+        if (store.LoadPosSettings() is null)
+            await new TillPOS.Sync.Feeds.PosProfileFeed(new SyncContext(erp, store, new KeysetPager(erp, new KvSyncStateStore(store)), config.PosProfile))
+                .RunAsync(CancellationToken.None);
+        var settings = store.LoadPosSettings()!;
         var count = args.Length > 1 ? int.Parse(args[1], CultureInfo.InvariantCulture) : 20;
         var money = new MoneySettings(config.Precision, config.Rounding, settings.SmallestCurrencyFraction);
         var invoices = await erp.GetListAsync(new ListQuery("POS Invoice", ["name"],
