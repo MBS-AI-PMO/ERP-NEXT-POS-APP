@@ -20,7 +20,9 @@ The company-wide roadmap is in `docs/Master Technical Specification & Architectu
 
 The Master Specification is the product authority for Phase 1A requirements; this spec is the detailed till design and is being aligned with it. Only "don't paint ourselves into a corner" choices are made for 1B/2 (e.g. no till-only assumptions baked into shared sync code); no 1B/2 features are built.
 
-**Open alignment questions with the Master Specification (Phase 1A):** target till hardware (Celeron J1900/J6412 4 GB with a 90 MB RAM budget vs. i5 8 GB), cash-vs-card rounding rule, which Master Spec features go into the first release vs. a follow-up release, and the scale-barcode label format.
+**Till hardware (confirmed 2026-10-06):** the tills now have **8 GB RAM** (upgraded). The Master Specification's 4 GB / 90 MB working-set budget is therefore not a hard constraint; this spec's target S7 (< 300 MB) stays, and the app should still be kept lean.
+
+**Open alignment questions with the Master Specification (Phase 1A):** cash-vs-card rounding rule, which Master Spec features go into the first release vs. a follow-up release, and the scale-barcode label format.
 
 ## 1. Problem and goal
 
