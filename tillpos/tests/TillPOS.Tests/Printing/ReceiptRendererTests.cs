@@ -154,7 +154,18 @@ public class ReceiptRendererTests
         Assert.Contains(layout, l => l.Style == LineStyle.Big && l.Text.StartsWith("AMOUNT DUE"));
         Assert.Equal(LineStyle.Bold, layout[0].Style);
         Assert.Contains("AL AIN MARKETING L.L.C", layout[0].Text);
-        Assert.Equal(ReceiptRenderer.TextLines(Sale(), Header, PaperWidth.Mm80), layout.Select(l => l.Text));
+        Assert.Equal(ReceiptRenderer.TextLines(Sale(), Header, PaperWidth.Mm80).Select(l => l.Trim()), layout.Select(l => l.Text.Trim()));
+    }
+
+    [Theory]
+    [InlineData(PaperWidth.Mm80)]
+    [InlineData(PaperWidth.Mm58)]
+    public void Text_receipt_centres_the_title_across_the_paper(PaperWidth paper)
+    {
+        var width = (int)paper;
+        var title = Assert.Single(Text(Sale(), paper), l => l.Contains("TAX INVOICE"));
+        Assert.Equal(new string(' ', (width - "TAX INVOICE".Length) / 2) + "TAX INVOICE", title);
+        Assert.Equal("TAX INVOICE", Assert.Single(ReceiptRenderer.Layout(Sale(), Header, paper), l => l.Style == LineStyle.Title).Text);
     }
 
     [Fact]

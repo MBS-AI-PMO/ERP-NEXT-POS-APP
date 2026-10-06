@@ -86,8 +86,9 @@ public static class ReceiptRenderer
         return lines;
     }
 
+    /// <summary>Plain text (receipt files). Title lines, whose text is bare, are centred across the full paper width here.</summary>
     public static IReadOnlyList<string> TextLines(Receipt r, ReceiptHeader h, PaperWidth paper) =>
-        Layout(r, h, paper).Select(l => l.Text).ToList();
+        Layout(r, h, paper).Select(l => l.Style == LineStyle.Title ? Center(l.Text, (int)paper) : l.Text).ToList();
 
     public static byte[] EscPosBytes(Receipt r, ReceiptHeader h, PaperWidth paper, bool openDrawer)
     {
