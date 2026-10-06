@@ -33,5 +33,21 @@ internal static class Migrations
         CREATE TABLE sales_tax_template (name TEXT PRIMARY KEY, json TEXT NOT NULL);
         CREATE TABLE kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
         """,
+        """
+        CREATE TABLE receipt (
+            client_id TEXT PRIMARY KEY,
+            kind TEXT NOT NULL,
+            return_against TEXT,
+            shift_client_id TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            json TEXT NOT NULL,
+            sync_status TEXT NOT NULL DEFAULT 'Pending',
+            erp_name TEXT,
+            last_error TEXT,
+            attempts INTEGER NOT NULL DEFAULT 0);
+        CREATE INDEX ix_receipt_status ON receipt(sync_status, created_at);
+        CREATE INDEX ix_receipt_shift ON receipt(shift_client_id);
+        CREATE INDEX ix_receipt_return_against ON receipt(return_against);
+        """,
     ];
 }
