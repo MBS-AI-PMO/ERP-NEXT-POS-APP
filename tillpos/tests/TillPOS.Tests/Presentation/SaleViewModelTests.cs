@@ -74,6 +74,21 @@ public sealed class SaleViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task Remove_last_needs_a_supervisor_and_removes_the_last_line()
+    {
+        var vm = NewSale();
+        vm.Scan("111");
+        vm.Scan("2000089007400");
+        Assert.Equal(2, vm.Lines.Count);
+        f.Dialogs.Pins.Enqueue("9999");
+
+        await vm.RemoveLastCommand.ExecuteAsync(null);
+
+        var line = Assert.Single(vm.Lines);
+        Assert.Equal("111", line.Barcode);
+    }
+
+    [Fact]
     public async Task Without_a_supervisor_the_line_stays()
     {
         var vm = NewSale();

@@ -7,7 +7,7 @@
   <StackPanel Width="380" HorizontalAlignment="Center" VerticalAlignment="Center">
     <TextBlock Text="Open shift" FontSize="26" FontWeight="Bold" />
     <TextBlock Text="Count the cash in the drawer and enter it." Foreground="{StaticResource Muted}" Margin="0,4,0,12" />
-    <TextBox Text="{Binding OpeningCash.Text, UpdateSourceTrigger=PropertyChanged}" FontSize="28" Height="56" FontFamily="Consolas" />
+    <TextBox x:Name="CashBox" Text="{Binding OpeningCash.Text, UpdateSourceTrigger=PropertyChanged}" FontSize="28" Height="56" FontFamily="Consolas" />
     <TextBlock Text="{Binding Message}" Foreground="{StaticResource Danger}" MinHeight="22" Margin="0,4" />
     <UniformGrid Columns="3">
       <Button Style="{StaticResource KeyButton}" Content="1" Command="{Binding KeyCommand}" CommandParameter="1" />

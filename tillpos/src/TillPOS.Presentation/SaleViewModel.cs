@@ -48,6 +48,7 @@ public sealed class SaleViewModel : ObservableObject
         DecrementCommand = new AsyncRelayCommand<Guid>(DecrementAsync);
         RemoveCommand = new AsyncRelayCommand<Guid>(RemoveLineAsync);
         RemoveSelectedCommand = new AsyncRelayCommand(() => SelectedLine is { } l ? RemoveLineAsync(l.Id) : Task.CompletedTask);
+        RemoveLastCommand = new AsyncRelayCommand(() => Cart.Lines.Count > 0 ? RemoveLineAsync(Cart.Lines[^1].Id) : Task.CompletedTask);
         SetQtySelectedCommand = new AsyncRelayCommand(() => SelectedLine is { } l ? SetQtyAsync(l.Id) : Task.CompletedTask);
         VoidBillCommand = new AsyncRelayCommand(VoidBillAsync);
         PayCashCommand = new RelayCommand(() => Pay(TenderKind.Cash));
@@ -88,6 +89,7 @@ public sealed class SaleViewModel : ObservableObject
     public AsyncRelayCommand<Guid> DecrementCommand { get; }
     public AsyncRelayCommand<Guid> RemoveCommand { get; }
     public AsyncRelayCommand RemoveSelectedCommand { get; }
+    public AsyncRelayCommand RemoveLastCommand { get; }
     public AsyncRelayCommand SetQtySelectedCommand { get; }
     public AsyncRelayCommand VoidBillCommand { get; }
     public RelayCommand PayCashCommand { get; }

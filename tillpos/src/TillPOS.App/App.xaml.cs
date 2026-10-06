@@ -38,12 +38,21 @@ public partial class App : Application
             args.Handled = true;
         };
 
-        var window = new MainWindow();
-        host = new AppHost(settings, Dispatcher, new WpfDialogs(window));
-        window.DataContext = host.Shell;
-        MainWindow = window;
-        window.Show();
-        await host.StartAsync();
+        try
+        {
+            var window = new MainWindow();
+            host = new AppHost(settings, Dispatcher, new WpfDialogs(window), ex => LogError(settings, ex));
+            window.DataContext = host.Shell;
+            MainWindow = window;
+            window.Show();
+            await host.StartAsync();
+        }
+        catch (Exception ex)
+        {
+            LogError(settings, ex);
+            MessageBox.Show($"TillPOS could not start:\n{ex.Message}", "TillPOS");
+            Shutdown(1);
+        }
     }
 
     protected override void OnExit(ExitEventArgs e)

@@ -16,6 +16,7 @@ public sealed class AppHost
 {
     private readonly TillSettings settings;
     private readonly Dispatcher dispatcher;
+    private readonly Action<Exception> logError;
     private readonly CatalogStore store;
     private readonly SqliteCatalog catalog;
     private readonly CashierStore cashiers;
@@ -24,10 +25,11 @@ public sealed class AppHost
     private readonly TillContext ctx;
     private readonly CancellationTokenSource stop = new();
 
-    public AppHost(TillSettings settings, Dispatcher dispatcher, IDialogs dialogs)
+    public AppHost(TillSettings settings, Dispatcher dispatcher, IDialogs dialogs, Action<Exception> logError)
     {
         this.settings = settings;
         this.dispatcher = dispatcher;
+        this.logError = logError;
         Directory.CreateDirectory(Path.GetDirectoryName(settings.DbPath)!);
         var db = new TillDb(settings.DbPath);
         db.Migrate();
@@ -60,7 +62,7 @@ public sealed class AppHost
             string problem;
             try
             {
-                var report = await NewPuller().RunAsync();
+                var report = await Task.Run(() => NewPuller().RunAsync());
                 if (store.LoadPosSettings() is not null) break;
                 problem = report.Feeds.FirstOrDefault(f => f.Error is not null)?.Error ?? "POS profile not found";
             }
@@ -76,8 +78,8 @@ public sealed class AppHost
         Shell.ShopName = store.LoadPosSettings()!.CompanyName;
         Shell.Show(NewLogin());
 
-        var sync = new SyncService(NewPuller, erp, ctx.Receipts, Shell, dispatcher, TimeSpan.FromSeconds(settings.SyncIntervalSeconds));
-        _ = Task.Run(() => sync.RunAsync(stop.Token));
+        var sync = new SyncService(NewPuller, erp, ctx.Receipts, Shell, dispatcher, TimeSpan.FromSeconds(settings.SyncIntervalSeconds), logError);
+        _ = Task.Run(() => sync.RunAsync(stop.Token)).ContinueWith(t => logError(t.Exception!), TaskContinuationOptions.OnlyOnFaulted);
     }
 
     public void Stop() => stop.Cancel();
