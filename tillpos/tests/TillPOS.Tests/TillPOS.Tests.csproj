@@ -20,6 +20,7 @@
     <ProjectReference Include="..\..\src\TillPOS.Data\TillPOS.Data.csproj" />
     <ProjectReference Include="..\..\src\TillPOS.Erp\TillPOS.Erp.csproj" />
     <ProjectReference Include="..\..\src\TillPOS.Sync\TillPOS.Sync.csproj" />
+    <ProjectReference Include="..\..\src\TillPOS.Printing\TillPOS.Printing.csproj" />
   </ItemGroup>
 
 </Project>

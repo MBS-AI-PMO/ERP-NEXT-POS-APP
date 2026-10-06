@@ -3,6 +3,7 @@
     <Project Path="src/TillPOS.Core/TillPOS.Core.csproj" />
     <Project Path="src/TillPOS.Data/TillPOS.Data.csproj" />
     <Project Path="src/TillPOS.Erp/TillPOS.Erp.csproj" />
+    <Project Path="src/TillPOS.Printing/TillPOS.Printing.csproj" />
     <Project Path="src/TillPOS.Sync/TillPOS.Sync.csproj" />
   </Folder>
   <Folder Name="/tests/">
