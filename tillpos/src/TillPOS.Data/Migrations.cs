@@ -64,5 +64,9 @@ internal static class Migrations
             erp_closing TEXT,
             last_error TEXT);
         """,
+        """
+        CREATE TABLE cashier (id TEXT PRIMARY KEY, json TEXT NOT NULL);
+        CREATE TABLE approval_log (id TEXT PRIMARY KEY, at TEXT NOT NULL, json TEXT NOT NULL, synced INTEGER NOT NULL DEFAULT 0);
+        """,
     ];
 }
