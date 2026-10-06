@@ -32,6 +32,37 @@ public sealed class ReceiptStoreTests : IDisposable
         Assert.Equal(r.Lines, back.Lines);
         Assert.Equal(r.Payments, back.Payments);
         Assert.Equal(M("0.740"), back.Lines[0].Qty);
+        Assert.Equal("0.740", back.Lines[0].Qty.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    [Fact]
+    public void Marking_an_unknown_receipt_throws()
+    {
+        Assert.Throws<KeyNotFoundException>(() => store.MarkFailed("NOPE", "x"));
+        Assert.Throws<KeyNotFoundException>(() => store.MarkSynced("NOPE", "ACC-1"));
+    }
+
+    [Fact]
+    public void A_late_failure_never_overwrites_an_uploaded_receipt()
+    {
+        store.Save(Sale("A"));
+        store.MarkSynced("A", "ACC-PSINV-2026-06001");
+
+        store.MarkFailed("A", "timeout reported late");
+
+        Assert.Equal(new ReceiptSyncInfo(ReceiptSyncStatus.Synced, "ACC-PSINV-2026-06001", null, 1), store.SyncInfo("A"));
+        Assert.Empty(store.ListFailed());
+    }
+
+    [Fact]
+    public void Retry_only_moves_failed_receipts()
+    {
+        store.Save(Sale("A"));
+        store.Retry("A");
+        Assert.Equal(ReceiptSyncStatus.Pending, store.SyncInfo("A").Status);
+        store.MarkSynced("A", "ACC-1");
+        store.Retry("A");
+        Assert.Equal(ReceiptSyncStatus.Synced, store.SyncInfo("A").Status);
     }
 
     [Fact]

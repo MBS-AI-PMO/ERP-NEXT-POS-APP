@@ -52,14 +52,21 @@ public sealed class ReceiptStore(TillDb db) : IReceiptStore
 
     public void MarkSynced(string clientId, string erpName) =>
         Update("UPDATE receipt SET sync_status = 'Synced', erp_name = @n, last_error = NULL, attempts = attempts + 1 WHERE client_id = @id",
-            clientId, ("@n", erpName));
+            clientId, false, ("@n", erpName));
 
-    public void MarkFailed(string clientId, string error) =>
-        Update("UPDATE receipt SET sync_status = 'Failed', last_error = @e, attempts = attempts + 1 WHERE client_id = @id",
-            clientId, ("@e", error));
+    /// <summary>A failure reported after the bill was already uploaded is ignored.</summary>
+    public void MarkFailed(string clientId, string error)
+    {
+        var changed = Update("UPDATE receipt SET sync_status = 'Failed', last_error = @e, attempts = attempts + 1 WHERE client_id = @id AND sync_status <> 'Synced'",
+            clientId, true, ("@e", error));
+        if (changed != 0) return;
+        using var c = db.Open();
+        if (c.Scalar(null, "SELECT 1 FROM receipt WHERE client_id = @id", ("@id", clientId)) is null)
+            throw new KeyNotFoundException($"Receipt {clientId} not found.");
+    }
 
     public void Retry(string clientId) =>
-        Update("UPDATE receipt SET sync_status = 'Pending' WHERE client_id = @id AND sync_status = 'Failed'", clientId);
+        Update("UPDATE receipt SET sync_status = 'Pending' WHERE client_id = @id AND sync_status = 'Failed'", clientId, true);
 
     public ReceiptSyncInfo SyncInfo(string clientId)
     {
@@ -78,12 +85,13 @@ public sealed class ReceiptStore(TillDb db) : IReceiptStore
             : c.Query($"SELECT json FROM receipt {where}", r => Deserialize(r.GetString(0)), ("@p", p));
     }
 
-    private void Update(string sql, string clientId, params (string Name, object? Value)[] extra)
+    private int Update(string sql, string clientId, bool allowNoMatch, params (string Name, object? Value)[] extra)
     {
         using var c = db.Open();
         var changed = c.Exec(null, sql, [("@id", clientId), .. extra]);
-        if (changed == 0 && !sql.Contains("sync_status = 'Failed'", StringComparison.Ordinal))
+        if (changed == 0 && !allowNoMatch)
             throw new KeyNotFoundException($"Receipt {clientId} not found.");
+        return changed;
     }
 
     private static Receipt Deserialize(string json) =>
