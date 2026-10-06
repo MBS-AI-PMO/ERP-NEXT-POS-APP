@@ -12,9 +12,7 @@ public sealed class ReceiptOutput(TillSettings settings, CatalogStore store) : I
 {
     public void Print(Receipt receipt, bool openDrawer)
     {
-        var pos = store.LoadPosSettings() ?? throw new InvalidOperationException("POS settings are not downloaded yet.");
-        var header = new ReceiptHeader(pos.CompanyName, FirstNonBlank(pos.AddressText, settings.ShopAddress), FirstNonBlank(pos.TaxId, settings.Trn),
-            $"Till {settings.TillNumber}", settings.ReceiptFooter, FirstNonBlank(null, settings.ShopPhone));
+        var header = Header();
         if (string.IsNullOrWhiteSpace(settings.PrinterName))
         {
             var folder = Path.Combine(Path.GetDirectoryName(settings.DbPath)!, "receipts");
@@ -23,6 +21,14 @@ public sealed class ReceiptOutput(TillSettings settings, CatalogStore store) : I
             return;
         }
         RawPrinter.Send(settings.PrinterName, ReceiptRenderer.EscPosBytes(receipt, header, settings.PaperWidth, openDrawer));
+    }
+
+    /// <summary>The receipt header printed on every bill (also used by the on-screen invoice).</summary>
+    public ReceiptHeader Header()
+    {
+        var pos = store.LoadPosSettings() ?? throw new InvalidOperationException("POS settings are not downloaded yet.");
+        return new ReceiptHeader(pos.CompanyName, FirstNonBlank(pos.AddressText, settings.ShopAddress), FirstNonBlank(pos.TaxId, settings.Trn),
+            $"Till {settings.TillNumber}", settings.ReceiptFooter, FirstNonBlank(null, settings.ShopPhone));
     }
 
     /// <summary>ERPNext's value, else the settings fallback; blank counts as missing (a blank TRN prints no TRN line and no QR).</summary>

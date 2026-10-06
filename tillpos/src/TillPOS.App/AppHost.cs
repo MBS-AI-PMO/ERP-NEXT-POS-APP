@@ -41,6 +41,7 @@ public sealed class AppHost
         syncContext = new SyncContext(erp, store, new KeysetPager(erp, new KvSyncStateStore(store)), settings.PosProfile);
 
         Shell.TillName = $"Till {settings.TillNumber}";
+        Output = new ReceiptOutput(settings, store);
         ctx = new TillContext(
             settings.TillNumber, new TenderModes(settings.CashMode, settings.CardMode),
             () => SaleContext.Create(catalog, store.LoadPosSettings()!, catalog.FindSalesTaxTemplate, settings.Precision, settings.Rounding,
@@ -48,10 +49,13 @@ public sealed class AppHost
             text => catalog.Search(text),
             new Authenticator(LoginCashiers(cashiers, settings)), new PinAttemptLimiter(() => DateTimeOffset.Now), new PinAttemptLimiter(() => DateTimeOffset.Now),
             new ShiftStore(db), new ReceiptStore(db), new ApprovalStore(db), store,
-            new SystemClock(), new ReceiptOutput(settings, store), Shell, dialogs);
+            new SystemClock(), Output, Shell, dialogs, settings.ShowReceiptPreview);
     }
 
     public ShellViewModel Shell { get; } = new();
+
+    /// <summary>The receipt printer; its header also feeds the on-screen invoice.</summary>
+    public ReceiptOutput Output { get; }
 
     public async Task StartAsync()
     {

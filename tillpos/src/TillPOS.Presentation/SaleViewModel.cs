@@ -175,13 +175,30 @@ public sealed class SaleViewModel : ObservableObject
 
     public void ClearAutosave() => ctx.Kv.SetValue(AutosaveKey, "[]");
 
-    /// <summary>Called by the payment screen after the bill was saved (the cart is already empty).</summary>
+    /// <summary>Called by the payment screen after the bill was saved (the cart is already empty). Then shows the invoice
+    /// popup (when enabled); a barcode scanned while it is open closes it and goes on the next bill.</summary>
     public void SaleCompleted(Receipt receipt, string? printError)
     {
         Refresh();
         if (printError is null) Info($"Saved {receipt.ClientId}. Change {Format.Money(receipt.Change)}");
+        else if (ctx.ShowReceiptPreview) Error($"Saved {receipt.ClientId}, but the printer failed ({printError}). Use Print again on the invoice, or note bill number {receipt.ClientId}.");
         else Error($"Saved {receipt.ClientId}, but the printer failed ({printError}). Note bill number {receipt.ClientId} — reprint is not available yet.");
         ctx.Navigator.Show(this);
+        if (!ctx.ShowReceiptPreview) return;
+
+        var code = ctx.Dialogs.ShowReceipt(receipt, printError, () =>
+        {
+            try
+            {
+                ctx.Output.Print(receipt, openDrawer: false);
+                return null;
+            }
+            catch (Exception ex)
+            {
+                return ex.Message;
+            }
+        });
+        if (!string.IsNullOrWhiteSpace(code)) Scan(code.Trim());
     }
 
     private void Feedback(AddResult result, string code)

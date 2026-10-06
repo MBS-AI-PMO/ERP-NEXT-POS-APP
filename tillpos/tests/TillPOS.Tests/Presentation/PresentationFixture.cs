@@ -43,7 +43,7 @@ public sealed class PresentationFixture : IDisposable
             text => Catalog.Items.Where(i => i.ItemName.Contains(text, StringComparison.OrdinalIgnoreCase)).ToList(),
             new Authenticator(() => [Simran, Sup]), new PinAttemptLimiter(() => Clock.Now), new PinAttemptLimiter(() => Clock.Now),
             new ShiftStore(db), new ReceiptStore(db), new ApprovalStore(db), new CatalogStore(db),
-            Clock, Output, Navigator, Dialogs);
+            Clock, Output, Navigator, Dialogs, ShowReceiptPreview: true);
     }
 
     public void LogInWithOpenShift()

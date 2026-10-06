@@ -1,0 +1,30 @@
+<Window x:Class="TillPOS.App.Dialogs.ReceiptDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Invoice" Width="420" SizeToContent="Height" WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        ShowInTaskbar="False" FontFamily="Segoe UI" FontSize="16" Background="{StaticResource Ground}">
+  <DockPanel>
+    <Border x:Name="Banner" DockPanel.Dock="Top" Padding="14,10" Visibility="Collapsed" Background="{StaticResource Danger}">
+      <TextBlock x:Name="BannerText" Foreground="White" FontWeight="SemiBold" TextWrapping="Wrap" />
+    </Border>
+    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="12">
+      <!-- Not focusable: scanner keys must never press a button; Enter/Esc still work through IsDefault/IsCancel. -->
+      <Button x:Name="PrintAgainButton" Style="{StaticResource KeyButton}" Content="Print again" Width="140" Focusable="False" Click="PrintAgain" />
+      <Button Style="{StaticResource PrimaryButton}" Content="Close (Enter)" Width="150" Focusable="False" IsDefault="True" IsCancel="True" Click="CloseClick" />
+    </StackPanel>
+    <ScrollViewer x:Name="Scroller" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                  Focusable="True" FocusVisualStyle="{x:Null}">
+      <Border Background="White" BorderBrush="{StaticResource Line}" BorderThickness="1" Padding="14,18" Margin="12,12,12,0"
+              HorizontalAlignment="Center">
+        <StackPanel>
+          <StackPanel x:Name="Paper" />
+          <Border x:Name="QrBox" Visibility="Collapsed" Background="#E6E6E6" Width="120" Height="72" Margin="0,12,0,0"
+                  HorizontalAlignment="Center">
+            <TextBlock Text="QR code printed on paper" Foreground="{StaticResource Muted}" FontSize="12" TextWrapping="Wrap"
+                       TextAlignment="Center" VerticalAlignment="Center" Margin="8" />
+          </Border>
+        </StackPanel>
+      </Border>
+    </ScrollViewer>
+  </DockPanel>
+</Window>

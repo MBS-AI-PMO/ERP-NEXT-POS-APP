@@ -15,6 +15,10 @@ public interface IDialogs
     Task<string?> AskPinAsync(string title, string reason);
     Task<decimal?> AskNumberAsync(string title, string prompt);
     void Info(string message);
+
+    /// <summary>Shows the saved bill (modal) with the print error, if any. <paramref name="reprint"/> prints it again without
+    /// opening the drawer and returns an error message or null. Returns the barcode when a scan closed the popup, otherwise null.</summary>
+    string? ShowReceipt(Receipt receipt, string? printError, Func<string?> reprint);
 }
 
 public interface IClock
@@ -44,4 +48,5 @@ public sealed record TillContext(
     IClock Clock,
     IReceiptOutput Output,
     INavigator Navigator,
-    IDialogs Dialogs);
+    IDialogs Dialogs,
+    bool ShowReceiptPreview);

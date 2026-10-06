@@ -51,7 +51,9 @@ public partial class App : Application
         try
         {
             var window = new MainWindow();
-            host = new AppHost(settings, Dispatcher, new WpfDialogs(window), ex => LogError(settings, ex));
+            // The invoice popup asks for the header only after a sale, when the host (and POS settings) exist.
+            var dialogs = new WpfDialogs(window, () => (host!.Output.Header(), settings.PaperWidth));
+            host = new AppHost(settings, Dispatcher, dialogs, ex => LogError(settings, ex));
             window.DataContext = host.Shell;
             MainWindow = window;
             window.Show();

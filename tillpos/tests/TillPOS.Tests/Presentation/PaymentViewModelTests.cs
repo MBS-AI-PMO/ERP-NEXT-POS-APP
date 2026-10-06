@@ -103,9 +103,81 @@ public sealed class PaymentViewModelTests : IDisposable
         Assert.Single(f.Ctx.Receipts.ListPending(10));
         Assert.True(sale.MessageIsError);
         Assert.Contains("printer failed", sale.Message);
-        Assert.Contains("reprint is not available yet", sale.Message);
+        Assert.Contains("Print again", sale.Message);
         Assert.DoesNotContain("Ctrl+P", sale.Message);
         Assert.Same(sale, f.Navigator.Current);
+    }
+
+    [Fact]
+    public void Completed_sale_shows_the_saved_invoice()
+    {
+        Pay(TenderKind.Card).CompleteCommand.Execute(null);
+
+        var saved = Assert.Single(f.Ctx.Receipts.ListPending(10));
+        var (shown, printError) = Assert.Single(f.Dialogs.Receipts);
+        Assert.Equal(saved.ClientId, shown.ClientId);
+        Assert.Null(printError);
+        Assert.Same(sale, f.Navigator.Current);
+    }
+
+    [Fact]
+    public void Invoice_popup_gets_the_print_error()
+    {
+        f.Output.Fail = true;
+        Pay(TenderKind.Card).CompleteCommand.Execute(null);
+
+        Assert.Equal("Printer offline", Assert.Single(f.Dialogs.Receipts).PrintError);
+    }
+
+    [Fact]
+    public void A_scan_that_closes_the_popup_goes_on_the_next_bill()
+    {
+        f.Dialogs.ReceiptScans.Enqueue("111");
+        Pay(TenderKind.Card).CompleteCommand.Execute(null);
+
+        var line = Assert.Single(sale.Lines);
+        Assert.Equal("Full Cream Milk 1L", line.Name);
+        Assert.Equal("6.79", sale.Total);
+        Assert.Same(sale, f.Navigator.Current);
+    }
+
+    [Fact]
+    public void No_popup_when_the_preview_is_turned_off()
+    {
+        var ctx = f.Ctx with { ShowReceiptPreview = false };
+        var quiet = new SaleViewModel(ctx, f.Session, new SupervisorGate(ctx, f.Session), (s, kind) => new PaymentViewModel(ctx, f.Session, s, kind));
+        quiet.Scan("111");
+
+        new PaymentViewModel(ctx, f.Session, quiet, TenderKind.Card).CompleteCommand.Execute(null);
+
+        Assert.Empty(f.Dialogs.Receipts);
+        Assert.Single(f.Output.Printed);
+        Assert.Contains("Saved", quiet.Message);
+    }
+
+    [Fact]
+    public void Reprint_from_the_popup_never_opens_the_drawer()
+    {
+        var vm = Pay(TenderKind.Cash);
+        vm.QuickCashCommand.Execute(20m);
+        vm.CompleteCommand.Execute(null);
+        var reprint = Assert.IsType<Func<string?>>(f.Dialogs.LastReprint);
+
+        Assert.Null(reprint());
+
+        Assert.Equal(2, f.Output.Printed.Count);
+        Assert.True(f.Output.Printed[0].OpenDrawer);
+        Assert.False(f.Output.Printed[1].OpenDrawer);
+        Assert.Equal(f.Output.Printed[0].Receipt.ClientId, f.Output.Printed[1].Receipt.ClientId);
+    }
+
+    [Fact]
+    public void Failed_reprint_returns_the_printer_error()
+    {
+        Pay(TenderKind.Card).CompleteCommand.Execute(null);
+        f.Output.Fail = true;
+
+        Assert.Equal("Printer offline", f.Dialogs.LastReprint!());
     }
 
     [Fact]
