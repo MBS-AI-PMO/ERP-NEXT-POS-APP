@@ -16,10 +16,26 @@ public sealed class TempDb : IDisposable
     public string Path { get; }
     public TillDb Db { get; }
 
+    /// <summary>Deletes the files. Antivirus or the search indexer can briefly hold a fresh file on Windows, so a
+    /// locked file is retried and then left behind in %TEMP% rather than failing a test that already passed.</summary>
     public void Dispose()
     {
         SqliteConnection.ClearAllPools();
         foreach (var f in new[] { Path, Path + "-wal", Path + "-shm" })
-            if (File.Exists(f)) File.Delete(f);
+            for (var attempt = 1; File.Exists(f); attempt++)
+            {
+                try
+                {
+                    File.Delete(f);
+                }
+                catch (Exception e) when ((e is IOException or UnauthorizedAccessException) && attempt < 5)
+                {
+                    Thread.Sleep(50);
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                {
+                    break;
+                }
+            }
     }
 }
