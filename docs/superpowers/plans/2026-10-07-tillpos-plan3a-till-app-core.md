@@ -2820,6 +2820,15 @@ public partial class App : Application
             return;
         }
 
+        // Last resort: an unexpected error in a screen must not close the till in front of a customer.
+        // Bills are saved before printing, so showing the error and carrying on is safe.
+        DispatcherUnhandledException += (_, args) =>
+        {
+            LogError(settings, args.Exception);
+            MessageBox.Show($"Something went wrong: {args.Exception.Message}\nThe till keeps running. Tell a supervisor if it repeats.", "TillPOS");
+            args.Handled = true;
+        };
+
         var window = new MainWindow();
         host = new AppHost(settings, Dispatcher, new WpfDialogs(window));
         window.DataContext = host.Shell;
@@ -2832,6 +2841,19 @@ public partial class App : Application
     {
         host?.Stop();
         base.OnExit(e);
+    }
+
+    private static void LogError(TillSettings settings, Exception ex)
+    {
+        try
+        {
+            var path = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(settings.DbPath)!, "errors.log");
+            System.IO.File.AppendAllText(path, $"{DateTimeOffset.Now:O} {ex}{Environment.NewLine}");
+        }
+        catch (Exception)
+        {
+            // Logging must never take the till down.
+        }
     }
 }
 ```
@@ -2970,12 +2992,15 @@ public partial class MainWindow : Window
     {
         if (e.Key != Key.Enter) return;
         var code = scanBuffer.OnChar('\r');
-        if (code is null || DataContext is not ShellViewModel { Current: SaleViewModel sale }) return;
+        if (code is null) return;
 
+        // A scan never acts as typing: strip its digits from the focused box and swallow its Enter.
+        // Only the sale screen uses it; elsewhere (e.g. payment) it is ignored, so a scan can never
+        // enter a cash amount and press "Complete".
         if (Keyboard.FocusedElement is TextBox box && box.Text.EndsWith(code, StringComparison.Ordinal))
             box.Text = box.Text[..^code.Length];
-        sale.Scan(code);
         e.Handled = true;
+        if (DataContext is ShellViewModel { Current: SaleViewModel sale }) sale.Scan(code);
     }
 }
 ```
@@ -3495,6 +3520,8 @@ Create `C:\ProgramData\TillPOS\settings.json`:
 | M10 | F11 (card) on a new bill | Exact amount; receipt saved |
 | M11 | Header "waiting" count | Increases by one per completed bill |
 | M12 | Unplug the network for 2 minutes | Header turns "Offline"; selling still works; reconnect → "Online" |
+| M13 | On the payment screen (F12), click the cash box and scan a barcode | Nothing happens: no digits in the cash box, sale not completed |
+| M14 | Press Enter twice quickly on the payment screen | One receipt saved, no error |
 
 - [ ] **Step 3: Commit the results**
 
