@@ -22,7 +22,15 @@ The Master Specification is the product authority for Phase 1A requirements; thi
 
 **Till hardware (confirmed 2026-10-06):** the tills now have **8 GB RAM** (upgraded). The Master Specification's 4 GB / 90 MB working-set budget is therefore not a hard constraint; this spec's target S7 (< 300 MB) stays, and the app should still be kept lean.
 
-**Open alignment questions with the Master Specification (Phase 1A):** cash-vs-card rounding rule, which Master Spec features go into the first release vs. a follow-up release, and the scale-barcode label format.
+### Decisions recorded 2026-10-06
+
+1. **Follow the data.** The till never corrects or second-guesses ERPNext data: whatever item ERPNext returns for a barcode is what is sold, at that item's price. (Data clean-up, if any, is the back office's business, not the till's.)
+2. **Scale labels** (example: CUCUMBER label `2000089007400` → 3.50/kg × 0.740 kg = 2.59): EAN-13 starting with `2` = **`2` + item code (6) + weight in grams (5) + check digit**. The till looks the label up against the barcodes in the database — first the full 13 digits, then the first 7 digits (e.g. `2000089`), then digits 2–7 (e.g. `000089`) — and uses the first match; quantity = weight digits ÷ 1000 kg. Check digit is validated; an invalid check digit is treated as a mis-scan.
+3. **Barcode with a unit the item doesn't have** (118 such barcodes on live): follow the data — sell the barcode's item in its **stock UOM** at its stock-UOM price instead of refusing it, and log it.
+4. **Payment rounding:** **card = exact total, no rounding. Cash = rounded to AED 0.25** (AED's smallest fraction in ERPNext), using **ERPNext's rounding rule** so totals always agree with ERPNext. **Split:** card part exact, the cash remainder rounded to 0.25.
+5. **Releases (Phase 1A):**
+   - **1A-1 — core till:** everything in this spec, plus hold & recall bill, price check, scale-label barcodes, blind cash count at shift close, supervisor approvals as in the Master Spec (line void, bill void, returns without receipt or above AED 50, no-sale drawer open), and the FTA QR code on receipts.
+   - **1A-2 — follow-up:** staff / hotel-guest / line / bill discounts, loyalty points, foreign-currency cash, customer pole display, RS-232 bench scale, RFID supervisor badges.
 
 ## 1. Problem and goal
 
