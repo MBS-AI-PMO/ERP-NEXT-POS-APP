@@ -20,7 +20,9 @@ public sealed class TempDb : IDisposable
     /// locked file is retried and then left behind in %TEMP% rather than failing a test that already passed.</summary>
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools();
+        // Clear only this file's pool: ClearAllPools would also close idle connections of tests running in parallel.
+        using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = Path, Pooling = true }.ToString()))
+            SqliteConnection.ClearPool(connection);
         foreach (var f in new[] { Path, Path + "-wal", Path + "-shm" })
             for (var attempt = 1; File.Exists(f); attempt++)
             {
