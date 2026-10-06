@@ -960,6 +960,7 @@ public class ScanBufferTests
     {
         var buffer = new ScanBuffer(() => now);
         Assert.Null(Type(buffer, "mil", 250));
+        now = now.AddMilliseconds(300);
         Assert.Equal("2000089007400", Type(buffer, "2000089007400\r", 8));
     }
 
@@ -2406,7 +2407,7 @@ There are no unit tests in this task (Windows/UI glue); it is verified by buildi
 </Project>
 ```
 
-Run: `dotnet sln add src/TillPOS.App` then `dotnet add src/TillPOS.App package System.Security.Cryptography.ProtectedData`.
+Run: `dotnet sln add src/TillPOS.App`. (No package needed: `ProtectedData` ships with the Windows Desktop framework that `UseWPF` brings in.)
 
 - [ ] **Step 2: Settings and secret protection**
 
@@ -2699,18 +2700,23 @@ public sealed class AppHost
 
     public async Task StartAsync()
     {
+        // CatalogPuller.RunAsync reports feed failures in its PullReport instead of throwing.
         while (store.LoadPosSettings() is null)
         {
             Shell.Show(new StatusViewModel("Downloading items and prices from ERPNext…"));
+            string problem;
             try
             {
-                await NewPuller().RunAsync();
+                var report = await NewPuller().RunAsync();
+                if (store.LoadPosSettings() is not null) break;
+                problem = report.Feeds.FirstOrDefault(f => f.Error is not null)?.Error ?? "POS profile not found";
             }
             catch (Exception ex)
             {
-                Shell.Show(new StatusViewModel($"Cannot reach ERPNext ({ex.Message}). The first start needs the internet — retrying in 30 seconds."));
-                await Task.Delay(TimeSpan.FromSeconds(30));
+                problem = ex.Message;
             }
+            Shell.Show(new StatusViewModel($"Cannot reach ERPNext ({problem}). The first start needs the internet — retrying in 30 seconds."));
+            await Task.Delay(TimeSpan.FromSeconds(30));
         }
 
         AddLocalTestCashiersIfNoneSynced();
