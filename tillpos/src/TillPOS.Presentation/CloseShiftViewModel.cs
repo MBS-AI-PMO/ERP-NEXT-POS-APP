@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
+using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using TillPOS.Core.Security;
@@ -30,13 +31,20 @@ public sealed class Denomination : ObservableObject
 /// <summary>One payment mode on the close-shift result (all amounts already formatted).</summary>
 public sealed record ShiftResultRow(string Mode, string Expected, string Counted, string Difference, bool HasDifference);
 
+/// <summary>What the confirmed counts of one shift have shown so far (kv <c>close_count:{shift}</c>). It outlives the close
+/// screen, so going back, reopening it or restarting the till never gives a fresh blind count: the first difference is never
+/// overwritten and OverLimit only ever turns on.</summary>
+public sealed record CloseCountState(decimal? FirstCashDifference, bool OverLimit, int Confirmations);
+
 /// <summary>Close shift in two stages. Stage 1 is a blind count: the cashier counts the cash (by note and coin, or one total)
 /// and enters the card machine's settlement total; nothing here shows or depends on the expected amounts, which are not even
 /// worked out until the count is confirmed. Stage 2 shows expected / counted / difference per mode with the bill count and
 /// totals; closing with a cash difference over <see cref="VarianceLimit"/> needs a supervisor. A recount cannot avoid that:
-/// once any confirmed count was over the limit, the supervisor is needed for the rest of this close, and the first count's
-/// difference goes in the approval and on the report. Closing stores the closing, prints the shift (Z) report, logs the
-/// cashier out and goes to the login screen.</summary>
+/// once any confirmed count of the shift was over the limit, the supervisor is needed until the shift closes, and the first
+/// count's difference goes in the approval and on the report. That state is stored per shift (<see cref="CloseCountState"/>),
+/// every confirmed count is logged (<see cref="ApprovalAction.ShiftCount"/>), and once a count is recorded there is no way
+/// back to the sale: recount or close. Closing stores the closing, prints the shift (Z) report, logs the cashier out and goes
+/// to the login screen.</summary>
 public sealed class CloseShiftViewModel : ObservableObject
 {
     /// <summary>AED notes and coins, largest first.</summary>
@@ -45,14 +53,16 @@ public sealed class CloseShiftViewModel : ObservableObject
     /// <summary>A cash difference above this (either way) needs a supervisor; exactly this much does not.</summary>
     public const decimal VarianceLimit = 5.00m;
 
+    public const string CountRecordedMessage = "The count is recorded — recount or close the shift";
+
     private readonly TillContext ctx;
     private readonly SessionState session;
     private readonly SupervisorGate gate;
     private readonly Action back;
     private readonly Action done;
     private ShiftClosing? closing;
-    private decimal? firstCashDifference;
-    private bool overLimitSeen;
+    private CloseCountState state;
+    private bool busy;
     private bool closed;
     private string message = "";
     private bool messageIsError;
@@ -69,11 +79,16 @@ public sealed class CloseShiftViewModel : ObservableObject
         UseTotalInstead.Changed += CountChanged;
         CardTotal.Changed += () => OnPropertyChanged(nameof(CountedCard));
 
+        state = LoadState();
         ConfirmCountCommand = new RelayCommand(ConfirmCount);
-        BackCommand = new RelayCommand(Back);
+        BackCommand = new RelayCommand(Back, () => !closed && !busy && state.Confirmations == 0);
         CloseCommand = new AsyncRelayCommand(CloseAsync);
-        RecountCommand = new RelayCommand(Recount);
+        RecountCommand = new RelayCommand(Recount, () => closing is not null && !closed && !busy);
+        if (state.Confirmations > 0) Info("A count is already recorded for this shift — count again, then close the shift.");
     }
+
+    /// <summary>The kv key holding a shift's <see cref="CloseCountState"/>.</summary>
+    public static string StateKey(string shiftClientId) => "close_count:" + shiftClientId;
 
     // ---- Stage 1: blind count ----
 
@@ -102,10 +117,11 @@ public sealed class CloseShiftViewModel : ObservableObject
     public string VatText => closing is null ? "" : Format.Money(closing.TotalTaxes);
     public decimal CashDifference => closing?.Modes.FirstOrDefault(m => m.ModeOfPayment == ctx.Modes.Cash)?.Difference ?? 0m;
     public string CashDifferenceText => closing is null ? "" : Format.Money(CashDifference);
-    public bool NeedsSupervisor => closing is not null && (overLimitSeen || Math.Abs(CashDifference) > VarianceLimit);
+    public bool NeedsSupervisor => closing is not null && (state.OverLimit || Math.Abs(CashDifference) > VarianceLimit);
 
-    /// <summary>The cash difference of the first confirmed count (null until a count is confirmed).</summary>
-    public decimal? FirstCashDifference => firstCashDifference;
+    /// <summary>The cash difference of the shift's first confirmed count (also from an earlier visit to this screen or before
+    /// a restart); null until a count is confirmed.</summary>
+    public decimal? FirstCashDifference => state.FirstCashDifference;
 
     public AsyncRelayCommand CloseCommand { get; }
     public RelayCommand RecountCommand { get; }
@@ -116,7 +132,7 @@ public sealed class CloseShiftViewModel : ObservableObject
     /// <summary>Works out the expected amounts (only now) against the confirmed count and shows the result.</summary>
     public void ConfirmCount()
     {
-        if (closed || closing is not null) return;
+        if (closed || busy || closing is not null) return;
         if (session.Shift is not { } opening) { Error("No open shift — log in again."); return; }
         ShiftClosing result;
         try
@@ -131,13 +147,30 @@ public sealed class CloseShiftViewModel : ObservableObject
             return;
         }
 
+        // Record the count (state, then the audit row) before anything is shown; if that fails, nothing is revealed.
+        var diff = result.Modes.FirstOrDefault(m => m.ModeOfPayment == ctx.Modes.Cash)?.Difference ?? 0m;
+        var next = new CloseCountState(state.FirstCashDifference ?? diff, state.OverLimit || Math.Abs(diff) > VarianceLimit,
+            state.Confirmations + 1);
+        try
+        {
+            ctx.Kv.SetValue(StateKey(opening.ClientId), JsonSerializer.Serialize(next));
+            state = next;
+            ctx.Approvals.Add(new ApprovalRecord(Guid.NewGuid().ToString("N"), ApprovalAction.ShiftCount, session.Cashier?.Id ?? "", "",
+                opening.ClientId, null, null, diff,
+                $"Count {next.Confirmations.ToString(CultureInfo.InvariantCulture)}: cash difference {Format.Money(diff)}", ctx.Clock.Now));
+        }
+        catch (Exception ex)
+        {
+            CommandsChanged();
+            Error($"Could not record the count ({ex.Message}) — confirm it again.");
+            return;
+        }
+
         closing = result;
         Rows.Clear();
         foreach (var m in result.Modes)
             Rows.Add(new ShiftResultRow(m.ModeOfPayment, Format.Money(m.Expected), Format.Money(m.Counted), Format.Money(m.Difference),
                 m.Difference != 0m));
-        firstCashDifference ??= CashDifference;
-        if (Math.Abs(CashDifference) > VarianceLimit) overLimitSeen = true;
         ResultChanged();
         if (NeedsSupervisor) Error($"The cash difference is over {Format.Money(VarianceLimit)} — a supervisor must approve closing the shift.");
         else Info("");
@@ -147,38 +180,56 @@ public sealed class CloseShiftViewModel : ObservableObject
     /// then store the closing, print the report (a printer failure does not undo the close), log out and show the login.</summary>
     public async Task CloseAsync()
     {
-        if (closed || closing is null) return;
+        if (closed || busy || closing is not { } toClose) return;
         if (session.Shift is not { } opening) { Error("No open shift — log in again."); return; }
+        var finalDifference = CashDifference;
+        var firstDiffers = FirstCountDiffers();
 
-        string? approvedBy = null;
-        if (NeedsSupervisor)
+        busy = true;
+        CommandsChanged();
+        try
         {
-            var diff = CashDifference;
-            var reason = $"Cash difference {Format.Money(diff)}" +
-                (FirstCountDiffers() is { } first ? $" (first count {Format.Money(first)})" : "");
-            approvedBy = await gate.ApproveAsync(ApprovalAction.ShiftVariance, reason, null, null, diff);
-            if (approvedBy is null)
+            string? approvedBy = null;
+            if (NeedsSupervisor)
             {
-                Error("The shift is still open: a supervisor must approve the cash difference, or recount.");
+                // The larger difference (first count or final), with its sign.
+                var amount = firstDiffers is { } first && Math.Abs(first) > Math.Abs(finalDifference) ? first : finalDifference;
+                var reason = $"Cash difference {Format.Money(finalDifference)}" +
+                    (firstDiffers is { } f ? $" (first count {Format.Money(f)})" : "");
+                approvedBy = await gate.ApproveAsync(ApprovalAction.ShiftVariance, reason, null, null, amount);
+                if (approvedBy is null)
+                {
+                    Error("The shift is still open: a supervisor must approve the cash difference, or recount.");
+                    return;
+                }
+            }
+
+            var result = toClose with { ClosedAt = ctx.Clock.Now };
+            try
+            {
+                ctx.Shifts.Close(result);
+            }
+            catch (Exception ex)
+            {
+                Error($"Could not close the shift: {ex.Message}");
                 return;
             }
+            closed = true;
+            Closed(opening, result, approvedBy, firstDiffers);
         }
+        finally
+        {
+            busy = false;
+            CommandsChanged();
+        }
+    }
 
-        var result = closing with { ClosedAt = ctx.Clock.Now };
+    /// <summary>After the shift is closed: print the report (a failure is only reported), log out, show the login.</summary>
+    private void Closed(ShiftOpening opening, ShiftClosing result, string? approvedBy, decimal? firstDiffers)
+    {
         try
         {
-            ctx.Shifts.Close(result);
-        }
-        catch (Exception ex)
-        {
-            Error($"Could not close the shift: {ex.Message}");
-            return;
-        }
-        closed = true;
-
-        try
-        {
-            ctx.Output.PrintShiftReport(opening, result, session.Cashier?.Name ?? opening.Cashier, approvedBy, FirstCountDiffers());
+            ctx.Output.PrintShiftReport(opening, result, session.Cashier?.Name ?? opening.Cashier, approvedBy, firstDiffers);
         }
         catch (Exception ex)
         {
@@ -192,7 +243,24 @@ public sealed class CloseShiftViewModel : ObservableObject
     }
 
     /// <summary>The first count's cash difference when a recount changed it, otherwise null.</summary>
-    private decimal? FirstCountDiffers() => firstCashDifference is { } first && first != CashDifference ? first : null;
+    private decimal? FirstCountDiffers() => state.FirstCashDifference is { } first && first != CashDifference ? first : null;
+
+    /// <summary>The shift's stored count state. Unreadable state fails closed: treated as an over-limit count already
+    /// recorded, so a supervisor is needed and there is no way back.</summary>
+    private CloseCountState LoadState()
+    {
+        if (session.Shift is not { } shift) return new CloseCountState(null, false, 0);
+        try
+        {
+            return ctx.Kv.GetValue(StateKey(shift.ClientId)) is { } json
+                ? JsonSerializer.Deserialize<CloseCountState>(json) ?? throw new JsonException("empty")
+                : new CloseCountState(null, false, 0);
+        }
+        catch (Exception)
+        {
+            return new CloseCountState(null, true, 1);
+        }
+    }
 
     private void CountChanged()
     {
@@ -200,15 +268,19 @@ public sealed class CloseShiftViewModel : ObservableObject
         OnPropertyChanged(nameof(CashTotal));
     }
 
+    /// <summary>Back to the sale, only while no count has been recorded for this shift (Esc calls this even when the button
+    /// is disabled, so it says why).</summary>
     private void Back()
     {
-        if (!closed) back();
+        if (closed || busy) return;
+        if (state.Confirmations > 0) { Error(CountRecordedMessage); return; }
+        back();
     }
 
     /// <summary>Back to the count, keeping what was entered.</summary>
     private void Recount()
     {
-        if (closed || closing is null) return;
+        if (closed || busy || closing is null) return;
         closing = null;
         Rows.Clear();
         ResultChanged();
@@ -226,6 +298,13 @@ public sealed class CloseShiftViewModel : ObservableObject
         OnPropertyChanged(nameof(CashDifferenceText));
         OnPropertyChanged(nameof(NeedsSupervisor));
         OnPropertyChanged(nameof(FirstCashDifference));
+        CommandsChanged();
+    }
+
+    private void CommandsChanged()
+    {
+        BackCommand.NotifyCanExecuteChanged();
+        RecountCommand.NotifyCanExecuteChanged();
     }
 
     private void Info(string text) { Message = text; MessageIsError = false; }

@@ -24,9 +24,13 @@ public sealed class FakeDialogs : IDialogs
     public Func<HeldBillsViewModel, string?> OnHeldBills { get; set; } = _ => null;
     public int HeldBillsRequests { get; private set; }
 
+    /// <summary>When set, the next PIN prompt stays open until the test completes this (then it is cleared).</summary>
+    public TaskCompletionSource<string?>? PendingPin { get; set; }
+
     public Task<string?> AskPinAsync(string title, string reason)
     {
         PinRequests++;
+        if (PendingPin is { } pending) { PendingPin = null; return pending.Task; }
         return Task.FromResult(Pins.Count > 0 ? Pins.Dequeue() : null);
     }
 

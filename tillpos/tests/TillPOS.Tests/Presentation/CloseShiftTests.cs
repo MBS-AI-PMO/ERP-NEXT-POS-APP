@@ -263,7 +263,8 @@ public sealed class CloseShiftTests : IDisposable
         f.Dialogs.Pins.Enqueue("1111");                                         // a cashier PIN is not a supervisor PIN
         await vm.CloseAsync();
         Assert.NotNull(f.Ctx.Shifts.Current());
-        Assert.Equal(ApprovalAction.FailedSupervisorPin, Assert.Single(f.Ctx.Approvals.Unsynced()).Action);
+        Assert.Single(f.Ctx.Approvals.Unsynced(), a => a.Action == ApprovalAction.FailedSupervisorPin);
+        Assert.DoesNotContain(f.Ctx.Approvals.Unsynced(), a => a.Action == ApprovalAction.ShiftVariance);
     }
 
     [Theory]
@@ -277,7 +278,7 @@ public sealed class CloseShiftTests : IDisposable
         await vm.CloseAsync();
 
         Assert.Null(f.Ctx.Shifts.Current());
-        var approval = Assert.Single(f.Ctx.Approvals.Unsynced());
+        var approval = Assert.Single(f.Ctx.Approvals.Unsynced(), a => a.Action == ApprovalAction.ShiftVariance);
         Assert.Equal(ApprovalAction.ShiftVariance, approval.Action);
         Assert.Equal("sup", approval.SupervisorId);
         Assert.Equal("simran", approval.CashierId);
@@ -313,7 +314,7 @@ public sealed class CloseShiftTests : IDisposable
         Assert.Null(f.Ctx.Shifts.Current());
         var approval = Assert.Single(f.Ctx.Approvals.Unsynced(), a => a.Action == ApprovalAction.ShiftVariance);
         Assert.Equal("Cash difference 0.00 (first count -10.00)", approval.Reason);
-        Assert.Equal(0m, approval.Amount);
+        Assert.Equal(-10m, approval.Amount);                                     // the larger of first and final
         var report = Assert.Single(f.Output.ShiftReports);
         Assert.Equal(-10m, report.FirstCountDifference);
         Assert.Equal("sup", report.ApprovedBy);
@@ -343,6 +344,167 @@ public sealed class CloseShiftTests : IDisposable
         vm.ConfirmCount();
         await vm.CloseAsync();
         Assert.Null(Assert.Single(f.Output.ShiftReports).FirstCountDifference);
+    }
+
+    // ---- The count survives back, reopen and restart ----
+
+    /// <summary>A new close screen for the same shift, as after Back, reopening it or restarting the till.</summary>
+    private CloseShiftViewModel Reopen() => new(f.Ctx, f.Session, new SupervisorGate(f.Ctx, f.Session), () => f.Navigator.Show("sale"),
+        () => f.Navigator.Show(login));
+
+    [Fact]
+    public void Back_is_refused_once_a_count_is_confirmed()
+    {
+        var vm = OpenClose();
+        Assert.True(vm.BackCommand.CanExecute(null));
+        Assert.False(vm.RecountCommand.CanExecute(null));
+        vm.UseTotalInstead.Text = "313.45";                                      // 10 short
+        vm.ConfirmCount();
+
+        Assert.False(vm.BackCommand.CanExecute(null));
+        Assert.True(vm.RecountCommand.CanExecute(null));
+        vm.BackCommand.Execute(null);                                            // Esc runs the command even when disabled
+        Assert.Same(vm, f.Navigator.Current);
+        Assert.True(vm.MessageIsError);
+        Assert.Equal(CloseShiftViewModel.CountRecordedMessage, vm.Message);
+
+        vm.RecountCommand.Execute(null);
+        Assert.False(vm.RecountCommand.CanExecute(null));
+        Assert.False(vm.BackCommand.CanExecute(null));
+        vm.BackCommand.Execute(null);
+        Assert.Same(vm, f.Navigator.Current);
+        Assert.Equal(CloseShiftViewModel.CountRecordedMessage, vm.Message);
+    }
+
+    [Fact]
+    public async Task A_reopened_close_screen_still_needs_a_supervisor_after_a_count_over_the_limit()
+    {
+        Counted("313.45");                                                       // 10 short, then the till restarts
+
+        var vm = Reopen();
+        Assert.False(vm.BackCommand.CanExecute(null));
+        vm.BackCommand.Execute(null);
+        Assert.Equal(CloseShiftViewModel.CountRecordedMessage, vm.Message);
+        Assert.True(vm.IsCounting);
+        Assert.Empty(vm.Rows);                                                   // still blind
+
+        vm.UseTotalInstead.Text = "323.45";                                      // exact
+        vm.CardTotal.Text = "84.25";
+        vm.ConfirmCount();
+        Assert.Equal(0m, vm.CashDifference);
+        Assert.Equal(-10m, vm.FirstCashDifference);
+        Assert.True(vm.NeedsSupervisor);
+
+        f.Dialogs.Pins.Enqueue("1111");
+        await vm.CloseAsync();
+        Assert.NotNull(f.Ctx.Shifts.Current());
+
+        f.Dialogs.Pins.Enqueue("9999");
+        await vm.CloseAsync();
+        Assert.Null(f.Ctx.Shifts.Current());
+        var approval = Assert.Single(f.Ctx.Approvals.Unsynced(), a => a.Action == ApprovalAction.ShiftVariance);
+        Assert.Equal("Cash difference 0.00 (first count -10.00)", approval.Reason);
+        Assert.Equal(-10m, approval.Amount);
+        Assert.Equal(-10m, Assert.Single(f.Output.ShiftReports).FirstCountDifference);
+    }
+
+    [Fact]
+    public async Task A_reopened_close_screen_after_a_count_within_the_limit_needs_no_supervisor()
+    {
+        Counted("320");                                                          // 3.45 short
+
+        var vm = Reopen();
+        Assert.False(vm.BackCommand.CanExecute(null));
+        vm.UseTotalInstead.Text = "323.45";
+        vm.ConfirmCount();
+        Assert.False(vm.NeedsSupervisor);
+        Assert.Equal(M("-3.45"), vm.FirstCashDifference);
+
+        await vm.CloseAsync();
+        Assert.Equal(0, f.Dialogs.PinRequests);
+        Assert.Null(f.Ctx.Shifts.Current());
+    }
+
+    [Fact]
+    public void Every_confirmed_count_is_logged()
+    {
+        var vm = Counted("313.45");
+        vm.RecountCommand.Execute(null);
+        vm.UseTotalInstead.Text = "323.45";
+        vm.ConfirmCount();
+        Reopen().ConfirmCount();                                                 // nothing entered: counted 0
+
+        var rows = f.Ctx.Approvals.Unsynced().Where(a => a.Action == ApprovalAction.ShiftCount).OrderBy(a => a.Reason).ToList();
+        Assert.Equal(new[] { "Count 1: cash difference -10.00", "Count 2: cash difference 0.00", "Count 3: cash difference -323.45" },
+            rows.Select(r => r.Reason));
+        Assert.Equal(new[] { -10m, 0m, M("-323.45") }, rows.Select(r => r.Amount));
+        Assert.All(rows, r =>
+        {
+            Assert.Equal("", r.SupervisorId);
+            Assert.Equal("simran", r.CashierId);
+            Assert.Equal(ShiftId, r.ShiftClientId);
+        });
+    }
+
+    [Fact]
+    public async Task The_variance_approval_amount_is_the_larger_difference()
+    {
+        var vm = Counted("317.45");                                              // 6 short
+        vm.RecountCommand.Execute(null);
+        vm.UseTotalInstead.Text = "335.45";                                      // 12 over
+        vm.ConfirmCount();
+        f.Dialogs.Pins.Enqueue("9999");
+
+        await vm.CloseAsync();
+
+        var approval = Assert.Single(f.Ctx.Approvals.Unsynced(), a => a.Action == ApprovalAction.ShiftVariance);
+        Assert.Equal(12m, approval.Amount);
+        Assert.Equal("Cash difference 12.00 (first count -6.00)", approval.Reason);
+    }
+
+    [Fact]
+    public async Task Recount_back_and_confirm_are_refused_while_the_close_waits_for_the_supervisor()
+    {
+        var vm = Counted("313.45");
+        var pin = new TaskCompletionSource<string?>();
+        f.Dialogs.PendingPin = pin;
+
+        var close = vm.CloseAsync();
+        Assert.False(vm.RecountCommand.CanExecute(null));
+        vm.RecountCommand.Execute(null);
+        Assert.True(vm.IsResult);
+        vm.ConfirmCount();
+        await vm.CloseAsync();                                                   // a second close does nothing
+        Assert.Equal(1, f.Dialogs.PinRequests);
+
+        pin.SetResult("9999");
+        await close;
+        Assert.Null(f.Ctx.Shifts.Current());
+        Assert.Equal(-10m, Assert.Single(f.Output.ShiftReports).Closing.Modes.Single(m => m.ModeOfPayment == "Cash Counter 2").Difference);
+        Assert.Single(f.Ctx.Approvals.Unsynced(), a => a.Action == ApprovalAction.ShiftCount);
+    }
+
+    [Fact]
+    public void An_unreadable_count_record_fails_closed()
+    {
+        f.Ctx.Kv.SetValue(CloseShiftViewModel.StateKey(ShiftId), "{not json");
+        var vm = Reopen();
+        Assert.False(vm.BackCommand.CanExecute(null));
+        vm.UseTotalInstead.Text = "323.45";
+        vm.CardTotal.Text = "84.25";
+        vm.ConfirmCount();
+        Assert.Equal(0m, vm.CashDifference);
+        Assert.True(vm.NeedsSupervisor);
+    }
+
+    [Fact]
+    public void Another_shift_starts_with_a_clean_count()
+    {
+        f.Ctx.Kv.SetValue(CloseShiftViewModel.StateKey("TILL2-SHIFT-20261006080000"),
+            System.Text.Json.JsonSerializer.Serialize(new CloseCountState(-50m, true, 2)));
+        var vm = Reopen();
+        Assert.True(vm.BackCommand.CanExecute(null));
+        Assert.Null(vm.FirstCashDifference);
     }
 
     // ---- Close ----
