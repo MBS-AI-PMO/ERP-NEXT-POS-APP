@@ -152,3 +152,14 @@ Run with the owner present, against the live site (or a test site if one is avai
 - **Safe to build now (no writes):** Tasks 1, 2, 3 (tested with FakeErp), 4 (DryRun against live, read-only), 5 and 6.
 - **Needs the ERPNext admin:** Tasks 7 and 8.
 - **Needs the owner's go-ahead:** Task 9 (live writes) and Task 10 (cutover).
+
+---
+
+## Sandbox DryRun result (2026-10-08, controller)
+
+Build: commit fd211a00 (Debug), `Upload = DryRun`, pointed at the dev sandbox `dev.quickgroc.local`, using a copy of an earlier test database (one closed shift: 1 cash sale, 7 approvals).
+
+- First sync cycle: **10 documents previewed, 0 problems, nothing sent** (`outbox-preview\_summary.txt`). Header showed the amber "DRY RUN" badge and "10 waiting · 0 failed".
+- Previews: `TILL1-…-000001.json` (POS Invoice), `TILL1-SHIFT-…-opening.json`, `TILL1-SHIFT-…-closing.json` (with `pos_transactions`, `pos_payments`, `taxes`, `payment_reconciliation`), 7 `APPROVAL-*.json`. Field names match the live POS Awesome documents. Every item, UOM, warehouse, mode of payment, customer, tax template and profile reference was checked read-only on the sandbox.
+- Sandbox prepared via `tillpos/tools/erpnext-setup.mjs`: custom fields, TillPOS Approval, POS Cashier (+ two sandbox-only cashiers), `account_for_change_amount` on the three profiles (owner approved).
+- Next: Live upload on the **sandbox only** (Task 9), after the fix-wave review and the owner's go-ahead.
