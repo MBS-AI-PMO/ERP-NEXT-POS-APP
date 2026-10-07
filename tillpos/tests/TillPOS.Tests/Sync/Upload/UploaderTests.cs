@@ -448,7 +448,7 @@ public sealed class UploaderTests : IDisposable
         Sale("TILL2-B", 2);
         CloseShift();
         receipts.MarkFailed("TILL2-A", "Item disabled", clock.AddHours(1));
-        receipts.MarkHandled("TILL2-A");
+        receipts.MarkHandled("TILL2-A", "Handled by sup: fixed by hand");
 
         var report = await New().RunOnceAsync();
 
@@ -464,13 +464,48 @@ public sealed class UploaderTests : IDisposable
         OpenShift();
         Sale("TILL2-A", 1);
         shifts.MarkFailed(ShiftId, ShiftDocument.Opening, "POS Profile not found", clock);
-        shifts.MarkHandled(ShiftId, ShiftDocument.Opening);
+        shifts.MarkHandled(ShiftId, ShiftDocument.Opening, "Handled by sup: opened by hand");
 
         var report = await New().RunOnceAsync();
 
         Assert.Empty(erp.Inserted);
         Assert.Contains(report.Problems, p => p.Message.Contains("was handled by hand"));
         Assert.Equal(1, report.Waiting);   // the bill
+    }
+
+    [Fact]
+    public async Task A_handled_closing_is_final()
+    {
+        OpenShift();
+        Sale("TILL2-A", 1);
+        CloseShift();
+        shifts.MarkFailed(ShiftId, ShiftDocument.Closing, "bad", clock);
+        shifts.MarkHandled(ShiftId, ShiftDocument.Closing, "Handled by sup: closed by hand");
+
+        await New().RunOnceAsync();
+
+        Assert.DoesNotContain("POS Closing Shift", InsertedDoctypes);
+        Assert.Equal(UploadStatus.Handled, shifts.SyncInfo(ShiftId)!.ClosingStatus);
+    }
+
+    [Fact]
+    public async Task A_bill_marked_handled_during_the_run_is_not_sent()
+    {
+        OpenShift();
+        Sale("TILL2-A", 1);
+        receipts.MarkFailed("TILL2-A", "Item disabled", null);
+        // The supervisor marks it handled after this run read the outbox, just before its insert.
+        erp.Fail = q =>
+        {
+            if (q.Doctype == "POS Invoice") receipts.MarkHandled("TILL2-A", "Handled by sup: fixed by hand");
+            return null;
+        };
+
+        var report = await New().RunOnceAsync();
+
+        Assert.Empty(InsertedInvoices);
+        Assert.Equal(ReceiptSyncStatus.Handled, receipts.SyncInfo("TILL2-A").Status);
+        Assert.Contains(report.Problems, p => p.Message.Contains("changed on the till meanwhile"));
     }
 
     [Fact]

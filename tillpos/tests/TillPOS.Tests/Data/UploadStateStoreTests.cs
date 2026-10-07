@@ -177,17 +177,27 @@ public sealed class UploadStateStoreTests : IDisposable
         Assert.Equal([(OutboxKind.Bill, "B1", "S1", "Item disabled")], receipts.Problems().Select(p => (p.Kind, p.Id, p.ShiftId, p.Error)));
         Assert.Equal([(OutboxKind.Approval, "a1", "S1")], approvals.Problems().Select(p => (p.Kind, p.Id, p.ShiftId)));
 
-        receipts.MarkHandled("B1");
-        shifts.MarkHandled("S1", ShiftDocument.Closing);
-        approvals.MarkHandled("a1");
+        receipts.MarkHandled("B1", "Handled by sup: fixed by hand ACC-9");
+        shifts.MarkHandled("S1", ShiftDocument.Closing, "Handled by sup: closed in ERPNext");
+        approvals.MarkHandled("a1", "Handled by sup: not needed");
 
-        Assert.Empty(receipts.Problems());
-        Assert.Empty(shifts.Problems());
-        Assert.Empty(approvals.Problems());
+        Assert.Equal([(UploadStatus.Handled, "Handled by sup: fixed by hand ACC-9")], receipts.Problems().Select(p => (p.Status, p.Error)));
+        Assert.Equal([UploadStatus.Handled], shifts.Problems().Select(p => p.Status));
+        Assert.Equal([UploadStatus.Handled], approvals.Problems().Select(p => p.Status));
         Assert.Equal(ReceiptSyncStatus.Handled, receipts.SyncInfo("B1").Status);
+        Assert.False(receipts.MarkInFlight("B1", At));   // a handled bill is never sent
+        Assert.False(shifts.MarkInFlight("S1", ShiftDocument.Closing, At));
+        Assert.False(approvals.MarkInFlight("a1", At));
         Assert.Equal(UploadStatus.Handled, shifts.SyncInfo("S1")!.ClosingStatus);
         Assert.Equal(0, receipts.CountFailed() + shifts.CountFailed() + approvals.CountFailed());
         Assert.Equal(1, shifts.CountPending());   // the opening is still to upload
+
+        receipts.Unhandle("B1");
+        shifts.Unhandle("S1", ShiftDocument.Closing);
+        approvals.Unhandle("a1");
+        Assert.Equal(new ReceiptSyncInfo(ReceiptSyncStatus.Pending, null, null, 0), receipts.SyncInfo("B1"));
+        Assert.Equal(UploadStatus.Pending, shifts.SyncInfo("S1")!.ClosingStatus);
+        Assert.Equal(UploadStatus.Pending, Assert.Single(approvals.Outbox()).Status);
     }
 
     [Fact]

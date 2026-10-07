@@ -7,7 +7,7 @@ namespace TillPOS.Core.Security;
 public sealed class ApprovalRequiredException(string reason) : Exception(reason);
 
 public enum ApprovalAction { LineVoid, BillVoid, ReturnWithoutReceipt, ReturnOverLimit, NoSaleDrawerOpen, FailedSupervisorPin, SettingsChange, HeldBillDelete, ShiftVariance, ShiftCount,
-    ReturnOldReceipt, UploadModeChange, UploadIncludeHistory, UploadRetry, UploadMarkHandled }
+    ReturnOldReceipt, UploadModeChange, UploadIncludeHistory, UploadRetry, UploadMarkHandled, UploadUnhandle }
 
 public sealed record Cashier(string Id, string Name, string? User, string PinHash, bool IsSupervisor, bool Enabled);
 

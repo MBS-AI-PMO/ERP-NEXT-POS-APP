@@ -29,13 +29,15 @@ public sealed class UploadProblemRow(OutboxProblem problem)
     public string Error => Problem.Error ?? "";
     public int Attempts => Problem.Attempts;
     public bool IsExcluded => Problem.Status == UploadStatus.Excluded;
+    public bool IsHandled => Problem.Status == UploadStatus.Handled;
     public string Title => $"{Kind} {Id}";
 }
 
-/// <summary>Upload problems (supervisor): the documents ERPNext refused (Failed) and those left out because they were taken
-/// before the till went Live (Excluded). Retry puts a failed document back in the queue at once; View shows what would be
-/// sent; Mark as handled is for a document fixed by hand in ERPNext (it is never uploaded); Include puts an excluded shift (or
-/// approval) back in the queue. Each action needs a supervisor PIN and is logged.</summary>
+/// <summary>Upload problems (supervisor): the documents ERPNext refused (Failed), those left out because they were taken
+/// before the till went Live (Excluded), and those a supervisor dealt with by hand (Handled: who, when, why). Retry puts a
+/// failed document back in the queue at once; View shows what would be sent; Mark as handled (with a reason and an optional
+/// ERPNext reference) is for a document fixed by hand in ERPNext: it is never uploaded; Un-handle takes it back; Include puts
+/// an excluded shift (or approval) back in the queue. Each action needs a supervisor PIN and is logged.</summary>
 public sealed class UploadProblemsViewModel : ObservableObject
 {
     private readonly TillContext ctx;
@@ -52,6 +54,7 @@ public sealed class UploadProblemsViewModel : ObservableObject
         ViewCommand = new RelayCommand<UploadProblemRow>(View);
         MarkHandledCommand = new AsyncRelayCommand<UploadProblemRow>(MarkHandledAsync);
         IncludeCommand = new AsyncRelayCommand<UploadProblemRow>(IncludeAsync);
+        UnhandleCommand = new AsyncRelayCommand<UploadProblemRow>(UnhandleAsync);
         BackCommand = new RelayCommand(() => ctx.Navigator.Show(back()));
         Reload();
     }
@@ -62,11 +65,15 @@ public sealed class UploadProblemsViewModel : ObservableObject
     /// <summary>Documents from before the till went Live (test data): never uploaded unless included.</summary>
     public ObservableCollection<UploadProblemRow> Excluded { get; } = [];
 
+    /// <summary>Documents a supervisor marked as handled by hand in ERPNext (final; the error column says who, when and why).</summary>
+    public ObservableCollection<UploadProblemRow> Handled { get; } = [];
+
     public string Message { get => message; private set => SetProperty(ref message, value); }
     public AsyncRelayCommand<UploadProblemRow> RetryCommand { get; }
     public RelayCommand<UploadProblemRow> ViewCommand { get; }
     public AsyncRelayCommand<UploadProblemRow> MarkHandledCommand { get; }
     public AsyncRelayCommand<UploadProblemRow> IncludeCommand { get; }
+    public AsyncRelayCommand<UploadProblemRow> UnhandleCommand { get; }
     public RelayCommand BackCommand { get; }
 
     /// <summary>How many documents need a look (failed + excluded), e.g. for the login screen's button; 0 when the stores fail.</summary>
@@ -74,7 +81,7 @@ public sealed class UploadProblemsViewModel : ObservableObject
     {
         try
         {
-            return All(ctx).Count;
+            return All(ctx).Count(p => p.Status != UploadStatus.Handled);
         }
         catch (Exception)
         {
@@ -90,10 +97,12 @@ public sealed class UploadProblemsViewModel : ObservableObject
     {
         Failed.Clear();
         Excluded.Clear();
+        Handled.Clear();
         try
         {
             foreach (var problem in All(ctx).OrderBy(p => p.Created).ThenBy(p => p.Kind))
-                (problem.Status == UploadStatus.Excluded ? Excluded : Failed).Add(new UploadProblemRow(problem));
+                (problem.Status switch { UploadStatus.Excluded => Excluded, UploadStatus.Handled => Handled, _ => Failed })
+                    .Add(new UploadProblemRow(problem));
         }
         catch (Exception ex)
         {
@@ -103,7 +112,7 @@ public sealed class UploadProblemsViewModel : ObservableObject
 
     private async Task RetryAsync(UploadProblemRow? row)
     {
-        if (row is null || row.IsExcluded) return;
+        if (row is null || row.IsExcluded || row.IsHandled) return;
         if (await gate.ApproveAsync(ApprovalAction.UploadRetry, $"Retry upload of {row.Title}", ReceiptId(row)) is null) return;
         Act(row, $"{row.Title} will be uploaded again shortly.", () =>
         {
@@ -116,18 +125,49 @@ public sealed class UploadProblemsViewModel : ObservableObject
         });
     }
 
+    /// <summary>Asks why (required) and for the ERPNext reference (optional), then a supervisor; the note "Handled by {supervisor}
+    /// ({when}): {reason} {reference}" stays on the document.</summary>
     private async Task MarkHandledAsync(UploadProblemRow? row)
     {
-        if (row is null) return;
-        if (await gate.ApproveAsync(ApprovalAction.UploadMarkHandled, $"Mark {row.Title} as handled in ERPNext", ReceiptId(row)) is null) return;
+        if (row is null || row.IsHandled) return;
+        var reason = (await ctx.Dialogs.AskTextAsync("Mark as handled", $"Why is {row.Title} handled by hand?"))?.Trim();
+        if (string.IsNullOrEmpty(reason))
+        {
+            Message = "Not marked: a reason is needed.";
+            return;
+        }
+        var reference = (await ctx.Dialogs.AskTextAsync("Mark as handled", "ERPNext document name (optional)"))?.Trim() ?? "";
+        if (await gate.ApproveAsync(ApprovalAction.UploadMarkHandled, $"Mark {row.Title} as handled in ERPNext: {reason} {reference}".Trim(),
+                ReceiptId(row)) is not { } supervisor)
+            return;
+        var when = ctx.Clock.Now.ToString("dd/MM HH:mm", CultureInfo.InvariantCulture);
+        var note = $"Handled by {supervisor} ({when}): {reason} {reference}".Trim();
         Act(row, $"{row.Title} is marked as handled; it will not be uploaded.", () =>
         {
             switch (row.Problem.Kind)
             {
-                case OutboxKind.Bill: ctx.Receipts.MarkHandled(row.Id); break;
-                case OutboxKind.Approval: ctx.Approvals.MarkHandled(row.Id); break;
-                case OutboxKind.Opening: ctx.Shifts.MarkHandled(row.Id, ShiftDocument.Opening); break;
-                default: ctx.Shifts.MarkHandled(row.Id, ShiftDocument.Closing); break;
+                case OutboxKind.Bill: ctx.Receipts.MarkHandled(row.Id, note); break;
+                case OutboxKind.Approval: ctx.Approvals.MarkHandled(row.Id, note); break;
+                case OutboxKind.Opening: ctx.Shifts.MarkHandled(row.Id, ShiftDocument.Opening, note); break;
+                default: ctx.Shifts.MarkHandled(row.Id, ShiftDocument.Closing, note); break;
+            }
+        });
+    }
+
+    /// <summary>Takes a handled document back into the upload queue.</summary>
+    private async Task UnhandleAsync(UploadProblemRow? row)
+    {
+        if (row is null || !row.IsHandled) return;
+        if (await gate.ApproveAsync(ApprovalAction.UploadUnhandle, $"Upload {row.Title} again (no longer handled by hand)", ReceiptId(row)) is null)
+            return;
+        Act(row, $"{row.Title} will be uploaded.", () =>
+        {
+            switch (row.Problem.Kind)
+            {
+                case OutboxKind.Bill: ctx.Receipts.Unhandle(row.Id); break;
+                case OutboxKind.Approval: ctx.Approvals.Unhandle(row.Id); break;
+                case OutboxKind.Opening: ctx.Shifts.Unhandle(row.Id, ShiftDocument.Opening); break;
+                default: ctx.Shifts.Unhandle(row.Id, ShiftDocument.Closing); break;
             }
         });
     }

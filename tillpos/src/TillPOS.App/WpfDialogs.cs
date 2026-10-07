@@ -110,6 +110,28 @@ public sealed class WpfDialogs(
         return true;
     }
 
+    public Task<string?> AskTextAsync(string title, string prompt)
+    {
+        var box = new System.Windows.Controls.TextBox { FontSize = 18, Height = 40, Margin = new Thickness(0, 8, 0, 12), VerticalContentAlignment = VerticalAlignment.Center };
+        var ok = new System.Windows.Controls.Button { Content = "OK", Width = 120, Height = 44, IsDefault = true, Margin = new Thickness(0, 0, 8, 0) };
+        var cancel = new System.Windows.Controls.Button { Content = "Cancel", Width = 120, Height = 44, IsCancel = true };
+        var buttons = new System.Windows.Controls.StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        buttons.Children.Add(ok);
+        buttons.Children.Add(cancel);
+        var panel = new System.Windows.Controls.StackPanel { Margin = new Thickness(20) };
+        panel.Children.Add(new System.Windows.Controls.TextBlock { Text = prompt, TextWrapping = TextWrapping.Wrap, FontSize = 16 });
+        panel.Children.Add(box);
+        panel.Children.Add(buttons);
+        var window = new Window
+        {
+            Title = title, Content = panel, Width = 520, SizeToContent = SizeToContent.Height, Owner = Top(),
+            WindowStartupLocation = WindowStartupLocation.CenterOwner, ResizeMode = ResizeMode.NoResize,
+        };
+        ok.Click += (_, _) => window.DialogResult = true;
+        window.Loaded += (_, _) => box.Focus();
+        return Task.FromResult(window.ShowDialog() == true ? box.Text : null);
+    }
+
     public void ShowText(string title, string text)
     {
         var box = new System.Windows.Controls.TextBox

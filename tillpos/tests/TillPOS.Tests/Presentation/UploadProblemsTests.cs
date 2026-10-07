@@ -71,15 +71,54 @@ public sealed class UploadProblemsTests : IDisposable
     public async Task Mark_as_handled_takes_the_document_out_of_the_upload_for_good()
     {
         var vm = Vm();
+        f.Dialogs.TextAnswers.Enqueue("Entered by hand in ERPNext");
+        f.Dialogs.TextAnswers.Enqueue("ACC-PSINV-2026-00099");
         f.Dialogs.Pins.Enqueue("9999");
 
         await vm.MarkHandledCommand.ExecuteAsync(vm.Failed[0]);
 
-        Assert.Equal(ReceiptSyncStatus.Handled, f.Ctx.Receipts.SyncInfo("TILL2-A").Status);
-        Assert.Single(f.Ctx.Approvals.Unsynced(), a => a.Action == ApprovalAction.UploadMarkHandled);
+        var info = f.Ctx.Receipts.SyncInfo("TILL2-A");
+        Assert.Equal(ReceiptSyncStatus.Handled, info.Status);
+        Assert.Equal("Handled by sup (07/10 10:00): Entered by hand in ERPNext ACC-PSINV-2026-00099", info.LastError);
+        var logged = Assert.Single(f.Ctx.Approvals.Unsynced(), a => a.Action == ApprovalAction.UploadMarkHandled);
+        Assert.Contains("Entered by hand in ERPNext", logged.Reason);
         Assert.Empty(vm.Failed);
+        var handled = Assert.Single(vm.Handled);
+        Assert.Equal("Handled by sup (07/10 10:00): Entered by hand in ERPNext ACC-PSINV-2026-00099", handled.Error);
         Assert.Equal(0, f.Ctx.Receipts.CountFailed());
         Assert.Equal(0, f.Ctx.Receipts.CountPending());
+        Assert.Equal(3, UploadProblemsViewModel.Count(f.Ctx));   // handled ones need no look
+    }
+
+    [Fact]
+    public async Task Mark_as_handled_needs_a_reason()
+    {
+        var vm = Vm();
+        f.Dialogs.TextAnswers.Enqueue("  ");
+
+        await vm.MarkHandledCommand.ExecuteAsync(vm.Failed[0]);
+
+        Assert.Equal(ReceiptSyncStatus.Failed, f.Ctx.Receipts.SyncInfo("TILL2-A").Status);
+        Assert.Equal(0, f.Dialogs.PinRequests);
+        Assert.Equal("Not marked: a reason is needed.", vm.Message);
+    }
+
+    [Fact]
+    public async Task Un_handle_puts_a_handled_document_back_in_the_queue_and_is_logged()
+    {
+        var vm = Vm();
+        f.Dialogs.TextAnswers.Enqueue("Duplicate");
+        f.Dialogs.TextAnswers.Enqueue(null);
+        f.Dialogs.Pins.Enqueue("9999");
+        await vm.MarkHandledCommand.ExecuteAsync(vm.Failed[0]);
+        Assert.Equal("Handled by sup (07/10 10:00): Duplicate", f.Ctx.Receipts.SyncInfo("TILL2-A").LastError);
+
+        f.Dialogs.Pins.Enqueue("9999");
+        await vm.UnhandleCommand.ExecuteAsync(vm.Handled[0]);
+
+        Assert.Equal(ReceiptSyncStatus.Pending, f.Ctx.Receipts.SyncInfo("TILL2-A").Status);
+        Assert.Single(f.Ctx.Approvals.Unsynced(), a => a.Action == ApprovalAction.UploadUnhandle);
+        Assert.Empty(vm.Handled);
     }
 
     [Fact]

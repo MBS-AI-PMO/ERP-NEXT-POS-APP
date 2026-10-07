@@ -104,23 +104,25 @@ public sealed class ShiftStore(TillDb db)
             clientId, ("@e", error), ("@next", SqlExt.Instant(nextAttemptAt)));
     }
 
-    /// <summary>Written just before the document is sent (see <see cref="ReceiptStore.MarkInFlight"/>).</summary>
-    public void MarkInFlight(string clientId, ShiftDocument document, DateTimeOffset until)
+    /// <summary>Written just before the document is sent (see <see cref="ReceiptStore.MarkInFlight"/>); false when it is no
+    /// longer Pending or Failed.</summary>
+    public bool MarkInFlight(string clientId, ShiftDocument document, DateTimeOffset until)
     {
         var (status, _) = Columns(document);
-        Update($"""
+        return Update($"""
             UPDATE shift SET {status} = 'Pending', last_error = @e, next_attempt_at = @u
             WHERE client_id = @id AND {status} IN ('Pending', 'Failed')
-            """, clientId, ("@e", ReceiptStore.InFlight), ("@u", SqlExt.Instant(until)));
+            """, clientId, ("@e", ReceiptStore.InFlight), ("@u", SqlExt.Instant(until))) > 0;
     }
 
-    /// <summary>Failed and excluded openings and closings, oldest shift first (the Upload problems screen).</summary>
+    /// <summary>Failed, excluded and handled openings and closings, oldest shift first (the Upload problems screen).</summary>
     public IReadOnlyList<OutboxProblem> Problems()
     {
         using var c = db.Open();
         var rows = c.Query("""
             SELECT client_id, opened_at, closed_at, opening_status, closing_status, last_error, attempts FROM shift
-            WHERE opening_status IN ('Failed', 'Excluded') OR (closed_at IS NOT NULL AND closing_status IN ('Failed', 'Excluded'))
+            WHERE opening_status IN ('Failed', 'Excluded', 'Handled')
+               OR (closed_at IS NOT NULL AND closing_status IN ('Failed', 'Excluded', 'Handled'))
             ORDER BY opened_at, client_id
             """,
             r => (Id: r.GetString(0), Opened: SqlExt.Instant(r, 1)!.Value, Closed: SqlExt.Instant(r, 2),
@@ -129,20 +131,33 @@ public sealed class ShiftStore(TillDb db)
         var problems = new List<OutboxProblem>();
         foreach (var s in rows)
         {
-            if (s.Opening is UploadStatus.Failed or UploadStatus.Excluded)
+            if (s.Opening is UploadStatus.Failed or UploadStatus.Excluded or UploadStatus.Handled)
                 problems.Add(new OutboxProblem(OutboxKind.Opening, s.Id, s.Id, s.Opened, s.Opening, s.Error, s.Attempts));
-            if (s.Closed is { } closed && s.Closing is UploadStatus.Failed or UploadStatus.Excluded)
+            if (s.Closed is { } closed && s.Closing is UploadStatus.Failed or UploadStatus.Excluded or UploadStatus.Handled)
                 problems.Add(new OutboxProblem(OutboxKind.Closing, s.Id, s.Id, closed, s.Closing, s.Error, s.Attempts));
         }
         return problems;
     }
 
-    /// <summary>A supervisor dealt with a failed or excluded shift document by hand in ERPNext: it is never uploaded.</summary>
-    public void MarkHandled(string clientId, ShiftDocument document)
+    /// <summary>A supervisor dealt with a failed or excluded shift document by hand in ERPNext: it is never uploaded.
+    /// <paramref name="note"/> is kept as the shift's last error.</summary>
+    public void MarkHandled(string clientId, ShiftDocument document, string note)
     {
         var (status, _) = Columns(document);
-        Update($"UPDATE shift SET {status} = 'Handled', next_attempt_at = NULL WHERE client_id = @id AND {status} IN ('Failed', 'Excluded')",
-            clientId);
+        Update($"""
+            UPDATE shift SET {status} = 'Handled', last_error = @n, next_attempt_at = NULL
+            WHERE client_id = @id AND {status} IN ('Failed', 'Excluded')
+            """, clientId, ("@n", note));
+    }
+
+    /// <summary>Takes a handled shift document back into the queue (Pending, backoff reset).</summary>
+    public void Unhandle(string clientId, ShiftDocument document)
+    {
+        var (status, _) = Columns(document);
+        Update($"""
+            UPDATE shift SET {status} = 'Pending', last_error = NULL, attempts = 0, next_attempt_at = NULL
+            WHERE client_id = @id AND {status} = 'Handled'
+            """, clientId);
     }
 
     /// <summary>A failed shift document goes back to the queue at once, its backoff reset.</summary>
@@ -262,10 +277,12 @@ public sealed class ShiftStore(TillDb db)
         new(Enum.Parse<UploadStatus>(r.GetString(i)), SqlExt.Str(r, i + 1), Enum.Parse<UploadStatus>(r.GetString(i + 2)), SqlExt.Str(r, i + 3),
             SqlExt.Str(r, i + 4), r.GetInt32(i + 5), SqlExt.Instant(r, i + 6));
 
-    private void Update(string sql, string clientId, params (string Name, object? Value)[] extra)
+    private int Update(string sql, string clientId, params (string Name, object? Value)[] extra)
     {
         using var c = db.Open();
-        if (c.Exec(null, sql, [("@id", clientId), .. extra]) == 0 && c.Scalar(null, "SELECT 1 FROM shift WHERE client_id = @id", ("@id", clientId)) is null)
+        var changed = c.Exec(null, sql, [("@id", clientId), .. extra]);
+        if (changed == 0 && c.Scalar(null, "SELECT 1 FROM shift WHERE client_id = @id", ("@id", clientId)) is null)
             throw new KeyNotFoundException($"Shift {clientId} not found.");
+        return changed;
     }
 }

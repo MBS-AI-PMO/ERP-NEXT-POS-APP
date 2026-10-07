@@ -85,7 +85,7 @@ public sealed class ApprovalStore(TillDb db)
         using var c = db.Open();
         return c.Query("""
             SELECT json, sync_status, last_error, attempts FROM approval_log
-            WHERE sync_status IN ('Failed', 'Excluded') ORDER BY at, id
+            WHERE sync_status IN ('Failed', 'Excluded', 'Handled') ORDER BY at, id
             """,
             r =>
             {
@@ -103,20 +103,32 @@ public sealed class ApprovalStore(TillDb db)
             ("@id", id)).FirstOrDefault();
     }
 
-    /// <summary>A supervisor dealt with a failed or excluded approval by hand: it is never uploaded.</summary>
-    public void MarkHandled(string id) =>
-        Update("UPDATE approval_log SET sync_status = 'Handled', next_attempt_at = NULL WHERE id = @id AND sync_status IN ('Failed', 'Excluded')", id);
+    /// <summary>A supervisor dealt with a failed or excluded approval by hand: it is never uploaded. <paramref name="note"/> is
+    /// kept as its last error.</summary>
+    public void MarkHandled(string id, string note) =>
+        Update("""
+            UPDATE approval_log SET sync_status = 'Handled', last_error = @n, next_attempt_at = NULL
+            WHERE id = @id AND sync_status IN ('Failed', 'Excluded')
+            """, id, ("@n", note));
+
+    /// <summary>Takes a handled approval back into the queue (Pending, backoff reset).</summary>
+    public void Unhandle(string id) =>
+        Update("""
+            UPDATE approval_log SET sync_status = 'Pending', last_error = NULL, attempts = 0, next_attempt_at = NULL
+            WHERE id = @id AND sync_status = 'Handled'
+            """, id);
 
     /// <summary>Puts an excluded approval back in the queue.</summary>
     public void Include(string id) =>
         Update("UPDATE approval_log SET sync_status = 'Pending', attempts = 0, next_attempt_at = NULL WHERE id = @id AND sync_status = 'Excluded'", id);
 
-    /// <summary>Written just before the approval is sent (see <see cref="ReceiptStore.MarkInFlight"/>).</summary>
-    public void MarkInFlight(string id, DateTimeOffset until) =>
+    /// <summary>Written just before the approval is sent (see <see cref="ReceiptStore.MarkInFlight"/>); false when it is no
+    /// longer Pending or Failed.</summary>
+    public bool MarkInFlight(string id, DateTimeOffset until) =>
         Update("""
             UPDATE approval_log SET sync_status = 'Pending', last_error = @e, next_attempt_at = @u
             WHERE id = @id AND sync_status IN ('Pending', 'Failed')
-            """, id, ("@e", ReceiptStore.InFlight), ("@u", SqlExt.Instant(until)));
+            """, id, ("@e", ReceiptStore.InFlight), ("@u", SqlExt.Instant(until))) > 0;
 
     /// <summary>A failed approval goes back to the queue at once, its backoff reset.</summary>
     public void Retry(string id) =>
@@ -132,10 +144,12 @@ public sealed class ApprovalStore(TillDb db)
         return Convert.ToInt32(c.Scalar(null, "SELECT COUNT(*) FROM approval_log WHERE sync_status = @s", ("@s", status)), CultureInfo.InvariantCulture);
     }
 
-    private void Update(string sql, string id, params (string Name, object? Value)[] extra)
+    private int Update(string sql, string id, params (string Name, object? Value)[] extra)
     {
         using var c = db.Open();
-        if (c.Exec(null, sql, [("@id", id), .. extra]) == 0 && c.Scalar(null, "SELECT 1 FROM approval_log WHERE id = @id", ("@id", id)) is null)
+        var changed = c.Exec(null, sql, [("@id", id), .. extra]);
+        if (changed == 0 && c.Scalar(null, "SELECT 1 FROM approval_log WHERE id = @id", ("@id", id)) is null)
             throw new KeyNotFoundException($"Approval {id} not found.");
+        return changed;
     }
 }

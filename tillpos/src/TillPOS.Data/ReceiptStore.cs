@@ -110,32 +110,43 @@ public sealed class ReceiptStore(TillDb db) : IReceiptStore
 
     /// <summary>Written just before the bill is sent: it stays Pending with "upload in progress" and is not tried again before
     /// <paramref name="until"/>. If the answer never comes (timeout, dropped connection), the marker stays, and the next try
-    /// starts with the client-id lookup. A synced bill is left alone.</summary>
-    public void MarkInFlight(string clientId, DateTimeOffset until) =>
+    /// starts with the client-id lookup. A bill that is no longer Pending or Failed (synced, or marked handled meanwhile) is left
+    /// alone: false, and the uploader does not send it.</summary>
+    public bool MarkInFlight(string clientId, DateTimeOffset until) =>
         Update("""
             UPDATE receipt SET sync_status = 'Pending', last_error = @e, next_attempt_at = @u
             WHERE client_id = @id AND sync_status IN ('Pending', 'Failed')
-            """, clientId, true, ("@e", InFlight), ("@u", SqlExt.Instant(until)));
+            """, clientId, true, ("@e", InFlight), ("@u", SqlExt.Instant(until))) > 0;
 
     /// <summary>The last_error of a document whose upload was started but not answered.</summary>
     public const string InFlight = "upload in progress";
 
-    /// <summary>Failed and excluded bills, oldest first (the Upload problems screen).</summary>
+    /// <summary>Failed, excluded and handled bills, oldest first (the Upload problems screen).</summary>
     public IReadOnlyList<OutboxProblem> Problems()
     {
         using var c = db.Open();
         return c.Query("""
             SELECT client_id, shift_client_id, created_at, sync_status, last_error, attempts FROM receipt
-            WHERE sync_status IN ('Failed', 'Excluded') ORDER BY created_at, client_id
+            WHERE sync_status IN ('Failed', 'Excluded', 'Handled') ORDER BY created_at, client_id
             """,
             r => new OutboxProblem(OutboxKind.Bill, r.GetString(0), r.GetString(1), SqlExt.Instant(r, 2)!.Value,
                 Enum.Parse<UploadStatus>(r.GetString(3)), SqlExt.Str(r, 4), r.GetInt32(5)));
     }
 
-    /// <summary>A supervisor dealt with a failed or excluded bill by hand in ERPNext: it is never uploaded and no longer counted.</summary>
-    public void MarkHandled(string clientId) =>
-        Update("UPDATE receipt SET sync_status = 'Handled', next_attempt_at = NULL WHERE client_id = @id AND sync_status IN ('Failed', 'Excluded')",
-            clientId, true);
+    /// <summary>A supervisor dealt with a failed or excluded bill by hand in ERPNext: it is never uploaded and no longer counted.
+    /// <paramref name="note"/> ("Handled by …: reason reference") is kept as its last error.</summary>
+    public void MarkHandled(string clientId, string note) =>
+        Update("""
+            UPDATE receipt SET sync_status = 'Handled', last_error = @n, next_attempt_at = NULL
+            WHERE client_id = @id AND sync_status IN ('Failed', 'Excluded')
+            """, clientId, true, ("@n", note));
+
+    /// <summary>Takes a handled bill back into the queue (Pending, backoff reset).</summary>
+    public void Unhandle(string clientId) =>
+        Update("""
+            UPDATE receipt SET sync_status = 'Pending', last_error = NULL, attempts = 0, next_attempt_at = NULL
+            WHERE client_id = @id AND sync_status = 'Handled'
+            """, clientId, true);
 
     /// <summary>A failed bill goes back to the queue at once, its backoff reset.</summary>
     public void Retry(string clientId) =>

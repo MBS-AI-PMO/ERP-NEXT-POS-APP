@@ -34,6 +34,9 @@ public interface IDialogs
     /// <summary>Shows a read-only text (e.g. a document's JSON) until closed.</summary>
     void ShowText(string title, string text);
 
+    /// <summary>Asks for a line of text; null when cancelled.</summary>
+    Task<string?> AskTextAsync(string title, string prompt);
+
     /// <summary>Shows the price check (modal). Returns what "Add to bill" should add (<see cref="PriceCheckViewModel.AddToBill"/>),
     /// or null when it was closed without adding.</summary>
     PriceCheckPick? ShowPriceCheck(PriceCheckViewModel vm);

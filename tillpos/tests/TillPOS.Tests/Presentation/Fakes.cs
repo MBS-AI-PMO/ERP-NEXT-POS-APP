@@ -63,6 +63,16 @@ public sealed class FakeDialogs : IDialogs
     public List<string> Confirms { get; } = [];
 
     public List<(string Title, string Text)> Texts { get; } = [];
+
+    /// <summary>Answers to text prompts (none left: cancelled); the prompts asked.</summary>
+    public Queue<string?> TextAnswers { get; } = new();
+    public List<string> TextPrompts { get; } = [];
+
+    public Task<string?> AskTextAsync(string title, string prompt)
+    {
+        TextPrompts.Add(prompt);
+        return Task.FromResult(TextAnswers.Count > 0 ? TextAnswers.Dequeue() : null);
+    }
     public void ShowText(string title, string text) => Texts.Add((title, text));
 
     public bool Confirm(string title, string message)

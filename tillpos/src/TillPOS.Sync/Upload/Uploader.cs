@@ -174,7 +174,7 @@ public sealed class Uploader
         // 3. POS Closing Shift: only for a closed shift whose bills are all in ERPNext.
         if (entry.Closing is not { } closing) return;
         sync = shifts.SyncInfo(id)!;
-        if (sync.ClosingStatus == UploadStatus.Synced) return;
+        if (sync.ClosingStatus is not (UploadStatus.Pending or UploadStatus.Failed)) return;   // synced, excluded or handled: final
         if (waiting > 0)
         {
             run.Add(id, $"Closing of shift {id} waits: {waiting.ToString(CultureInfo.InvariantCulture)} bill(s) of the shift are not uploaded yet.");
@@ -273,7 +273,7 @@ public sealed class Uploader
 
     /// <summary>How a document's upload state is written: synced (with its ERPNext name), failed (error, next try) and in flight
     /// (sent, answer pending, until).</summary>
-    private sealed record Marks(int Attempts, Action<string> Synced, Action<string, DateTimeOffset> Failed, Action<DateTimeOffset> InFlight);
+    private sealed record Marks(int Attempts, Action<string> Synced, Action<string, DateTimeOffset> Failed, Func<DateTimeOffset, bool> InFlight);
 
     /// <summary>A document found in (or just written to) ERPNext: its name, its fields and its docstatus (0 draft, 1 submitted).</summary>
     private sealed record Found(string Name, JsonElement Doc, int DocStatus);
@@ -305,6 +305,12 @@ public sealed class Uploader
             marks.Synced(found.Name);
             run.Uploaded++;
             return found.Name;
+        }
+        catch (DocumentSkipped)
+        {
+            // Marked handled (or otherwise changed) on the till since this run read it: that decision stands.
+            run.Add(doc.ClientId, $"{doc.Label}: changed on the till meanwhile; not sent.");
+            return null;
         }
         catch (Exception ex) when (ex is DocumentFailure || Classify(ex) == ErpOutcome.Refused)
         {
@@ -370,7 +376,7 @@ public sealed class Uploader
     {
         var body = doc.Build();
         if (doc.Submittable) body["docstatus"] = 0;
-        marks.InFlight(now() + InFlightHold);
+        if (!marks.InFlight(now() + InFlightHold)) throw new DocumentSkipped();
         JsonElement saved;
         try
         {
@@ -389,7 +395,7 @@ public sealed class Uploader
     /// <summary>Submits a checked draft. A refusal leaves the draft in ERPNext (the next try finds it and submits it again).</summary>
     private async Task<Found> SubmitAsync(Doc doc, Found draft, Marks marks, CancellationToken ct)
     {
-        marks.InFlight(now() + InFlightHold);
+        if (!marks.InFlight(now() + InFlightHold)) throw new DocumentSkipped();
         try
         {
             var submitted = await writer.SubmitAsync(doc.Doctype, draft.Name, ct);
@@ -497,4 +503,7 @@ public sealed class Uploader
 
     /// <summary>A definite problem with one document (recorded on it as Failed).</summary>
     private sealed class DocumentFailure(string message) : Exception(message);
+
+    /// <summary>The document is no longer Pending or Failed on the till (e.g. a supervisor marked it handled): not sent.</summary>
+    private sealed class DocumentSkipped : Exception;
 }

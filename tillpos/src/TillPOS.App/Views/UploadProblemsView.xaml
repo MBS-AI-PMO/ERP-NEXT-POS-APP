@@ -41,6 +41,7 @@
                 <Style TargetType="Button" BasedOn="{StaticResource RowButton}">
                   <Style.Triggers>
                     <DataTrigger Binding="{Binding IsExcluded}" Value="True"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger>
+                    <DataTrigger Binding="{Binding IsHandled}" Value="True"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger>
                   </Style.Triggers>
                 </Style>
               </Button.Style>
@@ -56,8 +57,27 @@
                 </Style>
               </Button.Style>
             </Button>
-            <Button Style="{StaticResource RowButton}" Content="Mark as handled"
-                    Command="{Binding DataContext.MarkHandledCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" />
+            <Button Content="Mark as handled" Command="{Binding DataContext.MarkHandledCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                    CommandParameter="{Binding}">
+              <Button.Style>
+                <Style TargetType="Button" BasedOn="{StaticResource RowButton}">
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsHandled}" Value="True"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </Button.Style>
+            </Button>
+            <Button Content="Un-handle" Command="{Binding DataContext.UnhandleCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                    CommandParameter="{Binding}">
+              <Button.Style>
+                <Style TargetType="Button" BasedOn="{StaticResource RowButton}">
+                  <Setter Property="Visibility" Value="Collapsed" />
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsHandled}" Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </Button.Style>
+            </Button>
           </StackPanel>
         </Grid>
       </Border>
@@ -76,7 +96,7 @@
         <TextBlock Text="Upload problems" Style="{StaticResource ScreenTitle}" />
       </StackPanel>
       <TextBlock Foreground="{StaticResource Muted}" TextWrapping="Wrap"
-                 Text="Failed: ERPNext refused the document, or its totals differ. Retry sends it again now; Mark as handled is for a document fixed by hand in ERPNext. Excluded: taken before this till went Live (test data), never uploaded unless included." />
+                 Text="Failed: ERPNext refused the document, or its totals differ. Retry sends it again now; Mark as handled is for a document fixed by hand in ERPNext. Excluded: taken before this till went Live (test data), never uploaded unless included. Handled: dealt with by hand, never uploaded unless un-handled." />
     </StackPanel>
 
     <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Focusable="False">
@@ -95,6 +115,15 @@
             <ItemsControl ItemsSource="{Binding Excluded}" ItemTemplate="{StaticResource ProblemRow}" Focusable="False" />
             <TextBlock Text="Nothing excluded." Foreground="{StaticResource Muted}" Margin="0,6"
                        Visibility="{Binding Excluded.Count, Converter={StaticResource EmptyToVisibility}}" />
+          </StackPanel>
+        </Border>
+        <!-- Dealt with by hand in ERPNext: final; the error column says who, when and why. -->
+        <Border Style="{StaticResource Card}" Padding="16,8" Margin="0,12,0,0">
+          <StackPanel>
+            <TextBlock Text="Handled" Style="{StaticResource SectionTitle}" />
+            <ItemsControl ItemsSource="{Binding Handled}" ItemTemplate="{StaticResource ProblemRow}" Focusable="False" />
+            <TextBlock Text="Nothing handled by hand." Foreground="{StaticResource Muted}" Margin="0,6"
+                       Visibility="{Binding Handled.Count, Converter={StaticResource EmptyToVisibility}}" />
           </StackPanel>
         </Border>
       </StackPanel>
