@@ -1,0 +1,67 @@
+// Creates the ERPNext metadata TillPOS needs (idempotent). Run by an admin:
+//   node erpnext-setup.mjs <config.json>
+// config.json: { "BaseUrl": "https://…/", "ApiKey": "…", "ApiSecret": "…" }  (the user needs System Manager)
+// It never touches transactions: only Custom Fields and the "TillPOS Approval" DocType.
+import { readFileSync } from 'node:fs';
+
+const cfg = JSON.parse(readFileSync(process.argv[2], 'utf8'));
+const base = cfg.BaseUrl.replace(/\/$/, '');
+const headers = { Authorization: `token ${cfg.ApiKey}:${cfg.ApiSecret}`, Accept: 'application/json', 'Content-Type': 'application/json' };
+
+async function call(method, path, body) {
+  const res = await fetch(base + path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  const text = await res.text();
+  let json; try { json = JSON.parse(text); } catch { json = { raw: text.slice(0, 300) }; }
+  if (!res.ok) throw new Error(`${method} ${path} -> ${res.status}: ${json._error_message ?? json.exception ?? json.raw ?? text.slice(0, 300)}`);
+  return json;
+}
+const exists = async (doctype, name) => {
+  const r = await fetch(`${base}/api/resource/${encodeURIComponent(doctype)}/${encodeURIComponent(name)}`, { headers });
+  return r.status === 200;
+};
+
+const customFields = [
+  { dt: 'POS Invoice', fieldname: 'custom_till', label: 'Till', fieldtype: 'Data', read_only: 1, insert_after: 'posa_client_request_id', description: 'TillPOS till number, e.g. TILL1' },
+  { dt: 'POS Opening Shift', fieldname: 'custom_offline_id', label: 'Offline ID', fieldtype: 'Data', read_only: 1, unique: 1, insert_after: 'pos_profile', description: 'TillPOS shift id' },
+  { dt: 'POS Closing Shift', fieldname: 'custom_offline_id', label: 'Offline ID', fieldtype: 'Data', read_only: 1, unique: 1, insert_after: 'pos_profile', description: 'TillPOS shift id' },
+];
+
+for (const f of customFields) {
+  const name = `${f.dt}-${f.fieldname}`;
+  if (await exists('Custom Field', name)) { console.log(`ok   Custom Field ${name} exists`); continue; }
+  await call('POST', '/api/resource/Custom Field', { doctype: 'Custom Field', ...f });
+  console.log(`made Custom Field ${name}`);
+}
+
+const approvalDoctype = {
+  doctype: 'DocType', name: 'TillPOS Approval', module: 'Selling', custom: 1, is_submittable: 0,
+  autoname: 'TPA-.#####', title_field: 'action', track_changes: 1,
+  description: 'Supervisor approvals and failed PIN attempts recorded by TillPOS tills',
+  fields: [
+    { fieldname: 'action', label: 'Action', fieldtype: 'Data', reqd: 1, in_list_view: 1 },
+    { fieldname: 'cashier', label: 'Cashier', fieldtype: 'Data', in_list_view: 1 },
+    { fieldname: 'supervisor', label: 'Supervisor', fieldtype: 'Data', in_list_view: 1 },
+    { fieldname: 'shift', label: 'Shift', fieldtype: 'Link', options: 'POS Opening Shift' },
+    { fieldname: 'invoice', label: 'Invoice', fieldtype: 'Link', options: 'POS Invoice' },
+    { fieldname: 'item_code', label: 'Item', fieldtype: 'Link', options: 'Item' },
+    { fieldname: 'amount', label: 'Amount', fieldtype: 'Currency', in_list_view: 1 },
+    { fieldname: 'reason', label: 'Reason', fieldtype: 'Small Text' },
+    { fieldname: 'at', label: 'At', fieldtype: 'Datetime', in_list_view: 1 },
+    { fieldname: 'till', label: 'Till', fieldtype: 'Data' },
+    { fieldname: 'custom_offline_id', label: 'Offline ID', fieldtype: 'Data', unique: 1, read_only: 1 },
+  ],
+  permissions: [
+    { role: 'System Manager', read: 1, write: 1, create: 1, delete: 1, report: 1, export: 1 },
+    { role: 'Accounts Manager', read: 1, report: 1, export: 1 },
+  ],
+};
+
+if (await exists('DocType', 'TillPOS Approval')) console.log('ok   DocType TillPOS Approval exists');
+else { await call('POST', '/api/resource/DocType', approvalDoctype); console.log('made DocType TillPOS Approval'); }
+
+// Report, read-only: things the admin still has to do by hand.
+const profiles = await call('GET', '/api/resource/POS Profile?fields=["name","disable_rounded_total","write_off_limit","write_off_account","account_for_change_amount","customer"]');
+console.log('POS Profiles:', JSON.stringify(profiles.data));
+const company = await call('GET', '/api/resource/Company?fields=["name","tax_id"]');
+console.log('Company tax_id:', JSON.stringify(company.data));
+console.log('Done. Still manual if missing: Company Tax ID (TRN), company address on each POS Profile, POS Cashier doctype + cashiers, Allow Negative Stock, TillPOS Device role for till users.');
