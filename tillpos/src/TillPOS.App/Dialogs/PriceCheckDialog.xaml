@@ -1,19 +1,21 @@
 <Window x:Class="TillPOS.App.Dialogs.PriceCheckDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:TillPOS.App"
         Title="Price check" Width="640" SizeToContent="Height" WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
-        ShowInTaskbar="False" FontFamily="Segoe UI" FontSize="16" Background="{StaticResource Ground}">
+        ShowInTaskbar="False" FontFamily="{StaticResource TextFont}" FontSize="16" Background="{StaticResource Ground}">
   <DockPanel Margin="16">
     <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
       <!-- Not focusable: scanner keys must never press a button. Enter is never "Add to bill"; Esc closes. -->
-      <Button Style="{StaticResource PrimaryButton}" Content="Add to bill" Width="180" Height="60" Focusable="False"
+      <Button Style="{StaticResource PrimaryButton}" Content="Add to bill" Width="190" Height="60" Focusable="False" local:ButtonIcon.Glyph="&#xE710;"
               IsEnabled="{Binding HasResult}" Click="AddToBillClick" />
       <Button Style="{StaticResource KeyButton}" Content="Close (Esc)" Width="150" Height="60" Focusable="False" IsCancel="True" />
     </StackPanel>
 
     <StackPanel>
-      <TextBlock Text="Scan a barcode or scale label (it is not added to the bill)" Foreground="{StaticResource Muted}" Margin="0,0,0,4" />
-      <TextBox x:Name="ScanBox" Height="52" FontSize="20" BorderBrush="{StaticResource Accent}" BorderThickness="2"
+      <TextBlock Text="Scan a barcode or scale label (it is not added to the bill)" Style="{StaticResource SectionTitle}" Margin="0,0,0,4" />
+      <TextBox x:Name="ScanBox" Style="{StaticResource ScanTextBox}" Height="52"
+               local:Placeholder.Text="Scan a barcode or type a code and press Enter"
                Text="{Binding ScanText, UpdateSourceTrigger=PropertyChanged}">
         <TextBox.InputBindings>
           <KeyBinding Key="Enter" Command="{Binding ScanEnteredCommand}" />
@@ -21,17 +23,16 @@
       </TextBox>
 
       <!-- Result card -->
-      <Border Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="12"
-              Padding="20,16" Margin="0,12,0,0" MinHeight="170">
+      <Border Style="{StaticResource Card}" Margin="0,12,0,0" MinHeight="170">
         <Grid>
           <StackPanel Visibility="{Binding HasResult, Converter={StaticResource BoolToVisibility}}">
             <TextBlock Text="{Binding Name}" FontSize="22" FontWeight="Bold" TextWrapping="Wrap" />
-            <TextBlock FontSize="13" Foreground="{StaticResource Muted}" FontFamily="Consolas">
+            <TextBlock FontSize="13" Foreground="{StaticResource Muted}" FontFamily="{StaticResource CodeFont}">
               <Run Text="{Binding ItemCode, Mode=OneWay}" /><Run Text="   " /><Run Text="{Binding Barcode, Mode=OneWay}" />
             </TextBlock>
             <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
               <TextBlock Text="AED" FontSize="18" Foreground="{StaticResource Muted}" VerticalAlignment="Bottom" Margin="0,0,8,10" />
-              <TextBlock Text="{Binding PriceText}" FontSize="52" Foreground="{StaticResource Accent}" Style="{StaticResource Money}" />
+              <TextBlock Text="{Binding PriceText}" FontSize="52" FontWeight="Bold" Foreground="{StaticResource Accent}" Style="{StaticResource Money}" />
               <TextBlock Text="{Binding UnitText}" FontSize="18" Foreground="{StaticResource Muted}" VerticalAlignment="Bottom" Margin="10,0,0,10" />
             </StackPanel>
             <TextBlock Text="{Binding OfferText}" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource Warn}" TextWrapping="Wrap" />
@@ -42,15 +43,13 @@
         </Grid>
       </Border>
 
-      <DockPanel Margin="0,12,0,0">
-        <TextBlock DockPanel.Dock="Left" Text="Search:" VerticalAlignment="Center" Margin="0,0,8,0" />
-        <TextBox x:Name="SearchBox" Height="40" FontSize="16" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" />
-      </DockPanel>
+      <TextBox x:Name="SearchBox" Margin="0,12,0,0" Style="{StaticResource SearchTextBox}" local:Placeholder.Text="Search item by name or code"
+               Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" />
       <ListBox MaxHeight="200" Margin="0,4,0,0" ItemsSource="{Binding SearchResults}" HorizontalContentAlignment="Stretch"
                Visibility="{Binding SearchResults.Count, Converter={StaticResource CountToVisibility}}">
         <ListBox.ItemTemplate>
           <DataTemplate>
-            <Button Style="{StaticResource KeyButton}" Focusable="False" HorizontalContentAlignment="Left" MinHeight="40" FontSize="16"
+            <Button Style="{StaticResource GhostButton}" Focusable="False" HorizontalContentAlignment="Left" MinHeight="40" FontSize="16" local:ButtonIcon.Glyph="&#xE8EC;"
                     Command="{Binding DataContext.SelectCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                     CommandParameter="{Binding ItemCode}">
               <TextBlock><Run Text="{Binding ItemName, Mode=OneWay}" FontWeight="SemiBold" /><Run Text="  " /><Run Text="{Binding ItemCode, Mode=OneWay}" Foreground="{StaticResource Muted}" /></TextBlock>

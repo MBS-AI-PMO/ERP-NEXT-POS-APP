@@ -20,9 +20,7 @@
         <DataTrigger Binding="{Binding MessageIsError}" Value="True"><Setter Property="Foreground" Value="{StaticResource Danger}" /></DataTrigger>
       </Style.Triggers>
     </Style>
-    <Style TargetType="TextBlock" x:Key="Head">
-      <Setter Property="Foreground" Value="{StaticResource Muted}" />
-      <Setter Property="FontSize" Value="13" />
+    <Style TargetType="TextBlock" x:Key="Head" BasedOn="{StaticResource SectionTitle}">
       <Setter Property="VerticalAlignment" Value="Bottom" />
     </Style>
     <Style TargetType="Button" x:Key="RowButton" BasedOn="{StaticResource KeyButton}">
@@ -30,6 +28,11 @@
       <Setter Property="MinHeight" Value="44" />
       <Setter Property="MinWidth" Value="44" />
       <Setter Property="Height" Value="44" />
+      <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style TargetType="Button" x:Key="RowIconButton" BasedOn="{StaticResource RowButton}">
+      <Setter Property="FontFamily" Value="{StaticResource IconFont}" />
+      <Setter Property="FontSize" Value="15" />
     </Style>
     <!-- Hidden on the find stage (the refund panel belongs to choosing and the return list). -->
     <Style TargetType="FrameworkElement" x:Key="NotOnFind">
@@ -45,32 +48,33 @@
 
     <!-- ===== Title and message ===== -->
     <DockPanel Grid.Row="0" Grid.ColumnSpan="2">
-      <TextBlock DockPanel.Dock="Right" Text="{Binding OriginalText}" FontFamily="Consolas" FontSize="16" VerticalAlignment="Center"
+      <TextBlock DockPanel.Dock="Right" Text="{Binding OriginalText}" FontFamily="{StaticResource CodeFont}" FontSize="16" VerticalAlignment="Center"
                  Foreground="{StaticResource Muted}" />
+      <TextBlock DockPanel.Dock="Left" Text="&#xE7A7;" Style="{StaticResource Icon}" FontSize="22" Foreground="{StaticResource Accent}" Margin="0,0,10,0" />
       <Grid>
-        <TextBlock Text="Return — find the receipt" FontSize="24" FontWeight="Bold" Visibility="{Binding IsFind, Converter={StaticResource BoolToVisibility}}" />
-        <TextBlock Text="Return — choose the items" FontSize="24" FontWeight="Bold" Visibility="{Binding IsChoose, Converter={StaticResource BoolToVisibility}}" />
-        <TextBlock Text="Return without receipt" FontSize="24" FontWeight="Bold" Visibility="{Binding IsNoReceipt, Converter={StaticResource BoolToVisibility}}" />
+        <TextBlock Text="Return — find the receipt" Style="{StaticResource ScreenTitle}" Visibility="{Binding IsFind, Converter={StaticResource BoolToVisibility}}" />
+        <TextBlock Text="Return — choose the items" Style="{StaticResource ScreenTitle}" Visibility="{Binding IsChoose, Converter={StaticResource BoolToVisibility}}" />
+        <TextBlock Text="Return without receipt" Style="{StaticResource ScreenTitle}" Visibility="{Binding IsNoReceipt, Converter={StaticResource BoolToVisibility}}" />
       </Grid>
     </DockPanel>
     <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding Message}" Style="{StaticResource MessageText}" Margin="0,4,0,8" />
 
     <!-- ===== Stage 1: find the receipt ===== -->
     <DockPanel x:Name="FindStage" Grid.Row="2" Grid.Column="0" Margin="0,0,16,0" Visibility="{Binding IsFind, Converter={StaticResource BoolToVisibility}}">
-      <TextBlock DockPanel.Dock="Top" Text="Scan the barcode on the receipt, or type its number" Foreground="{StaticResource Muted}" />
+      <TextBlock DockPanel.Dock="Top" Text="Scan the barcode on the receipt, or type its number" Style="{StaticResource SectionTitle}" />
       <DockPanel DockPanel.Dock="Top" Margin="0,4,0,0">
         <Button DockPanel.Dock="Right" Focusable="False" Style="{StaticResource PrimaryButton}" Width="150" Height="60" Margin="8,0,0,0"
-                Content="Find (Enter)" FontSize="18" Command="{Binding FindCommand}" />
-        <TextBox x:Name="FindBox" Height="60" FontSize="24" FontFamily="Consolas" VerticalContentAlignment="Center" Padding="8,0"
-                 BorderBrush="{StaticResource Accent}" BorderThickness="2" local:Keyboarding.SelectAllOnTap="True"
+                local:ButtonIcon.Glyph="&#xE721;" local:ButtonIcon.Size="18" Content="Find (Enter)" FontSize="18" Command="{Binding FindCommand}" />
+        <TextBox x:Name="FindBox" Style="{StaticResource ScanTextBox}" Height="60" FontSize="24" FontFamily="{StaticResource CodeFont}"
+                 local:Placeholder.Text="Scan the receipt barcode or type the bill number" local:Keyboarding.SelectAllOnTap="True"
                  Text="{Binding FindText, UpdateSourceTrigger=PropertyChanged}" PreviewKeyDown="FindBoxKeyDown">
           <TextBox.InputBindings>
             <KeyBinding Key="Enter" Command="{Binding FindCommand}" />
           </TextBox.InputBindings>
         </TextBox>
       </DockPanel>
-      <TextBlock DockPanel.Dock="Top" Text="Recent bills on this till (tap one to open it)" FontWeight="SemiBold" Margin="0,12,0,4" />
-      <ListBox x:Name="RecentList" ItemsSource="{Binding RecentBills}" HorizontalContentAlignment="Stretch" Background="{StaticResource Panel}"
+      <TextBlock DockPanel.Dock="Top" Text="Recent bills on this till (tap one to open it)" Style="{StaticResource SectionTitle}" Margin="0,14,0,6" />
+      <ListBox x:Name="RecentList" ItemsSource="{Binding RecentBills}" HorizontalContentAlignment="Stretch"
                ScrollViewer.HorizontalScrollBarVisibility="Disabled" KeyDown="RecentListKeyDown" PreviewMouseLeftButtonUp="RecentListTapped">
         <ListBox.ItemTemplate>
           <DataTemplate>
@@ -78,8 +82,8 @@
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="110" /><ColumnDefinition Width="*" /><ColumnDefinition Width="110" /><ColumnDefinition Width="150" />
               </Grid.ColumnDefinitions>
-              <TextBlock Grid.Column="0" Text="{Binding Time}" VerticalAlignment="Center" Foreground="{StaticResource Muted}" FontFamily="Consolas" />
-              <TextBlock Grid.Column="1" Text="{Binding ClientId}" VerticalAlignment="Center" FontFamily="Consolas" FontSize="16" FontWeight="SemiBold"
+              <TextBlock Grid.Column="0" Text="{Binding Time}" VerticalAlignment="Center" Foreground="{StaticResource Muted}" FontFamily="{StaticResource CodeFont}" />
+              <TextBlock Grid.Column="1" Text="{Binding ClientId}" VerticalAlignment="Center" FontFamily="{StaticResource CodeFont}" FontSize="16" FontWeight="SemiBold"
                          TextTrimming="CharacterEllipsis" />
               <TextBlock Grid.Column="2" Text="{Binding Total}" VerticalAlignment="Center" TextAlignment="Right" FontSize="17" Style="{StaticResource Money}" />
               <TextBlock Grid.Column="3" Text="{Binding Returned}" VerticalAlignment="Center" TextAlignment="Right" FontWeight="SemiBold">
@@ -101,17 +105,20 @@
     <ScrollViewer Grid.Row="2" Grid.Column="1" Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                   Visibility="{Binding IsFind, Converter={StaticResource BoolToVisibility}}">
       <StackPanel>
-        <Border Background="{StaticResource Panel}" CornerRadius="12" Padding="16,12">
+        <Border Style="{StaticResource Card}" Padding="16,12" Margin="4,0">
           <StackPanel>
-            <TextBlock Text="No receipt?" FontWeight="Bold" FontSize="17" />
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Text="&#xE946;" Style="{StaticResource Icon}" FontSize="16" Foreground="{StaticResource Warn}" Margin="0,0,8,0" />
+              <TextBlock Text="No receipt?" FontWeight="Bold" FontSize="17" />
+            </StackPanel>
             <TextBlock TextWrapping="Wrap" Foreground="{StaticResource Muted}" Margin="0,4,0,8"
                        Text="Lost receipt, or a bill from another till: scan the items into a return list. A supervisor must approve it, and the refund is at today's price." />
-            <Button Focusable="False" Style="{StaticResource KeyButton}" Height="72" Command="{Binding NoReceiptCommand}">
+            <Button Focusable="False" Style="{StaticResource KeyButton}" Height="72" Margin="0" local:ButtonIcon.Glyph="&#xEE6F;" Command="{Binding NoReceiptCommand}">
               <TextBlock Text="Return without receipt (supervisor)" TextWrapping="Wrap" TextAlignment="Center" />
             </Button>
           </StackPanel>
         </Border>
-        <Button Focusable="False" Style="{StaticResource KeyButton}" Height="56" Margin="4,12,4,4" Content="Back to the sale (Esc)" Command="{Binding BackCommand}" />
+        <Button Focusable="False" Style="{StaticResource KeyButton}" Height="56" Margin="4,12,4,4" local:ButtonIcon.Glyph="&#xE72B;" Content="Back to the sale (Esc)" Command="{Binding BackCommand}" />
       </StackPanel>
     </ScrollViewer>
 
@@ -130,8 +137,8 @@
         <TextBlock Grid.Column="5" Text="Return now" Style="{StaticResource Head}" TextAlignment="Center" />
       </Grid>
       <Button DockPanel.Dock="Bottom" Focusable="False" Style="{StaticResource KeyButton}" Height="52" HorizontalAlignment="Left" Width="220"
-              Margin="0,8,0,0" Content="Return all" Command="{Binding ReturnAllCommand}" />
-      <Border Background="{StaticResource Panel}" CornerRadius="8" Padding="8,4">
+              Margin="0,8,0,0" local:ButtonIcon.Glyph="&#xE8B3;" Content="Return all" Command="{Binding ReturnAllCommand}" />
+      <Border Style="{StaticResource Card}" Padding="8,4">
         <ScrollViewer Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
           <ItemsControl ItemsSource="{Binding Lines}" Focusable="False">
             <ItemsControl.ItemTemplate>
@@ -148,10 +155,10 @@
                   <TextBlock Grid.Column="3" Text="{Binding ReturnableText}" TextAlignment="Right" VerticalAlignment="Center" Style="{StaticResource Money}" />
                   <TextBlock Grid.Column="4" Text="{Binding Rate}" TextAlignment="Right" VerticalAlignment="Center" Style="{StaticResource Money}" />
                   <StackPanel Grid.Column="5" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
-                    <Button Style="{StaticResource RowButton}" Content="−" Command="{Binding DecrementCommand}" />
-                    <TextBox Width="84" Height="40" FontSize="18" FontFamily="Consolas" TextAlignment="Right" VerticalContentAlignment="Center" Padding="4,0"
+                    <Button Style="{StaticResource RowIconButton}" Content="&#xE738;" Command="{Binding DecrementCommand}" />
+                    <TextBox Style="{StaticResource AmountTextBox}" Width="84" Height="40" FontSize="18" TextAlignment="Right" Padding="6,0"
                              local:Keyboarding.SelectAllOnTap="True" Text="{Binding ReturnQty.Text, UpdateSourceTrigger=PropertyChanged}" />
-                    <Button Style="{StaticResource RowButton}" Content="+" Command="{Binding IncrementCommand}" />
+                    <Button Style="{StaticResource RowIconButton}" Content="&#xE710;" Command="{Binding IncrementCommand}" />
                   </StackPanel>
                   <Button Grid.Column="6" Style="{StaticResource RowButton}" Content="All" FontSize="15" Command="{Binding AllCommand}" />
                 </Grid>
@@ -164,22 +171,21 @@
 
     <!-- ===== Stage 3: without receipt — scan or search the items into a return list ===== -->
     <DockPanel x:Name="NoReceiptStage" Grid.Row="2" Grid.Column="0" Margin="0,0,16,0" Visibility="{Binding IsNoReceipt, Converter={StaticResource BoolToVisibility}}">
-      <TextBlock DockPanel.Dock="Top" Text="Scan the items being returned (refunded at today's price)" Foreground="{StaticResource Muted}" />
-      <TextBox x:Name="ScanBox" DockPanel.Dock="Top" Height="56" FontSize="20" Margin="0,4,0,0" BorderBrush="{StaticResource Accent}" BorderThickness="2"
-               Text="{Binding ScanText, UpdateSourceTrigger=PropertyChanged}" PreviewKeyDown="ScanBoxKeyDown">
+      <TextBlock DockPanel.Dock="Top" Text="Scan the items being returned (refunded at today's price)" Style="{StaticResource SectionTitle}" />
+      <TextBox x:Name="ScanBox" DockPanel.Dock="Top" Style="{StaticResource ScanTextBox}" Margin="0,4,0,0"
+               local:Placeholder.Text="Scan the item barcode or type a code and press Enter" Text="{Binding ScanText, UpdateSourceTrigger=PropertyChanged}" PreviewKeyDown="ScanBoxKeyDown">
         <TextBox.InputBindings>
           <KeyBinding Key="Enter" Command="{Binding ScanEnteredCommand}" />
         </TextBox.InputBindings>
       </TextBox>
-      <DockPanel DockPanel.Dock="Top" Margin="0,8,0,0">
-        <TextBlock DockPanel.Dock="Left" Text="Search (F2):" VerticalAlignment="Center" Margin="0,0,8,0" />
-        <TextBox x:Name="SearchBox" Height="40" FontSize="16" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" KeyDown="SearchBoxKeyDown" />
-      </DockPanel>
-      <ListBox DockPanel.Dock="Top" MaxHeight="160" Margin="0,4,0,0" ItemsSource="{Binding SearchResults}"
+      <TextBox x:Name="SearchBox" DockPanel.Dock="Top" Margin="0,8,0,0" Style="{StaticResource SearchTextBox}"
+               local:Placeholder.Text="Search item by name or code (F2)"
+               Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" KeyDown="SearchBoxKeyDown" />
+      <ListBox DockPanel.Dock="Top" MaxHeight="160" Margin="0,4,0,0" HorizontalContentAlignment="Stretch" ItemsSource="{Binding SearchResults}"
                Visibility="{Binding SearchResults.Count, Converter={StaticResource CountToVisibility}}">
         <ListBox.ItemTemplate>
           <DataTemplate>
-            <Button Focusable="False" Style="{StaticResource KeyButton}" HorizontalContentAlignment="Left" MinHeight="40"
+            <Button Focusable="False" Style="{StaticResource GhostButton}" HorizontalContentAlignment="Left" MinHeight="40" local:ButtonIcon.Glyph="&#xE710;"
                     Command="{Binding DataContext.AddFromSearchCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                     CommandParameter="{Binding ItemCode}">
               <TextBlock><Run Text="{Binding ItemName, Mode=OneWay}" FontWeight="SemiBold" /><Run Text="  " /><Run Text="{Binding ItemCode, Mode=OneWay}" Foreground="{StaticResource Muted}" /></TextBlock>
@@ -187,11 +193,11 @@
           </DataTemplate>
         </ListBox.ItemTemplate>
       </ListBox>
-      <TextBlock DockPanel.Dock="Top" Text="Return list" FontWeight="SemiBold" Margin="0,8,0,4" />
-      <ListBox ItemsSource="{Binding CartLines}" HorizontalContentAlignment="Stretch" Background="{StaticResource Panel}" Focusable="False"
+      <TextBlock DockPanel.Dock="Top" Text="Return list" Style="{StaticResource SectionTitle}" Margin="0,10,0,6" />
+      <ListBox ItemsSource="{Binding CartLines}" HorizontalContentAlignment="Stretch" Focusable="False"
                ScrollViewer.HorizontalScrollBarVisibility="Disabled">
         <ListBox.ItemContainerStyle>
-          <Style TargetType="ListBoxItem"><Setter Property="Focusable" Value="False" /></Style>
+          <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}"><Setter Property="Focusable" Value="False" /></Style>
         </ListBox.ItemContainerStyle>
         <ListBox.ItemTemplate>
           <DataTemplate>
@@ -203,14 +209,14 @@
               <TextBlock Grid.Column="0" Text="{Binding No}" VerticalAlignment="Center" Foreground="{StaticResource Muted}" />
               <StackPanel Grid.Column="1" VerticalAlignment="Center">
                 <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                <TextBlock Text="{Binding Barcode}" FontSize="12" Foreground="{StaticResource Muted}" FontFamily="Consolas" />
+                <TextBlock Text="{Binding Barcode}" FontSize="12" Foreground="{StaticResource Muted}" FontFamily="{StaticResource CodeFont}" />
               </StackPanel>
               <TextBlock Grid.Column="2" Text="{Binding Qty}" TextAlignment="Right" VerticalAlignment="Center" Style="{StaticResource Money}" />
               <TextBlock Grid.Column="3" Text="{Binding Price}" TextAlignment="Right" VerticalAlignment="Center" Style="{StaticResource Money}" />
               <TextBlock Grid.Column="4" Text="{Binding Amount}" TextAlignment="Right" VerticalAlignment="Center" FontSize="17" Style="{StaticResource Money}" />
-              <Button Grid.Column="5" Style="{StaticResource RowButton}" Content="−"
+              <Button Grid.Column="5" Style="{StaticResource RowIconButton}" Content="&#xE738;"
                       Command="{Binding DataContext.DecrementCartLineCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding Id}" />
-              <Button Grid.Column="6" Style="{StaticResource RowButton}" Foreground="{StaticResource Danger}" Content="✕"
+              <Button Grid.Column="6" Style="{StaticResource RowIconButton}" Foreground="{StaticResource Danger}" BorderBrush="{StaticResource DangerLine}" Content="&#xE711;"
                       Command="{Binding DataContext.RemoveCartLineCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding Id}" />
             </Grid>
           </DataTemplate>
@@ -223,7 +229,7 @@
     <ScrollViewer Grid.Row="2" Grid.Column="1" Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                   Style="{StaticResource NotOnFind}">
       <StackPanel>
-        <TextBlock Text="Reason (required)" FontWeight="SemiBold" />
+        <TextBlock Text="Reason (required)" Style="{StaticResource SectionTitle}" Margin="4,0,4,2" />
         <ItemsControl ItemsSource="{Binding Source={x:Static vm:ReturnViewModel.Reasons}}" Focusable="False">
           <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="3" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
           <ItemsControl.ItemTemplate>
@@ -245,6 +251,7 @@
                           </MultiBinding>
                         </DataTrigger.Binding>
                         <Setter Property="Background" Value="{StaticResource Accent}" />
+                        <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
                         <Setter Property="Foreground" Value="White" />
                         <Setter Property="FontWeight" Value="Bold" />
                       </DataTrigger>
@@ -256,25 +263,25 @@
           </ItemsControl.ItemTemplate>
         </ItemsControl>
 
-        <Border Background="{StaticResource Ink}" CornerRadius="12" Padding="16,10" Margin="0,8,0,0">
+        <Border Style="{StaticResource InkCard}" Padding="16,10" Margin="4,8,4,0">
           <StackPanel>
-            <TextBlock Text="REFUND DUE — CASH (AED)" Foreground="#C9CFD6" />
-            <TextBlock Text="{Binding RefundDueText}" Foreground="White" FontSize="40" MinHeight="48" Style="{StaticResource Money}" />
+            <TextBlock Text="REFUND DUE — CASH (AED)" Foreground="{StaticResource OnInkMuted}" FontSize="13" FontWeight="SemiBold" />
+            <TextBlock Text="{Binding RefundDueText}" Foreground="White" FontSize="40" FontWeight="Bold" MinHeight="48" Style="{StaticResource Money}" />
             <DockPanel>
-              <TextBlock Text="Refund total" Foreground="#C9CFD6" />
+              <TextBlock Text="Refund total" Foreground="{StaticResource OnInkMuted}" />
               <TextBlock Text="{Binding RefundTotalText}" HorizontalAlignment="Right" Foreground="White" Style="{StaticResource Money}" />
             </DockPanel>
             <DockPanel>
-              <TextBlock Text="VAT 5% (included)" Foreground="#C9CFD6" />
+              <TextBlock Text="VAT 5% (included)" Foreground="{StaticResource OnInkMuted}" />
               <TextBlock Text="{Binding VatText}" HorizontalAlignment="Right" Foreground="White" Style="{StaticResource Money}" />
             </DockPanel>
           </StackPanel>
         </Border>
-        <TextBlock Text="{Binding NeedsText}" Foreground="{StaticResource Warn}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,8,0,0" />
+        <TextBlock Text="{Binding NeedsText}" Foreground="{StaticResource Warn}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="4,8,4,0" />
 
-        <Button Focusable="False" Style="{StaticResource PrimaryButton}" Height="72" Margin="4,8,4,4" Content="Confirm refund (Enter)"
+        <Button Focusable="False" Style="{StaticResource PrimaryButton}" Height="72" Margin="4,8,4,4" local:ButtonIcon.Glyph="&#xE73E;" Content="Confirm refund (Enter)"
                 Command="{Binding ConfirmCommand}" />
-        <Button Focusable="False" Style="{StaticResource KeyButton}" Height="52" Content="Back (Esc)" Command="{Binding BackCommand}" />
+        <Button Focusable="False" Style="{StaticResource KeyButton}" Height="52" local:ButtonIcon.Glyph="&#xE72B;" Content="Back (Esc)" Command="{Binding BackCommand}" />
       </StackPanel>
     </ScrollViewer>
   </Grid>

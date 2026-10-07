@@ -4,7 +4,7 @@
         xmlns:vm="clr-namespace:TillPOS.Presentation;assembly=TillPOS.Presentation"
         xmlns:views="clr-namespace:TillPOS.App.Views"
         Title="TillPOS" Width="1366" Height="768" WindowState="Maximized"
-        Background="{StaticResource Ground}" FontFamily="Segoe UI" FontSize="15">
+        Background="{StaticResource Ground}" FontFamily="{StaticResource TextFont}" FontSize="15">
   <Window.Resources>
     <DataTemplate DataType="{x:Type vm:StatusViewModel}"><views:StatusView /></DataTemplate>
     <DataTemplate DataType="{x:Type vm:DownloadViewModel}"><views:DownloadView /></DataTemplate>
@@ -16,35 +16,44 @@
     <DataTemplate DataType="{x:Type vm:ReturnViewModel}"><views:ReturnView /></DataTemplate>
   </Window.Resources>
   <DockPanel>
+    <!-- Header: shop and till on the left; cashier, sync state and clock on the right. -->
     <Border DockPanel.Dock="Top" Background="{StaticResource Ink}" Height="56" Padding="20,0">
       <DockPanel LastChildFill="False">
         <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
-          <TextBlock Text="{Binding ShopName}" Foreground="White" FontWeight="Bold" FontSize="17" />
-          <TextBlock Text="{Binding TillName}" Foreground="#C9CFD6" Margin="12,0,0,0" />
+          <Border Background="{StaticResource Accent}" CornerRadius="8" Width="34" Height="34" Margin="0,0,12,0">
+            <TextBlock Text="&#xEC59;" Style="{StaticResource Icon}" Foreground="White" HorizontalAlignment="Center" />
+          </Border>
+          <TextBlock Text="{Binding ShopName}" Foreground="White" FontWeight="Bold" FontSize="17" VerticalAlignment="Center" />
+          <Border Background="{StaticResource InkRaised}" CornerRadius="6" Padding="10,3" Margin="12,0,0,0" VerticalAlignment="Center">
+            <TextBlock Text="{Binding TillName}" Foreground="{StaticResource OnInkMuted}" FontSize="14" />
+          </Border>
         </StackPanel>
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-          <TextBlock Foreground="White" Margin="0,0,24,0">
-            <Run Text="Cashier: " /><Run Text="{Binding Session.Cashier.Name, Mode=OneWay}" FontWeight="Bold" />
+          <TextBlock Text="&#xE77B;" Style="{StaticResource Icon}" FontSize="16" Foreground="{StaticResource OnInkMuted}" Margin="0,0,8,0" />
+          <TextBlock Foreground="White" VerticalAlignment="Center" Margin="0,0,20,0">
+            <Run Text="Cashier " Foreground="{StaticResource OnInkMuted}" /><Run Text="{Binding Session.Cashier.Name, Mode=OneWay}" FontWeight="SemiBold" />
           </TextBlock>
-          <Border CornerRadius="12" Background="#262C33" Padding="12,4" Margin="0,0,16,0">
+          <Border CornerRadius="14" Background="{StaticResource InkRaised}" Padding="12,5" Margin="0,0,20,0">
             <StackPanel Orientation="Horizontal">
-              <Ellipse Width="10" Height="10" Margin="0,0,8,0">
-                <Ellipse.Style>
-                  <Style TargetType="Ellipse">
-                    <Setter Property="Fill" Value="#F5A524" />
+              <TextBlock Text="&#xE753;" FontSize="16" Margin="0,0,8,0">
+                <TextBlock.Style>
+                  <Style TargetType="TextBlock" BasedOn="{StaticResource Icon}">
+                    <Setter Property="Foreground" Value="{StaticResource Offline}" />
                     <Style.Triggers>
-                      <DataTrigger Binding="{Binding Online}" Value="True"><Setter Property="Fill" Value="#3CCB7F" /></DataTrigger>
+                      <DataTrigger Binding="{Binding Online}" Value="True"><Setter Property="Foreground" Value="{StaticResource Online}" /></DataTrigger>
                     </Style.Triggers>
                   </Style>
-                </Ellipse.Style>
-              </Ellipse>
-              <TextBlock Text="{Binding SyncStatus}" Foreground="White" />
-              <TextBlock Foreground="#C9CFD6" Margin="8,0,0,0">
+                </TextBlock.Style>
+              </TextBlock>
+              <TextBlock Text="{Binding SyncStatus}" Foreground="White" VerticalAlignment="Center" />
+              <TextBlock Foreground="{StaticResource OnInkMuted}" Margin="8,0,0,0" VerticalAlignment="Center">
                 <Run Text="· " /><Run Text="{Binding PendingUploads, Mode=OneWay}" /><Run Text=" waiting" />
               </TextBlock>
             </StackPanel>
           </Border>
-          <TextBlock Text="{Binding Clock}" Foreground="White" FontFamily="Consolas" FontSize="16" />
+          <TextBlock Text="&#xE823;" Style="{StaticResource Icon}" FontSize="16" Foreground="{StaticResource OnInkMuted}" Margin="0,0,8,0" />
+          <TextBlock Text="{Binding Clock}" Foreground="White" FontSize="17" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular"
+                     VerticalAlignment="Center" />
         </StackPanel>
       </DockPanel>
     </Border>

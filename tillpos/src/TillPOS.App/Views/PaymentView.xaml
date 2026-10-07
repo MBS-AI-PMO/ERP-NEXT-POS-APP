@@ -6,56 +6,129 @@
     <KeyBinding Key="Enter" Command="{Binding CompleteCommand}" />
     <KeyBinding Key="Escape" Command="{Binding BackCommand}" />
   </UserControl.InputBindings>
+  <UserControl.Resources>
+    <!-- Cash / Card / Split: the chosen one is filled green. -->
+    <Style TargetType="Button" x:Key="KindButton" BasedOn="{StaticResource KeyButton}">
+      <Setter Property="Focusable" Value="False" />
+      <Setter Property="Height" Value="60" />
+      <Setter Property="FontSize" Value="17" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style TargetType="Button" x:Key="PadKey" BasedOn="{StaticResource KeyButton}">
+      <Setter Property="Focusable" Value="False" />
+      <Setter Property="Height" Value="72" />
+      <Setter Property="FontSize" Value="24" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+  </UserControl.Resources>
   <Grid MaxWidth="900">
     <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="320" /></Grid.ColumnDefinitions>
     <StackPanel Grid.Column="0" Margin="0,0,16,0">
-      <Border Background="{StaticResource Ink}" CornerRadius="12" Padding="20">
-        <StackPanel>
-          <TextBlock Text="AMOUNT DUE" Foreground="#C9CFD6" />
-          <TextBlock Text="{Binding AmountDue}" Foreground="White" FontSize="46" Style="{StaticResource Money}" />
-          <TextBlock Foreground="#C9CFD6"><Run Text="Bill total " /><Run Text="{Binding GrandTotal, Mode=OneWay}" /></TextBlock>
-        </StackPanel>
+      <Border Style="{StaticResource InkCard}" Margin="4,0" Padding="20,12">
+        <DockPanel>
+          <Border DockPanel.Dock="Right" Background="{StaticResource InkRaised}" CornerRadius="28" Width="56" Height="56" VerticalAlignment="Center">
+            <TextBlock Text="&#xE7BF;" Style="{StaticResource Icon}" FontSize="26" Foreground="{StaticResource OnInkMuted}" HorizontalAlignment="Center" />
+          </Border>
+          <StackPanel>
+            <TextBlock Text="AMOUNT DUE (AED)" Foreground="{StaticResource OnInkMuted}" FontSize="13" FontWeight="SemiBold" />
+            <TextBlock Text="{Binding AmountDue}" Foreground="White" FontSize="46" FontWeight="Bold" Style="{StaticResource Money}" />
+            <TextBlock Foreground="{StaticResource OnInkMuted}"><Run Text="Bill total " /><Run Text="{Binding GrandTotal, Mode=OneWay}" /></TextBlock>
+          </StackPanel>
+        </DockPanel>
       </Border>
-      <UniformGrid Columns="3" Margin="0,12">
-        <Button Focusable="False" Style="{StaticResource KeyButton}" Height="60" Content="Cash" Command="{Binding SetKindCommand}" CommandParameter="Cash" />
-        <Button Focusable="False" Style="{StaticResource KeyButton}" Height="60" Content="Card" Command="{Binding SetKindCommand}" CommandParameter="Card" />
-        <Button Focusable="False" Style="{StaticResource KeyButton}" Height="60" Content="Split: card + cash" Command="{Binding SetKindCommand}" CommandParameter="Split" />
+      <UniformGrid Columns="3" Margin="0,8">
+        <Button Focusable="False" Command="{Binding SetKindCommand}" CommandParameter="Cash">
+          <Button.Style>
+            <Style TargetType="Button" BasedOn="{StaticResource KindButton}">
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding Kind}" Value="Cash">
+                  <Setter Property="Background" Value="{StaticResource AccentSoft}" />
+                  <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
+                  <Setter Property="Foreground" Value="{StaticResource Accent}" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </Button.Style>
+          <StackPanel Orientation="Horizontal">
+            <Path Data="{StaticResource CashGeometry}" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.6"
+                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" Width="24" Height="17" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,10,0" />
+            <TextBlock Text="Cash" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+        <Button Focusable="False" Content="Card" local:ButtonIcon.Glyph="&#xE8C7;" Command="{Binding SetKindCommand}" CommandParameter="Card">
+          <Button.Style>
+            <Style TargetType="Button" BasedOn="{StaticResource KindButton}">
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding Kind}" Value="Card">
+                  <Setter Property="Background" Value="{StaticResource AccentSoft}" />
+                  <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
+                  <Setter Property="Foreground" Value="{StaticResource Accent}" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </Button.Style>
+        </Button>
+        <Button Focusable="False" Command="{Binding SetKindCommand}" CommandParameter="Split">
+          <Button.Style>
+            <Style TargetType="Button" BasedOn="{StaticResource KindButton}">
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding Kind}" Value="Split">
+                  <Setter Property="Background" Value="{StaticResource AccentSoft}" />
+                  <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
+                  <Setter Property="Foreground" Value="{StaticResource Accent}" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </Button.Style>
+          <TextBlock Text="Split: card + cash" TextWrapping="Wrap" TextAlignment="Center" />
+        </Button>
       </UniformGrid>
-      <StackPanel Visibility="{Binding IsSplit, Converter={StaticResource BoolToVisibility}}">
-        <TextBlock Text="Card part (charge on the card machine)" />
-        <TextBox x:Name="CardBox" local:Keyboarding.SelectAllOnTap="True" Text="{Binding Card.Text, UpdateSourceTrigger=PropertyChanged}" FontSize="26" Height="52" FontFamily="Consolas" GotFocus="CardFocused" />
+      <StackPanel Visibility="{Binding IsSplit, Converter={StaticResource BoolToVisibility}}" Margin="4,0">
+        <TextBlock Text="Card part (charge on the card machine)" Style="{StaticResource SectionTitle}" Margin="0,0,0,4" />
+        <TextBox x:Name="CardBox" Style="{StaticResource AmountTextBox}" local:Keyboarding.SelectAllOnTap="True"
+                 local:Placeholder.Text="Card amount" local:Placeholder.Icon="&#xE8C7;"
+                 Text="{Binding Card.Text, UpdateSourceTrigger=PropertyChanged}" FontSize="26" Height="52" GotFocus="CardFocused" />
       </StackPanel>
-      <TextBlock Text="Cash received" Margin="0,8,0,0" />
-      <TextBox x:Name="CashBox" local:Keyboarding.SelectAllOnTap="True" Text="{Binding Cash.Text, UpdateSourceTrigger=PropertyChanged}" FontSize="26" Height="52" FontFamily="Consolas" GotFocus="CashFocused" />
-      <ItemsControl ItemsSource="{Binding QuickCash}" Margin="0,8">
+      <TextBlock Text="Cash received" Style="{StaticResource SectionTitle}" Margin="4,8,4,4" />
+      <TextBox x:Name="CashBox" Style="{StaticResource AmountTextBox}" Margin="4,0" local:Keyboarding.SelectAllOnTap="True"
+               local:Placeholder.Text="Cash received"
+               Text="{Binding Cash.Text, UpdateSourceTrigger=PropertyChanged}" FontSize="26" Height="52" GotFocus="CashFocused" />
+      <ItemsControl ItemsSource="{Binding QuickCash}" Margin="0,6">
         <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
         <ItemsControl.ItemTemplate>
           <DataTemplate>
-            <Button Focusable="False" Style="{StaticResource KeyButton}" Content="{Binding}"
+            <Button Focusable="False" Style="{StaticResource SecondaryButton}" MinHeight="56" FontSize="18" FontWeight="SemiBold" Content="{Binding}"
                     Command="{Binding DataContext.QuickCashCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" />
           </DataTemplate>
         </ItemsControl.ItemTemplate>
       </ItemsControl>
-      <DockPanel Margin="0,8"><TextBlock Text="Change" FontSize="20" /><TextBlock Text="{Binding Change}" HorizontalAlignment="Right" FontSize="32" Foreground="{StaticResource Accent}" Style="{StaticResource Money}" /></DockPanel>
-      <TextBlock Text="{Binding Message}" Foreground="{StaticResource Danger}" FontSize="16" TextWrapping="Wrap" MinHeight="22" />
-      <DockPanel Margin="0,12,0,0">
-        <Button DockPanel.Dock="Left" Style="{StaticResource KeyButton}" Width="200" Height="72" Content="Back (Esc)" Command="{Binding BackCommand}" />
-        <Button Style="{StaticResource PrimaryButton}" Height="72" Content="Complete &amp; print (Enter)" Command="{Binding CompleteCommand}" />
+      <Border Background="{StaticResource AccentSoft}" CornerRadius="{StaticResource CardRadius}" Padding="16,4" Margin="4,0">
+        <DockPanel>
+          <TextBlock Text="Change" FontSize="20" FontWeight="SemiBold" Foreground="{StaticResource Accent}" VerticalAlignment="Center" />
+          <TextBlock Text="{Binding Change}" HorizontalAlignment="Right" FontSize="32" FontWeight="Bold" Foreground="{StaticResource Accent}" Style="{StaticResource Money}" />
+        </DockPanel>
+      </Border>
+      <TextBlock Text="{Binding Message}" Foreground="{StaticResource Danger}" FontSize="16" TextWrapping="Wrap" MinHeight="22" Margin="4,4,4,0" />
+      <DockPanel Margin="0,4,0,0">
+        <Button DockPanel.Dock="Left" Style="{StaticResource KeyButton}" Width="200" Height="72" local:ButtonIcon.Glyph="&#xE72B;"
+                Content="Back (Esc)" Command="{Binding BackCommand}" />
+        <Button Style="{StaticResource PrimaryButton}" Height="72" local:ButtonIcon.Glyph="&#xE749;" Content="Complete &amp; print (Enter)"
+                Command="{Binding CompleteCommand}" />
       </DockPanel>
     </StackPanel>
     <UniformGrid Grid.Column="1" Columns="3" VerticalAlignment="Top">
-      <Button Focusable="False" Style="{StaticResource KeyButton}" Height="72" Content="1" Command="{Binding KeyCommand}" CommandParameter="1" />
-      <Button Focusable="False" Style="{StaticResource KeyButton}" Height="72" Content="2" Command="{Binding KeyCommand}" CommandParameter="2" />
-      <Button Focusable="False" Style="{StaticResource KeyButton}" Height="72" Content="3" Command="{Binding KeyCommand}" CommandParameter="3" />
-      <Button Focusable="False" Style="{StaticResource KeyButton}" Height="72" Content="4" Command="{Binding KeyCommand}" CommandParameter="4" />
-      <Button Focusable="False" Style="{StaticResource KeyButton}" Height="72" Content="5" Command="{Binding KeyCommand}" CommandParameter="5" />
-      <Button Focusable="False" Style="{StaticResource KeyButton}" Height="72" Content="6" Command="{Binding KeyCommand}" CommandParameter="6" />
-      <Button Focusable="False" Style="{StaticResource KeyButton}" Height="72" Content="7" Command="{Binding KeyCommand}" CommandParameter="7" />
-      <Button Focusable="False" Style="{StaticResource KeyButton}" Height="72" Content="8" Command="{Binding KeyCommand}" CommandParameter="8" />
-      <Button Focusable="False" Style="{StaticResource KeyButton}" Height="72" Content="9" Command="{Binding KeyCommand}" CommandParameter="9" />
-      <Button Focusable="False" Style="{StaticResource KeyButton}" Height="72" Content="." Command="{Binding KeyCommand}" CommandParameter="." />
-      <Button Focusable="False" Style="{StaticResource KeyButton}" Height="72" Content="0" Command="{Binding KeyCommand}" CommandParameter="0" />
-      <Button Focusable="False" Style="{StaticResource KeyButton}" Height="72" Content="⌫" Command="{Binding KeyCommand}" CommandParameter="⌫" />
+      <Button Focusable="False" Style="{StaticResource PadKey}" Content="1" Command="{Binding KeyCommand}" CommandParameter="1" />
+      <Button Focusable="False" Style="{StaticResource PadKey}" Content="2" Command="{Binding KeyCommand}" CommandParameter="2" />
+      <Button Focusable="False" Style="{StaticResource PadKey}" Content="3" Command="{Binding KeyCommand}" CommandParameter="3" />
+      <Button Focusable="False" Style="{StaticResource PadKey}" Content="4" Command="{Binding KeyCommand}" CommandParameter="4" />
+      <Button Focusable="False" Style="{StaticResource PadKey}" Content="5" Command="{Binding KeyCommand}" CommandParameter="5" />
+      <Button Focusable="False" Style="{StaticResource PadKey}" Content="6" Command="{Binding KeyCommand}" CommandParameter="6" />
+      <Button Focusable="False" Style="{StaticResource PadKey}" Content="7" Command="{Binding KeyCommand}" CommandParameter="7" />
+      <Button Focusable="False" Style="{StaticResource PadKey}" Content="8" Command="{Binding KeyCommand}" CommandParameter="8" />
+      <Button Focusable="False" Style="{StaticResource PadKey}" Content="9" Command="{Binding KeyCommand}" CommandParameter="9" />
+      <Button Focusable="False" Style="{StaticResource PadKey}" Content="." Command="{Binding KeyCommand}" CommandParameter="." />
+      <Button Focusable="False" Style="{StaticResource PadKey}" Content="0" Command="{Binding KeyCommand}" CommandParameter="0" />
+      <Button Focusable="False" Style="{StaticResource PadKey}" Content="&#xE750;" FontFamily="{StaticResource IconFont}" FontWeight="Normal" Command="{Binding KeyCommand}" CommandParameter="⌫" />
     </UniformGrid>
   </Grid>
 </UserControl>

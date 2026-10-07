@@ -4,13 +4,13 @@
              xmlns:local="clr-namespace:TillPOS.App"
              Focusable="True" FocusVisualStyle="{x:Null}">
   <UserControl.Resources>
-    <Style TargetType="TextBox" x:Key="CountBox">
-      <Setter Property="FontFamily" Value="Consolas" />
+    <Style TargetType="TextBox" x:Key="CountBox" BasedOn="{StaticResource AmountTextBox}">
       <Setter Property="FontSize" Value="20" />
       <Setter Property="Height" Value="38" />
+      <Setter Property="local:Placeholder.FontSize" Value="14" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
       <Setter Property="TextAlignment" Value="Right" />
-      <Setter Property="Padding" Value="6,0" />
+      <Setter Property="Padding" Value="8,0" />
       <Setter Property="local:Keyboarding.SelectAllOnTap" Value="True" />
     </Style>
     <Style TargetType="TextBlock" x:Key="MessageText">
@@ -32,19 +32,22 @@
         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="380" /></Grid.ColumnDefinitions>
   
         <StackPanel Grid.Row="0" Grid.ColumnSpan="2" Margin="0,0,0,8">
-          <TextBlock Text="Close shift — count the drawer" FontSize="26" FontWeight="Bold" />
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Text="&#xE72E;" Style="{StaticResource Icon}" FontSize="22" Foreground="{StaticResource Accent}" Margin="0,0,10,0" />
+            <TextBlock Text="Close shift — count the drawer" Style="{StaticResource ScreenTitle}" />
+          </StackPanel>
           <TextBlock Text="Enter how many of each note and coin (Enter moves to the next box). The expected amounts are shown only after you confirm the count."
                      Foreground="{StaticResource Muted}" TextWrapping="Wrap" />
         </StackPanel>
   
         <!-- Denominations -->
-        <Border Grid.Row="1" Grid.Column="0" Background="{StaticResource Panel}" CornerRadius="12" Padding="16,8" Margin="0,0,16,0" VerticalAlignment="Top">
+        <Border Grid.Row="1" Grid.Column="0" Style="{StaticResource Card}" Padding="16,8" Margin="0,0,16,0" VerticalAlignment="Top">
           <StackPanel>
             <Grid Margin="0,0,0,4">
               <Grid.ColumnDefinitions><ColumnDefinition Width="120" /><ColumnDefinition Width="140" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-              <TextBlock Grid.Column="0" Text="Note / coin" Foreground="{StaticResource Muted}" />
-              <TextBlock Grid.Column="1" Text="How many" Foreground="{StaticResource Muted}" TextAlignment="Right" />
-              <TextBlock Grid.Column="2" Text="Amount" Foreground="{StaticResource Muted}" TextAlignment="Right" />
+              <TextBlock Grid.Column="0" Text="Note / coin" Style="{StaticResource SectionTitle}" />
+              <TextBlock Grid.Column="1" Text="How many" Style="{StaticResource SectionTitle}" TextAlignment="Right" />
+              <TextBlock Grid.Column="2" Text="Amount" Style="{StaticResource SectionTitle}" TextAlignment="Right" />
             </Grid>
             <ItemsControl ItemsSource="{Binding Denominations}" Focusable="False">
               <ItemsControl.ItemTemplate>
@@ -66,32 +69,34 @@
   
         <!-- Totals and actions -->
         <StackPanel Grid.Row="1" Grid.Column="1">
-          <Border Background="{StaticResource Panel}" CornerRadius="12" Padding="16,12">
+          <Border Style="{StaticResource Card}" Padding="16,12">
             <StackPanel>
               <TextBlock Text="Or the counted cash as one total" FontWeight="SemiBold" />
               <TextBlock Text="When filled, it is used instead of the notes and coins." FontSize="13" Foreground="{StaticResource Muted}" TextWrapping="Wrap" />
-              <TextBox Style="{StaticResource CountBox}" Margin="0,4,0,0" Text="{Binding UseTotalInstead.Text, UpdateSourceTrigger=PropertyChanged}" />
+              <TextBox Style="{StaticResource CountBox}" Margin="0,4,0,0" local:Placeholder.Text="Or type the counted cash total"
+                       Text="{Binding UseTotalInstead.Text, UpdateSourceTrigger=PropertyChanged}" />
               <TextBlock Text="Card machine total (settlement)" FontWeight="SemiBold" Margin="0,12,0,0" />
               <TextBlock Text="Blank counts as 0.00." FontSize="13" Foreground="{StaticResource Muted}" />
-              <TextBox Style="{StaticResource CountBox}" Margin="0,4,0,0" Text="{Binding CardTotal.Text, UpdateSourceTrigger=PropertyChanged}" />
+              <TextBox Style="{StaticResource CountBox}" Margin="0,4,0,0" local:Placeholder.Text="Card machine total" local:Placeholder.Icon="&#xE8C7;"
+                       local:Placeholder.IconSize="15" Text="{Binding CardTotal.Text, UpdateSourceTrigger=PropertyChanged}" />
             </StackPanel>
           </Border>
-          <Border Background="{StaticResource Ink}" CornerRadius="12" Padding="16,12" Margin="0,12,0,0">
+          <Border Style="{StaticResource InkCard}" Padding="16,12" Margin="0,12,0,0">
             <StackPanel>
-              <TextBlock Text="COUNTED CASH (AED)" Foreground="#C9CFD6" />
-              <TextBlock Text="{Binding CashTotal}" Foreground="White" FontSize="40" Style="{StaticResource Money}" />
+              <TextBlock Text="COUNTED CASH (AED)" Foreground="{StaticResource OnInkMuted}" FontSize="13" FontWeight="SemiBold" />
+              <TextBlock Text="{Binding CashTotal}" Foreground="White" FontSize="40" FontWeight="Bold" Style="{StaticResource Money}" />
             </StackPanel>
           </Border>
           <TextBlock Text="{Binding Message}" Style="{StaticResource MessageText}" Margin="0,8,0,0" />
-          <Button Focusable="False" Style="{StaticResource PrimaryButton}" Height="72" Margin="4,8,4,4" Content="Confirm count" Command="{Binding ConfirmCountCommand}" />
-          <Button Focusable="False" Style="{StaticResource KeyButton}" Height="56" Content="Back to the sale (Esc)" Command="{Binding BackCommand}" />
+          <Button Focusable="False" Style="{StaticResource PrimaryButton}" Height="72" Margin="4,8,4,4" local:ButtonIcon.Glyph="&#xE73E;" Content="Confirm count" Command="{Binding ConfirmCountCommand}" />
+          <Button Focusable="False" Style="{StaticResource KeyButton}" Height="56" local:ButtonIcon.Glyph="&#xE72B;" Content="Back to the sale (Esc)" Command="{Binding BackCommand}" />
         </StackPanel>
       </Grid>
   
       <!-- ===== Stage 2: result (collapsed, and empty, until the count is confirmed) ===== -->
       <StackPanel x:Name="ResultStage" MaxWidth="820" Visibility="{Binding IsResult, Converter={StaticResource BoolToVisibility}}">
-        <TextBlock Text="Shift result" FontSize="26" FontWeight="Bold" Margin="0,0,0,8" />
-        <Border Background="{StaticResource Panel}" CornerRadius="12" Padding="20,12">
+        <TextBlock Text="Shift result" Style="{StaticResource ScreenTitle}" Margin="0,0,0,8" />
+        <Border Style="{StaticResource Card}" Padding="20,12">
           <StackPanel>
             <DockPanel><TextBlock Text="Bills (sales)" Foreground="{StaticResource Muted}" /><TextBlock Text="{Binding SalesCount}" HorizontalAlignment="Right" FontSize="18" Style="{StaticResource Money}" /></DockPanel>
             <DockPanel><TextBlock Text="Total incl. VAT" Foreground="{StaticResource Muted}" /><TextBlock Text="{Binding GrandTotalText}" HorizontalAlignment="Right" FontSize="18" Style="{StaticResource Money}" /></DockPanel>
@@ -100,10 +105,10 @@
             <Separator Margin="0,10" />
             <Grid Margin="0,0,0,4">
               <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="150" /><ColumnDefinition Width="150" /><ColumnDefinition Width="150" /></Grid.ColumnDefinitions>
-              <TextBlock Grid.Column="0" Text="Mode" Foreground="{StaticResource Muted}" />
-              <TextBlock Grid.Column="1" Text="Expected" Foreground="{StaticResource Muted}" TextAlignment="Right" />
-              <TextBlock Grid.Column="2" Text="Counted" Foreground="{StaticResource Muted}" TextAlignment="Right" />
-              <TextBlock Grid.Column="3" Text="Difference" Foreground="{StaticResource Muted}" TextAlignment="Right" />
+              <TextBlock Grid.Column="0" Text="Mode" Style="{StaticResource SectionTitle}" />
+              <TextBlock Grid.Column="1" Text="Expected" Style="{StaticResource SectionTitle}" TextAlignment="Right" />
+              <TextBlock Grid.Column="2" Text="Counted" Style="{StaticResource SectionTitle}" TextAlignment="Right" />
+              <TextBlock Grid.Column="3" Text="Difference" Style="{StaticResource SectionTitle}" TextAlignment="Right" />
             </Grid>
             <ItemsControl ItemsSource="{Binding Rows}" Focusable="False">
               <ItemsControl.ItemTemplate>
@@ -130,7 +135,7 @@
           </StackPanel>
         </Border>
   
-        <Border Background="{StaticResource Danger}" CornerRadius="8" Padding="16,10" Margin="0,12,0,0"
+        <Border Background="{StaticResource Danger}" CornerRadius="{StaticResource Radius}" Padding="16,10" Margin="0,12,0,0"
                 Visibility="{Binding NeedsSupervisor, Converter={StaticResource BoolToVisibility}}">
           <TextBlock Foreground="White" FontWeight="SemiBold" TextWrapping="Wrap"
                      Text="Supervisor needed: the cash difference is more than AED 5.00 (over or short). Closing the shift will ask for a supervisor PIN." />
@@ -138,8 +143,8 @@
         <TextBlock Text="{Binding Message}" Style="{StaticResource MessageText}" Margin="0,8,0,0" />
   
         <DockPanel Margin="0,8,0,0">
-          <Button DockPanel.Dock="Left" Focusable="False" Style="{StaticResource KeyButton}" Width="200" Height="72" Content="Recount" Command="{Binding RecountCommand}" />
-          <Button Focusable="False" Style="{StaticResource PrimaryButton}" Height="72" Content="Close shift &amp; print report" Command="{Binding CloseCommand}" />
+          <Button DockPanel.Dock="Left" Focusable="False" Style="{StaticResource KeyButton}" Width="200" Height="72" local:ButtonIcon.Glyph="&#xE72C;" Content="Recount" Command="{Binding RecountCommand}" />
+          <Button Focusable="False" Style="{StaticResource PrimaryButton}" Height="72" local:ButtonIcon.Glyph="&#xE749;" Content="Close shift &amp; print report" Command="{Binding CloseCommand}" />
         </DockPanel>
       </StackPanel>
     </Grid>

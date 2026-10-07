@@ -1,18 +1,22 @@
 <Window x:Class="TillPOS.App.Dialogs.HeldBillsDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:TillPOS.App"
         Title="Bills on hold" Width="640" SizeToContent="Height" WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
-        ShowInTaskbar="False" FontFamily="Segoe UI" FontSize="16" Background="{StaticResource Ground}">
+        ShowInTaskbar="False" FontFamily="{StaticResource TextFont}" FontSize="16" Background="{StaticResource Ground}">
   <DockPanel Margin="16">
-    <TextBlock DockPanel.Dock="Top" Text="Choose the bill to recall" FontSize="20" FontWeight="Bold" Margin="0,0,0,8" />
+    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,10">
+      <TextBlock Text="&#xE81C;" Style="{StaticResource Icon}" FontSize="20" Foreground="{StaticResource Accent}" Margin="0,0,10,0" />
+      <TextBlock Text="Choose the bill to recall" Style="{StaticResource ScreenTitle}" FontSize="20" />
+    </StackPanel>
     <StackPanel DockPanel.Dock="Bottom">
       <TextBlock Text="{Binding Message}" Foreground="{StaticResource Accent}" MinHeight="22" Margin="0,8,0,0" TextWrapping="Wrap" />
       <DockPanel Margin="0,8,0,0">
         <!-- Not focusable: scanner keys must never press a button. Enter (typed, not scanned) recalls; Esc closes. -->
-        <Button DockPanel.Dock="Left" Style="{StaticResource DangerButton}" Content="Delete (supervisor)" Width="200" Height="60" Focusable="False"
+        <Button DockPanel.Dock="Left" Style="{StaticResource DangerButton}" Content="Delete (supervisor)" Width="210" Height="60" Focusable="False" local:ButtonIcon.Glyph="&#xE74D;"
                 Command="{Binding DeleteSelectedCommand}" />
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-          <Button Content="Recall (Enter)" Width="180" Height="60" Focusable="False" Click="RecallClick">
+          <Button Content="Recall (Enter)" Width="190" Height="60" Focusable="False" local:ButtonIcon.Glyph="&#xE81C;" Click="RecallClick">
             <Button.Style>
               <Style TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
                 <Style.Triggers>
@@ -28,16 +32,16 @@
 
     <!-- Text search off: a scan's digits must not jump the selection (labels start with the time). -->
     <ListBox x:Name="BillList" ItemsSource="{Binding Bills}" SelectedItem="{Binding Selected}" HorizontalContentAlignment="Stretch"
-             IsTextSearchEnabled="False" MinHeight="120" MaxHeight="440" Background="{StaticResource Panel}">
+             IsTextSearchEnabled="False" MinHeight="120" MaxHeight="440">
       <ListBox.ItemContainerStyle>
-        <Style TargetType="ListBoxItem">
+        <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
           <EventSetter Event="MouseDoubleClick" Handler="BillDoubleClick" />
         </Style>
       </ListBox.ItemContainerStyle>
       <ListBox.ItemTemplate>
         <DataTemplate>
           <DockPanel MinHeight="52">
-            <TextBlock DockPanel.Dock="Right" Text="{Binding HeldAt}" Foreground="{StaticResource Muted}" FontFamily="Consolas"
+            <TextBlock DockPanel.Dock="Right" Text="{Binding HeldAt}" Foreground="{StaticResource Muted}" FontFamily="{StaticResource CodeFont}"
                        VerticalAlignment="Center" Margin="12,0,4,0" />
             <TextBlock Text="{Binding Label}" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
           </DockPanel>

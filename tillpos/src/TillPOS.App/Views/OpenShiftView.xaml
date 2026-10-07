@@ -5,25 +5,42 @@
   <UserControl.InputBindings>
     <KeyBinding Key="Enter" Command="{Binding OpenCommand}" />
   </UserControl.InputBindings>
-  <StackPanel Width="380" HorizontalAlignment="Center" VerticalAlignment="Center">
-    <TextBlock Text="Open shift" FontSize="26" FontWeight="Bold" />
-    <TextBlock Text="Count the cash in the drawer and enter it." Foreground="{StaticResource Muted}" Margin="0,4,0,12" />
-    <TextBox x:Name="CashBox" local:Keyboarding.SelectAllOnTap="True" Text="{Binding OpeningCash.Text, UpdateSourceTrigger=PropertyChanged}" FontSize="28" Height="56" FontFamily="Consolas" />
-    <TextBlock Text="{Binding Message}" Foreground="{StaticResource Danger}" MinHeight="22" Margin="0,4" />
-    <UniformGrid Columns="3">
-      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="1" Command="{Binding KeyCommand}" CommandParameter="1" />
-      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="2" Command="{Binding KeyCommand}" CommandParameter="2" />
-      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="3" Command="{Binding KeyCommand}" CommandParameter="3" />
-      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="4" Command="{Binding KeyCommand}" CommandParameter="4" />
-      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="5" Command="{Binding KeyCommand}" CommandParameter="5" />
-      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="6" Command="{Binding KeyCommand}" CommandParameter="6" />
-      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="7" Command="{Binding KeyCommand}" CommandParameter="7" />
-      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="8" Command="{Binding KeyCommand}" CommandParameter="8" />
-      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="9" Command="{Binding KeyCommand}" CommandParameter="9" />
-      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="." Command="{Binding KeyCommand}" CommandParameter="." />
-      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="0" Command="{Binding KeyCommand}" CommandParameter="0" />
-      <Button Focusable="False" Style="{StaticResource KeyButton}" Content="⌫" Command="{Binding KeyCommand}" CommandParameter="⌫" />
-    </UniformGrid>
-    <Button Style="{StaticResource PrimaryButton}" Content="Open shift" Height="64" Command="{Binding OpenCommand}" />
-  </StackPanel>
+  <UserControl.Resources>
+    <Style TargetType="Button" x:Key="PadKey" BasedOn="{StaticResource KeyButton}">
+      <Setter Property="Focusable" Value="False" />
+      <Setter Property="Height" Value="60" />
+      <Setter Property="FontSize" Value="24" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+  </UserControl.Resources>
+  <Border Style="{StaticResource Card}" Width="420" Padding="24,22" HorizontalAlignment="Center" VerticalAlignment="Center">
+    <StackPanel>
+      <StackPanel Orientation="Horizontal">
+        <TextBlock Text="&#xE785;" Style="{StaticResource Icon}" FontSize="22" Foreground="{StaticResource Accent}" Margin="0,0,10,0" />
+        <TextBlock Text="Open shift" FontSize="24" FontWeight="Bold" />
+      </StackPanel>
+      <TextBlock Text="Count the cash in the drawer and enter it." Foreground="{StaticResource Muted}" Margin="0,4,0,12" />
+      <TextBox x:Name="CashBox" Style="{StaticResource AmountTextBox}" Margin="4,0" local:Keyboarding.SelectAllOnTap="True"
+               local:Placeholder.Text="Cash in the drawer, e.g. 200" local:Placeholder.FontSize="17"
+               Text="{Binding OpeningCash.Text, UpdateSourceTrigger=PropertyChanged}" FontSize="28" Height="56" />
+      <TextBlock Text="{Binding Message}" Foreground="{StaticResource Danger}" TextWrapping="Wrap" MinHeight="22" Margin="4" />
+      <UniformGrid Columns="3">
+        <Button Focusable="False" Style="{StaticResource PadKey}" Content="1" Command="{Binding KeyCommand}" CommandParameter="1" />
+        <Button Focusable="False" Style="{StaticResource PadKey}" Content="2" Command="{Binding KeyCommand}" CommandParameter="2" />
+        <Button Focusable="False" Style="{StaticResource PadKey}" Content="3" Command="{Binding KeyCommand}" CommandParameter="3" />
+        <Button Focusable="False" Style="{StaticResource PadKey}" Content="4" Command="{Binding KeyCommand}" CommandParameter="4" />
+        <Button Focusable="False" Style="{StaticResource PadKey}" Content="5" Command="{Binding KeyCommand}" CommandParameter="5" />
+        <Button Focusable="False" Style="{StaticResource PadKey}" Content="6" Command="{Binding KeyCommand}" CommandParameter="6" />
+        <Button Focusable="False" Style="{StaticResource PadKey}" Content="7" Command="{Binding KeyCommand}" CommandParameter="7" />
+        <Button Focusable="False" Style="{StaticResource PadKey}" Content="8" Command="{Binding KeyCommand}" CommandParameter="8" />
+        <Button Focusable="False" Style="{StaticResource PadKey}" Content="9" Command="{Binding KeyCommand}" CommandParameter="9" />
+        <Button Focusable="False" Style="{StaticResource PadKey}" Content="." Command="{Binding KeyCommand}" CommandParameter="." />
+        <Button Focusable="False" Style="{StaticResource PadKey}" Content="0" Command="{Binding KeyCommand}" CommandParameter="0" />
+        <Button Focusable="False" Style="{StaticResource PadKey}" Content="&#xE750;" FontFamily="{StaticResource IconFont}" FontWeight="Normal"
+                Command="{Binding KeyCommand}" CommandParameter="⌫" />
+      </UniformGrid>
+      <Button Style="{StaticResource PrimaryButton}" Content="Open shift" Height="64" Margin="4,8,4,4" local:ButtonIcon.Glyph="&#xE785;"
+              Command="{Binding OpenCommand}" />
+    </StackPanel>
+  </Border>
 </UserControl>
