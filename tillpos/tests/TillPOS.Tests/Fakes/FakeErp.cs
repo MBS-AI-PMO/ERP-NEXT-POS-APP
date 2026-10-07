@@ -42,10 +42,15 @@ public sealed class FakeErp : IErpClient, IErpWriter
         return Task.FromResult(Filtered(new ListQuery(doctype, ["name"], filters, "", 0, 0)).Count);
     }
 
-    public Task<JsonElement> GetDocAsync(string doctype, string name, CancellationToken ct = default) =>
-        Docs.TryGetValue((doctype, name), out var d)
+    public List<(string Doctype, string Name)> DocCalls { get; } = [];
+
+    public Task<JsonElement> GetDocAsync(string doctype, string name, CancellationToken ct = default)
+    {
+        DocCalls.Add((doctype, name));
+        return Docs.TryGetValue((doctype, name), out var d)
             ? Task.FromResult(JsonSerializer.SerializeToElement(d))
             : throw new ErpException(404, $"{doctype} {name} not found", "DoesNotExistError");
+    }
 
     public Task<ServerInfo> PingAsync(CancellationToken ct = default) =>
         Task.FromResult(new ServerInfo("till1@shop.local", DateTimeOffset.UtcNow));

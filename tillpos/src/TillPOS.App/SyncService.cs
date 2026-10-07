@@ -77,7 +77,7 @@ public sealed class SyncService(Func<CatalogPuller> newPuller, IErpClient erp, U
                 if (notes is not null) shell.SyncNotes = notes.Length == 0 ? null : notes;
                 shell.PendingUploads = upload.Waiting;
                 shell.FailedUploads = upload.Failed;
-                shell.UploadProblems = upload.Problems;
+                shell.UploadProblems = upload.Problems.Select(p => p.Message).ToList();
             });
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)

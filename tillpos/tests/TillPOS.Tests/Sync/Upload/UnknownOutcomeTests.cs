@@ -62,7 +62,7 @@ public sealed class UnknownOutcomeTests : IDisposable
             receipts.SyncInfo("TILL2-A"));
         Assert.Equal(ReceiptSyncStatus.Pending, receipts.SyncInfo("TILL2-B").Status);
         Assert.Equal(0, report.Failed);
-        Assert.Contains(report.Problems, p => p.StartsWith("Upload stopped", StringComparison.Ordinal));
+        Assert.Contains(report.Problems, p => p.Message.StartsWith("Upload stopped", StringComparison.Ordinal));
     }
 
     [Fact]

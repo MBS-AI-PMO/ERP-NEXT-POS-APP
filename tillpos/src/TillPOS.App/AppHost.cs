@@ -152,13 +152,13 @@ public sealed class AppHost
         }
     }
 
-    /// <summary>DryRun: each payload is written to the outbox-preview folder next to the database ({name}.json), for
-    /// inspection before going Live.</summary>
-    private void WritePreview(string name, string json)
+    /// <summary>DryRun: each payload ({key}.json) and the run summary (_summary.txt) go to the outbox-preview folder next to the
+    /// database, for inspection before going Live.</summary>
+    private void WritePreview(string name, string text)
     {
         var folder = Path.Combine(Path.GetDirectoryName(settings.DbPath)!, "outbox-preview");
         Directory.CreateDirectory(folder);
-        File.WriteAllText(Path.Combine(folder, name + ".json"), json);
+        File.WriteAllText(Path.Combine(folder, name), text);
     }
 
     public object NewLogin() => new LoginViewModel(ctx, Shell.Session, NewSale);

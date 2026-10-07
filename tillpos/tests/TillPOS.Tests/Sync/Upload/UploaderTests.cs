@@ -140,7 +140,7 @@ public sealed class UploaderTests : IDisposable
 
         var first = await New().RunOnceAsync();
 
-        Assert.Contains(first.Problems, p => p.Contains("connection reset"));
+        Assert.Contains(first.Problems, p => p.Message.Contains("connection reset"));
         // The in-flight marker stays: Pending, no attempt counted, left alone for 5 minutes.
         Assert.Equal(new ReceiptSyncInfo(ReceiptSyncStatus.Pending, null, "upload in progress", 0, clock.AddMinutes(5)),
             receipts.SyncInfo("TILL2-A"));
@@ -151,7 +151,7 @@ public sealed class UploaderTests : IDisposable
         clock = clock.AddMinutes(4);
         var early = await New().RunOnceAsync();
         Assert.Equal(calls, erp.ListCalls.Count);   // not even looked up yet
-        Assert.Contains(early.Problems, p => p.Contains("upload in progress"));
+        Assert.Contains(early.Problems, p => p.Message.Contains("upload in progress"));
         Assert.Single(InsertedInvoices);
 
         clock = clock.AddMinutes(1);
@@ -216,8 +216,8 @@ public sealed class UploaderTests : IDisposable
 
         Assert.Equal(["TILL2-A"], InsertedInvoices.Select(i => Str(i, "posa_client_request_id")));   // the return was not sent
         Assert.Equal(ReceiptSyncStatus.Pending, receipts.SyncInfo("TILL2-R").Status);
-        Assert.Contains(report.Problems, p => p.Contains("Return TILL2-R waits for its original sale TILL2-A"));
-        Assert.Contains(report.Problems, p => p.Contains("Closing of shift") && p.Contains("2 bill(s)"));
+        Assert.Contains(report.Problems, p => p.Message.Contains("Return TILL2-R waits for its original sale TILL2-A"));
+        Assert.Contains(report.Problems, p => p.Message.Contains("Closing of shift") && p.Message.Contains("2 bill(s)"));
         Assert.DoesNotContain("POS Closing Shift", InsertedDoctypes);
         Assert.Equal(1, report.Failed);
         Assert.Equal(2, report.Waiting); // the return and the closing
@@ -296,7 +296,7 @@ public sealed class UploaderTests : IDisposable
         clock = start.AddSeconds(29);
         var waiting = await uploader.RunOnceAsync();
         Assert.Single(InsertedInvoices);
-        Assert.Contains(waiting.Problems, p => p.Contains("Item RICE5 is disabled") && p.Contains("next try"));
+        Assert.Contains(waiting.Problems, p => p.Message.Contains("Item RICE5 is disabled") && p.Message.Contains("next try"));
 
         clock = start.AddSeconds(30);
         await uploader.RunOnceAsync();                       // attempt 2 fails → next at +60 s
@@ -341,7 +341,7 @@ public sealed class UploaderTests : IDisposable
         Assert.Equal(new string('x', 300), receipts.SyncInfo("TILL2-B").LastError);
         Assert.Equal(1, receipts.SyncInfo("TILL2-A").Attempts);
         Assert.Equal(2, report.Failed);
-        Assert.Contains(report.Problems, p => p == "Bill TILL2-A: Item RICE5 is disabled");
+        Assert.Contains(report.Problems, p => p.Message == "Bill TILL2-A: Item RICE5 is disabled");
     }
 
     [Fact]
@@ -390,8 +390,11 @@ public sealed class UploaderTests : IDisposable
         var report = await uploader.RunOnceAsync();
 
         Assert.Empty(erp.Inserted);
-        Assert.Equal([$"{ShiftId}-opening", "TILL2-A", "TILL2-R", $"{ShiftId}-closing", "APPROVAL-ap1"], previews.Select(p => p.Name));
-        using (var ret = JsonDocument.Parse(previews[2].Json))
+        var payloads = previews.Where(p => p.Name != Uploader.SummaryFile).ToList();
+        Assert.Equal([$"{ShiftId}-opening.json", "TILL2-A.json", "TILL2-R.json", $"{ShiftId}-closing.json", "APPROVAL-ap1.json"],
+            payloads.Select(p => p.Name));
+        Assert.Equal(Uploader.SummaryFile, previews[^1].Name);
+        using (var ret = JsonDocument.Parse(payloads[2].Json))
             Assert.Equal("(new: TILL2-A)", ret.RootElement.GetProperty("return_against").GetString());
         Assert.Contains(erp.ListCalls, q => q.Doctype == "POS Invoice");   // the read-only lookups ran
         Assert.Equal(0, report.Uploaded);
@@ -401,7 +404,8 @@ public sealed class UploaderTests : IDisposable
 
         var lookups = erp.ListCalls.Count;
         await uploader.RunOnceAsync();
-        Assert.Equal(5, previews.Count);                     // once per session
+        Assert.Equal(5, previews.Count(p => p.Name != Uploader.SummaryFile));   // once per session
+        Assert.Equal(2, previews.Count(p => p.Name == Uploader.SummaryFile));   // a summary per run
         Assert.Equal(lookups, erp.ListCalls.Count);
         Assert.Empty(erp.Inserted);
     }
@@ -456,7 +460,7 @@ public sealed class UploaderTests : IDisposable
 
         var report = await New().RunOnceAsync();
 
-        Assert.Contains(report.Problems, p => p == "Upload stopped: No such host is known.");
+        Assert.Contains(report.Problems, p => p.Message == "Upload stopped: No such host is known.");
         Assert.Equal(0, report.Failed);
         Assert.Equal(2, report.Waiting);
         Assert.Empty(erp.Inserted);
@@ -470,7 +474,7 @@ public sealed class UploaderTests : IDisposable
         var report = await New().RunOnceAsync();
 
         Assert.Empty(erp.Inserted);
-        Assert.Contains(report.Problems, p => p.Contains("Al Ain Counter 9"));
+        Assert.Contains(report.Problems, p => p.Message.Contains("Al Ain Counter 9"));
     }
 
     [Fact]

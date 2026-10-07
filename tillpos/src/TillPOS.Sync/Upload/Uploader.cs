@@ -11,8 +11,13 @@ namespace TillPOS.Sync.Upload;
 /// <param name="Uploaded">Documents that reached ERPNext in this run (inserted, or found there by their client id).</param>
 /// <param name="Waiting">Documents still to upload (bills, shift documents, approvals), after the run.</param>
 /// <param name="Failed">Documents ERPNext refused (or whose totals differ), after the run.</param>
-/// <param name="Problems">What went wrong or is waiting in this run, for the header and "Upload problems".</param>
-public sealed record UploadReport(int Uploaded, int Waiting, int Failed, IReadOnlyList<string> Problems);
+/// <param name="Problems">What went wrong or is waiting in this run (DryRun: also every check problem of this session), for the
+/// header and "Upload problems".</param>
+public sealed record UploadReport(int Uploaded, int Waiting, int Failed, IReadOnlyList<UploadProblem> Problems);
+
+/// <summary>One problem: the document's client id (or "" for the whole run), the payload field when a check names one, and the
+/// readable line (it names the document).</summary>
+public sealed record UploadProblem(string DocId, string? Field, string Message);
 
 /// <summary>Uploads the till's outbox to ERPNext, oldest shift first: its POS Opening Shift, then its bills oldest first (a return
 /// waits until its original sale is in ERPNext), then its POS Closing Shift once the shift is closed and every bill is in;
@@ -44,6 +49,10 @@ public sealed class Uploader
     private readonly Func<DateTimeOffset> now;
     private readonly Action<string, string> preview;
     private readonly HashSet<string> previewed = [];
+    private readonly Dictionary<string, List<UploadProblem>> checkProblems = [];
+
+    /// <summary>The DryRun summary's file name, written with the previews (counts and problems of the last run).</summary>
+    public const string SummaryFile = "_summary.txt";
     private string? erpUser;
 
     /// <param name="reader">Read-only ERPNext access (lookups).</param>
@@ -51,7 +60,8 @@ public sealed class Uploader
     /// <param name="profileSettings">The synced POS settings of a shift's counter (blank = the default counter), or null.</param>
     /// <param name="till">This till's name, sent as custom_till (e.g. "TILL2").</param>
     /// <param name="erpUser">The till's ERPNext user for the shifts; null = ask ERPNext who the API key belongs to.</param>
-    /// <param name="preview">DryRun: receives a file name (without extension) and the payload JSON.</param>
+    /// <param name="preview">DryRun: receives a file name and its text: each payload ({key}.json) once per session, and the
+    /// run's summary (<see cref="SummaryFile"/>) after every run.</param>
     /// <param name="testBuild">A test build (local test cashiers or the sample QR): Live is refused.</param>
     public Uploader(IErpClient reader, IErpWriter? writer, UploadMode mode, ShiftStore shifts, ReceiptStore receipts, ApprovalStore approvals,
         Func<string, PosSettings?> profileSettings, string till, string? erpUser, Func<DateTimeOffset> now, Action<string, string> preview,
@@ -83,7 +93,7 @@ public sealed class Uploader
         attempts <= 1 ? FirstBackoff : TimeSpan.FromTicks(Math.Min(MaxBackoff.Ticks, FirstBackoff.Ticks << Math.Min(attempts - 1, 10)));
 
     /// <summary>The outbox counts, from the till only (no ERPNext call).</summary>
-    public UploadReport Counts(IReadOnlyList<string>? problems = null, int uploaded = 0) =>
+    public UploadReport Counts(IReadOnlyList<UploadProblem>? problems = null, int uploaded = 0) =>
         new(uploaded, receipts.CountPending() + shifts.CountPending() + approvals.CountPending(),
             receipts.CountFailed() + shifts.CountFailed() + approvals.CountFailed(), problems ?? []);
 
@@ -101,7 +111,15 @@ public sealed class Uploader
         {
             // Not an answer about one document (ERPNext unreachable, timeout, …): stop here, start over on the next run.
             if (ex is not (ErpException or HttpRequestException or TaskCanceledException or TimeoutException or IOException)) LogError(ex);
-            run.Problems.Add($"Upload stopped: {Short(ex.Message)}");
+            run.Add("", $"Upload stopped: {Short(ex.Message)}");
+        }
+        if (Mode == UploadMode.DryRun)
+        {
+            // Each document is checked once per session; its problems stay in every report until the till restarts.
+            foreach (var problems in checkProblems.Values) run.Problems.AddRange(problems);
+            var report = Counts(run.Problems, run.Uploaded);
+            preview(SummaryFile, Summary(report));
+            return report;
         }
         return Counts(run.Problems, run.Uploaded);
     }
@@ -112,7 +130,7 @@ public sealed class Uploader
         var id = opening.ClientId;
         if (profileSettings(opening.Counter) is not { } profile)
         {
-            run.Problems.Add($"Shift {id}: the POS settings of counter '{opening.Counter}' are not on the till yet.");
+            run.Add(id, $"Shift {id}: the POS settings of counter '{opening.Counter}' are not on the till yet.");
             return;
         }
 
@@ -128,10 +146,11 @@ public sealed class Uploader
         var openingName = sync.OpeningStatus == UploadStatus.Synced ? sync.ErpOpeningName : run.Planned(OpeningKey(id));
         if (openingName is null)
         {
-            if (!Due(sync.NextAttemptAt, $"Opening of shift {id}", sync.LastError, run)) return;
+            if (!Due(sync.NextAttemptAt, id, $"Opening of shift {id}", sync.LastError, run)) return;
             openingName = await UploadAsync(
                 new Doc(OpeningShiftPayload.Doctype, OfflineIdField, id, OpeningKey(id), $"Opening of shift {id}", true,
-                    () => OpeningShiftPayload.Build(opening, profile.PosProfile, profile.Company, user)),
+                    () => OpeningShiftPayload.Build(opening, profile.PosProfile, profile.Company, user),
+                    Check: (checks, body, ct) => checks.ShiftAsync(body, "balance_details", ct)),
                 new Marks(sync.Attempts, name => shifts.MarkSynced(id, ShiftDocument.Opening, name),
                     (error, next) => shifts.MarkFailed(id, ShiftDocument.Opening, error, next),
                     until => shifts.MarkInFlight(id, ShiftDocument.Opening, until)), run, ct);
@@ -156,14 +175,15 @@ public sealed class Uploader
         if (sync.ClosingStatus == UploadStatus.Synced) return;
         if (waiting > 0)
         {
-            run.Problems.Add($"Closing of shift {id} waits: {waiting.ToString(CultureInfo.InvariantCulture)} bill(s) of the shift are not uploaded yet.");
+            run.Add(id, $"Closing of shift {id} waits: {waiting.ToString(CultureInfo.InvariantCulture)} bill(s) of the shift are not uploaded yet.");
             return;
         }
-        if (!Due(sync.NextAttemptAt, $"Closing of shift {id}", sync.LastError, run)) return;
+        if (!Due(sync.NextAttemptAt, id, $"Closing of shift {id}", sync.LastError, run)) return;
         await UploadAsync(
             new Doc(ClosingShiftPayload.Doctype, OfflineIdField, id, ClosingKey(id), $"Closing of shift {id}", true,
                 () => ClosingShiftPayload.Build(opening, closing, openingName, uploaded, profile.PosProfile, profile.Company, user,
-                    profile.Customer, profile.TaxesAndCharges is { Length: > 0 } taxes ? TaxTemplates(taxes) : null)),
+                    profile.Customer, profile.TaxesAndCharges is { Length: > 0 } taxes ? TaxTemplates(taxes) : null),
+                Check: (checks, body, ct) => checks.ShiftAsync(body, "payment_reconciliation", ct)),
             new Marks(sync.Attempts, name => shifts.MarkSynced(id, ShiftDocument.Closing, name),
                 (error, next) => shifts.MarkFailed(id, ShiftDocument.Closing, error, next),
                 until => shifts.MarkInFlight(id, ShiftDocument.Closing, until)), run, ct);
@@ -174,7 +194,7 @@ public sealed class Uploader
         CancellationToken ct)
     {
         var label = $"Bill {receipt.ClientId}";
-        if (!Due(bill.NextAttemptAt, label, bill.LastError, run)) return null;
+        if (!Due(bill.NextAttemptAt, receipt.ClientId, label, bill.LastError, run)) return null;
 
         string? returnAgainst = null;
         if (receipt.Kind == ReceiptKind.Return && receipt.ReturnAgainst is { Length: > 0 } originalId)
@@ -183,7 +203,7 @@ public sealed class Uploader
             returnAgainst = OriginalName(originalId, run);
             if (returnAgainst is null)
             {
-                run.Problems.Add($"Return {receipt.ClientId} waits for its original sale {originalId} to upload.");
+                run.Add(receipt.ClientId, $"Return {receipt.ClientId} waits for its original sale {originalId} to upload.");
                 return null;
             }
         }
@@ -191,7 +211,7 @@ public sealed class Uploader
         var payload = PosInvoicePayload.Build(receipt, profile.PosProfile, profile, openingName, receipt.CashierUser, till, returnAgainst);
         return await UploadAsync(
             new Doc(PosInvoicePayload.Doctype, InvoiceIdField, receipt.ClientId, InvoiceKey(receipt.ClientId), label, true, () => payload.Doc,
-                payload.Expected, profile.WriteOffLimit),
+                payload.Expected, profile.WriteOffLimit, (checks, body, ct) => checks.InvoiceAsync(receipt, body, ct)),
             new Marks(bill.Attempts, name => receipts.MarkSynced(receipt.ClientId, name),
                 (error, next) => receipts.MarkFailed(receipt.ClientId, error, next), until => receipts.MarkInFlight(receipt.ClientId, until)),
             run, ct);
@@ -233,7 +253,7 @@ public sealed class Uploader
                 invoiceName = OriginalName(a.ReceiptClientId, run);
                 if (invoiceName is null) continue;
             }
-            if (!Due(entry.NextAttemptAt, label, entry.LastError, run)) continue;
+            if (!Due(entry.NextAttemptAt, a.Id, label, entry.LastError, run)) continue;
             await UploadAsync(
                 new Doc(ApprovalPayload.Doctype, OfflineIdField, a.Id, $"APPROVAL-{a.Id}", label, false,
                     () => ApprovalPayload.Build(a, till, shiftName, invoiceName)),
@@ -244,7 +264,8 @@ public sealed class Uploader
 
     /// <summary>A document to upload. Submittable documents are only adopted when submitted (docstatus 1).</summary>
     private sealed record Doc(string Doctype, string IdField, string ClientId, string Key, string Label, bool Submittable,
-        Func<Dictionary<string, object?>> Build, ExpectedTotals? Expected = null, decimal WriteOffLimit = 0m);
+        Func<Dictionary<string, object?>> Build, ExpectedTotals? Expected = null, decimal WriteOffLimit = 0m,
+        Func<DryRunChecks, Dictionary<string, object?>, CancellationToken, Task<List<PayloadIssue>>>? Check = null);
 
     /// <summary>How a document's upload state is written: synced (with its ERPNext name), failed (error, next try) and in flight
     /// (sent, answer pending, until).</summary>
@@ -265,19 +286,10 @@ public sealed class Uploader
     /// and gunicorn's 120 s worker timeout, so a request ERPNext is still working on has finished before the lookup.</para></summary>
     private async Task<string?> UploadAsync(Doc doc, Marks marks, Run run, CancellationToken ct)
     {
-        if (Mode == UploadMode.DryRun && previewed.Contains(doc.Key)) return run.Plan(doc.Key, doc.ClientId);
+        if (Mode == UploadMode.DryRun) return await PreviewAsync(doc, run, ct);
         try
         {
-            var found = await LookupAsync(doc, ct);
-            if (Mode == UploadMode.DryRun)
-            {
-                if (found is not null) return found.Name;
-                preview(doc.Key, ErpFormat.Json(doc.Build(), indented: true));
-                previewed.Add(doc.Key);
-                return run.Plan(doc.Key, doc.ClientId);
-            }
-
-            found ??= await InsertDraftAsync(doc, marks, ct);
+            var found = await LookupAsync(doc, ct) ?? await InsertDraftAsync(doc, marks, ct);
             var draft = doc.Submittable && found.DocStatus == 0;
             if (Mismatch(doc, found) is { } mismatch)
                 throw new DocumentFailure(draft ? $"Draft {found.Name} created in ERPNext but totals differ — check and submit or delete it. {mismatch}" : mismatch);
@@ -294,9 +306,58 @@ public sealed class Uploader
         {
             var error = Short(ex.Message);
             marks.Failed(error, now() + Backoff(marks.Attempts + 1));
-            run.Problems.Add($"{doc.Label}: {error}");
+            run.Add(doc.ClientId, $"{doc.Label}: {error}");
             return null;
         }
+    }
+
+    /// <summary>DryRun: looks the document up (read-only), checks every reference it makes (<see cref="DryRunChecks"/>), and
+    /// writes its JSON once per session. Nothing is marked: a lookup or check problem is only reported, and the document gets a
+    /// stand-in name so the documents that refer to it are previewed too.</summary>
+    private async Task<string?> PreviewAsync(Doc doc, Run run, CancellationToken ct)
+    {
+        if (previewed.Contains(doc.Key)) return run.Plan(doc.Key, doc.ClientId);
+        var problems = new List<UploadProblem>();
+        try
+        {
+            if (await LookupAsync(doc, ct) is { } found) return found.Name;
+        }
+        catch (Exception ex) when (ex is DocumentFailure or ErpException)
+        {
+            problems.Add(new UploadProblem(doc.ClientId, null, $"{doc.Label}: lookup failed: {Short(ex.Message)}"));
+        }
+
+        var body = doc.Build();
+        if (doc.Submittable) body["docstatus"] = 0;
+        if (doc.Check is { } check)
+        {
+            try
+            {
+                foreach (var issue in await check(run.Checks(reader), body, ct))
+                    problems.Add(new UploadProblem(doc.ClientId, issue.Field, $"{doc.Label}: {issue.Field}: {issue.Message}"));
+            }
+            catch (ErpException ex)
+            {
+                problems.Add(new UploadProblem(doc.ClientId, null, $"{doc.Label}: could not be checked: {Short(ex.Message)}"));
+            }
+        }
+        preview(doc.Key + ".json", ErpFormat.Json(body, indented: true));
+        previewed.Add(doc.Key);
+        checkProblems[doc.Key] = problems;
+        return run.Plan(doc.Key, doc.ClientId);
+    }
+
+    /// <summary>The DryRun summary written beside the previews after each run.</summary>
+    private string Summary(UploadReport report)
+    {
+        var lines = new List<string>
+        {
+            $"TillPOS dry run {ErpFormat.DateTime(now())}: nothing was sent to ERPNext.",
+            string.Create(CultureInfo.InvariantCulture,
+                $"Waiting: {report.Waiting}  Failed: {report.Failed}  Previewed this session: {previewed.Count}  Problems: {report.Problems.Count}"),
+        };
+        lines.AddRange(report.Problems.Select(p => "- " + p.Message));
+        return string.Join(Environment.NewLine, lines) + Environment.NewLine;
     }
 
     /// <summary>Marks the document in flight and inserts it (a submittable one as a draft). ERPNext saying it already has the
@@ -397,10 +458,11 @@ public sealed class Uploader
     }
 
     /// <summary>False (and noted) while a failed document waits for its backoff.</summary>
-    private bool Due(DateTimeOffset? nextAttemptAt, string label, string? lastError, Run run)
+    private bool Due(DateTimeOffset? nextAttemptAt, string docId, string label, string? lastError, Run run)
     {
-        if (nextAttemptAt is not { } next || next <= now()) return true;
-        run.Problems.Add($"{label}: {lastError ?? "failed"} (next try {next.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture)})");
+        // DryRun writes nothing, so it does not wait for a backoff either.
+        if (Mode == UploadMode.DryRun || nextAttemptAt is not { } next || next <= now()) return true;
+        run.Add(docId, $"{label}: {lastError ?? "failed"} (next try {next.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture)})");
         return false;
     }
 
@@ -420,9 +482,13 @@ public sealed class Uploader
     {
         private readonly Dictionary<string, string> planned = [];
         public int Uploaded { get; set; }
-        public List<string> Problems { get; } = [];
+        public List<UploadProblem> Problems { get; } = [];
+        public void Add(string docId, string message) => Problems.Add(new UploadProblem(docId, null, message));
         public string? Planned(string key) => planned.GetValueOrDefault(key);
         public string Plan(string key, string clientId) => planned[key] = $"(new: {clientId})";
+        private DryRunChecks? checks;
+        /// <summary>The read-only checks of this run (each distinct document is read once per run).</summary>
+        public DryRunChecks Checks(IErpClient reader) => checks ??= new DryRunChecks(reader);
     }
 
     /// <summary>A definite problem with one document (recorded on it as Failed).</summary>

@@ -171,7 +171,7 @@ public sealed class DraftThenSubmitTests : IDisposable
         Assert.Equal(new ShiftSyncInfo(UploadStatus.Pending, null, UploadStatus.Pending, null, "Field not permitted in query: custom_offline_id", 0, null),
             shifts.SyncInfo(ShiftId));
         Assert.Equal(0, stopped.Failed);
-        Assert.Contains(stopped.Problems, p => p == "Upload stopped: Bad Gateway");
+        Assert.Contains(stopped.Problems, p => p.Message == "Upload stopped: Bad Gateway");
         Assert.Empty(logged);   // ERPNext's answers are not errors of the till
     }
 
@@ -181,6 +181,6 @@ public sealed class DraftThenSubmitTests : IDisposable
         var report = await New(_ => throw new InvalidOperationException("settings broken")).RunOnceAsync();
 
         Assert.Equal("settings broken", Assert.Single(logged).Message);
-        Assert.Contains(report.Problems, p => p == "Upload stopped: settings broken");
+        Assert.Contains(report.Problems, p => p.Message == "Upload stopped: settings broken");
     }
 }
