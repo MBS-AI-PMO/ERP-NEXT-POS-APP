@@ -1,6 +1,6 @@
 # ERPNext setup for TillPOS (admin checklist)
 
-Do these in ERPNext through the web UI. Do them first on the **dev sandbox** (`dev.quickgroc.local`) for the sync test, then the same on production before cutover. Nothing here changes how POS Awesome works.
+Do these in ERPNext through the web UI. Do them first on the **dev sandbox** (`https://dev.quickgroc.com/`) for the sync test, then the same on production before cutover. Nothing here changes how POS Awesome works.
 
 ## 1. A user and API key per till PC
 
