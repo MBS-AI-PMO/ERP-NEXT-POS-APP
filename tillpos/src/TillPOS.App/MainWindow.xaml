@@ -25,7 +25,8 @@
           </Border>
           <TextBlock Text="{Binding ShopName}" Foreground="White" FontWeight="Bold" FontSize="17" VerticalAlignment="Center" />
           <Border Background="{StaticResource InkRaised}" CornerRadius="6" Padding="10,3" Margin="12,0,0,0" VerticalAlignment="Center">
-            <TextBlock Text="{Binding TillName}" Foreground="{StaticResource OnInkMuted}" FontSize="14" />
+            <!-- "Till 2 · Counter 1" while a shift is open. -->
+            <TextBlock Text="{Binding TillHeader}" Foreground="{StaticResource OnInkMuted}" FontSize="14" />
           </Border>
         </StackPanel>
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">

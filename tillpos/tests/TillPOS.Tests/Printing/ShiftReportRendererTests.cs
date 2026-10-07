@@ -149,4 +149,30 @@ public class ShiftReportRendererTests
         Assert.Equal(new byte[] { 0x1D, 0x56, 0x42, 0x00 }, bytes[^4..]);           // ends with the cut
         Assert.Contains("Cash Counter 2      850.25", Encoding.ASCII.GetString(bytes), StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void The_report_names_the_counter_under_the_till()
+    {
+        var opening = Opening with { Counter = "Al Ain Counter 1", CounterName = "Counter 1" };
+        var text = ShiftReportRenderer.Layout(opening, Closing(), Header, "Test Cashier", null, PaperWidth.Mm80).Select(l => l.Text).ToList();
+
+        Assert.Equal("Counter : Counter 1", text[text.IndexOf("Till    : Till 1") + 1]);
+    }
+
+    [Fact]
+    public void Without_a_label_the_counter_profile_is_printed() =>
+        Assert.Contains("Counter : Al Ain Counter 1",
+            ShiftReportRenderer.Layout(Opening with { Counter = "Al Ain Counter 1" }, Closing(), Header, "Test Cashier", null, PaperWidth.Mm80)
+                .Select(l => l.Text));
+
+    [Theory]
+    [InlineData(PaperWidth.Mm80)]
+    [InlineData(PaperWidth.Mm58)]
+    public void A_long_counter_name_wraps_inside_the_paper(PaperWidth paper)
+    {
+        var opening = Opening with { Counter = "X", CounterName = "Al Ain Hypermarket Main Entrance Express Counter 12" };
+        var lines = ShiftReportRenderer.Layout(opening, Closing(), Header, "Test Cashier", null, paper);
+        AssertFits(lines, paper);
+        Assert.Contains("Express", string.Join(" ", lines.Select(l => l.Text)));
+    }
 }

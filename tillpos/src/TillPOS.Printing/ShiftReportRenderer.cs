@@ -24,6 +24,9 @@ public static class ShiftReportRenderer
         foreach (var part in Wrap("SHIFT REPORT (Z)", w / 2)) Add(part, LineStyle.Title);
         foreach (var text in Field("Shift", opening.ClientId, w, LabelWidth)) Add(text);
         foreach (var text in Field("Till", h.TillName, w, LabelWidth)) Add(text);
+        // The counter's label when the shift was opened; a shift from before counters has none and prints no line.
+        var counter = !string.IsNullOrWhiteSpace(opening.CounterName) ? opening.CounterName : opening.Counter;
+        if (!string.IsNullOrWhiteSpace(counter)) foreach (var text in Field("Counter", counter, w, LabelWidth)) Add(text);
         foreach (var text in Field("Cashier", cashierName, w, LabelWidth)) Add(text);
         foreach (var text in Field("Opened", Time(opening.OpenedAt), w, LabelWidth)) Add(text);
         foreach (var text in Field("Closed", Time(closing.ClosedAt), w, LabelWidth)) Add(text);

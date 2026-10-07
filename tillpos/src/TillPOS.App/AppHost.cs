@@ -41,14 +41,20 @@ public sealed class AppHost
         cashiers = new CashierStore(db);
         erp = ErpClient.Create(new ErpConnection(new Uri(settings.BaseUrl), settings.ApiKey, ApiSecret(settings, settingsPath)),
             TimeSpan.FromSeconds(60));
-        syncContext = new SyncContext(erp, store, new KeysetPager(erp, new KvSyncStateStore(store)), settings.PosProfile);
+        // The first counter is the default: its POS settings are also kept under the default key (receipt header, price list).
+        var counters = settings.EffectiveCounters();
+        syncContext = new SyncContext(erp, store, new KeysetPager(erp, new KvSyncStateStore(store)), counters[0].PosProfile)
+        {
+            Profiles = counters.Select(c => c.PosProfile).ToList(),
+        };
 
         Shell.TillName = $"Till {settings.TillNumber}";
         Output = new ReceiptOutput(settings, store);
         ctx = new TillContext(
-            settings.TillNumber, new TenderModes(settings.CashMode, settings.CardMode),
-            () => SaleContext.Create(catalog, store.LoadPosSettings()!, catalog.FindSalesTaxTemplate, settings.Precision, settings.Rounding,
-                () => DateOnly.FromDateTime(DateTime.Now)),
+            settings.TillNumber, counters,
+            profile => SaleContext.Create(catalog,
+                store.LoadPosSettings(profile) ?? throw new InvalidOperationException($"The settings of counter '{profile}' are not downloaded yet."),
+                catalog.FindSalesTaxTemplate, settings.Precision, settings.Rounding, () => DateOnly.FromDateTime(DateTime.Now)),
             text => catalog.Search(text),
             new Authenticator(LoginCashiers(cashiers, settings)), new PinAttemptLimiter(() => DateTimeOffset.Now), new PinAttemptLimiter(() => DateTimeOffset.Now),
             new ShiftStore(db), new ReceiptStore(db), new ApprovalStore(db), store,

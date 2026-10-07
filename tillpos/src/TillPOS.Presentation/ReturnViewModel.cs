@@ -131,8 +131,10 @@ public sealed class ReturnViewModel : ObservableObject
         this.gate = gate;
         this.back = back;
         this.done = done;
-        saleContext = ctx.NewSaleContext();
-        builder = new ReturnBuilder(ctx.Receipts, saleContext, ctx.TillNumber, ctx.Modes, () => ctx.Clock.Now, ApprovalLimit, MaxAgeDays);
+        var counter = ctx.CounterOf(session);
+        saleContext = ctx.NewSaleContextFor(counter.PosProfile);
+        builder = new ReturnBuilder(ctx.Receipts, saleContext, ctx.TillNumber, counter.Modes, () => ctx.Clock.Now, ApprovalLimit, MaxAgeDays,
+            counter.DisplayName);
 
         FindCommand = new RelayCommand(() => Find(FindText));
         OpenBillCommand = new RelayCommand<string>(id => { if (id is not null) Find(id); });

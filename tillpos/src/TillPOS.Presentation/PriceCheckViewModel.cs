@@ -18,6 +18,7 @@ public sealed record PriceCheckPick(string Code, bool IsItemCode);
 public sealed class PriceCheckViewModel : ObservableObject
 {
     private readonly TillContext ctx;
+    private readonly string profile;
     private SaleContext? saleContext;                // made on the first lookup, so a failure there is a message
     private string scanText = "";
     private string searchText = "";
@@ -32,9 +33,11 @@ public sealed class PriceCheckViewModel : ObservableObject
     private string message = "";
     private PriceCheckPick? addToBill;
 
-    public PriceCheckViewModel(TillContext ctx)
+    /// <param name="profile">The POS Profile of the counter to price at (its price list and taxes); null = the default counter.</param>
+    public PriceCheckViewModel(TillContext ctx, string? profile = null)
     {
         this.ctx = ctx;
+        this.profile = profile ?? ctx.DefaultCounter.PosProfile;
         ScanEnteredCommand = new RelayCommand(() => { var code = ScanText.Trim(); ScanText = ""; if (code.Length > 0) Lookup(code); });
         SelectCommand = new RelayCommand<string>(code => { if (code is not null) Select(code); });
     }
@@ -111,7 +114,7 @@ public sealed class PriceCheckViewModel : ObservableObject
         Clear();
         try
         {
-            saleContext ??= ctx.NewSaleContext();
+            saleContext ??= ctx.NewSaleContextFor(profile);
             var cart = new Cart(saleContext);
             Show(saleContext, cart, add(cart), code, pick);
         }

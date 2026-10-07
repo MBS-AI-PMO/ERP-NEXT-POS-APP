@@ -50,6 +50,8 @@ public sealed record Receipt(
     public string? CashierName { get; init; }
     /// <summary>Why the items were returned (returns only).</summary>
     public string? Reason { get; init; }
+    /// <summary>The counter (its label) the bill was taken at, printed under the till; null on bills from before counters.</summary>
+    public string? CounterName { get; init; }
 }
 
 /// <summary>The POS Profile payment modes the till uses for cash and card.</summary>

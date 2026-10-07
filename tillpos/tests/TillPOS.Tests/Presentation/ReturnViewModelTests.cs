@@ -24,12 +24,12 @@ public sealed class ReturnViewModelTests : IDisposable
     /// <summary>A card sale of the scanned codes, <paramref name="daysAgo"/> days before the fixture's clock.</summary>
     private Receipt Sell(int daysAgo, params string[] codes)
     {
-        var saleContext = f.Ctx.NewSaleContext();
+        var saleContext = f.Ctx.NewSaleContextFor(PresentationFixture.CounterTwo.PosProfile);
         var cart = new Cart(saleContext);
         foreach (var code in codes) Assert.Equal(AddOutcome.Added, cart.AddBarcode(code).Outcome);
         var plan = new PaymentCalculator(saleContext.Money).Plan(cart.Totals().GrandTotal, Tender.Card());
         var at = f.Clock.Now.AddDays(-daysAgo).AddMinutes(-60 + sold++);
-        return new SaleRecorder(f.Ctx.Receipts, 2, f.Ctx.Modes, () => at).CompleteSale(cart, plan, "simran", "TILL2-SHIFT-20261007080000");
+        return new SaleRecorder(f.Ctx.Receipts, 2, PresentationFixture.CounterTwo.Modes, () => at).CompleteSale(cart, plan, "simran", "TILL2-SHIFT-20261007080000");
     }
 
     private static string[] Milk(int count) => Enumerable.Repeat("111", count).ToArray();

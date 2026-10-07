@@ -2,7 +2,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace TillPOS.Presentation;
 
-/// <summary>The window frame: which screen is showing, plus the header (shop, till, cashier, sync status, clock).</summary>
+/// <summary>The window frame: which screen is showing, plus the header (shop, till and counter, cashier, sync status, clock).</summary>
 public sealed class ShellViewModel : ObservableObject, INavigator
 {
     private object? current;
@@ -14,10 +14,31 @@ public sealed class ShellViewModel : ObservableObject, INavigator
     private string clock = "";
     private string version = "";
 
+    public ShellViewModel()
+    {
+        Session.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName != nameof(SessionState.Counter)) return;
+            OnPropertyChanged(nameof(CounterName));
+            OnPropertyChanged(nameof(TillHeader));
+        };
+    }
+
     public SessionState Session { get; } = new();
     public object? Current { get => current; private set => SetProperty(ref current, value); }
     public string ShopName { get => shopName; set => SetProperty(ref shopName, value); }
-    public string TillName { get => tillName; set => SetProperty(ref tillName, value); }
+    public string TillName
+    {
+        get => tillName;
+        set { if (SetProperty(ref tillName, value)) OnPropertyChanged(nameof(TillHeader)); }
+    }
+
+    /// <summary>The open shift's counter label, or "" with no shift.</summary>
+    public string CounterName => Session.Counter?.DisplayName ?? "";
+
+    /// <summary>The header badge: "Till 2 · Counter 1" while a shift is open, otherwise "Till 2".</summary>
+    public string TillHeader => CounterName.Length == 0 ? TillName : $"{TillName} · {CounterName}";
+
     public string SyncStatus { get => syncStatus; set => SetProperty(ref syncStatus, value); }
     public bool Online { get => online; set => SetProperty(ref online, value); }
     public int PendingUploads { get => pendingUploads; set => SetProperty(ref pendingUploads, value); }

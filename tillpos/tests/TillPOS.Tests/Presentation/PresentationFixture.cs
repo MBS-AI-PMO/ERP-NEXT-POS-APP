@@ -26,6 +26,15 @@ public sealed class PresentationFixture : IDisposable
     public SessionState Session { get; } = new();
     public TillContext Ctx { get; }
 
+    /// <summary>The default counter (the fixture's usual one): rounded cash, "Cash Counter 2".</summary>
+    public static readonly CounterSettings CounterTwo = new("Al Ain Counter 2", "Counter 2", "Cash Counter 2", "Credit Card");
+
+    /// <summary>A second counter whose POS Profile disables the rounded total (like the live "Test Counter"): exact cash.</summary>
+    public static readonly CounterSettings CounterOne = new("Al Ain Counter 1", "Counter 1", "Cash Counter 1", "Credit Card");
+
+    /// <summary>A configured counter whose POS settings were never downloaded.</summary>
+    public static readonly CounterSettings CounterNine = new("Al Ain Counter 9", "Counter 9", "Cash Counter 9", "Credit Card");
+
     public PresentationFixture()
     {
         Catalog.Items.Add(new Item("MILK", "Full Cream Milk 1L", "Dairy", null, "PCS", false, true));
@@ -37,21 +46,31 @@ public sealed class PresentationFixture : IDisposable
 
         var db = Temp.Db;
         Ctx = new TillContext(
-            2, new TenderModes("Cash Counter 2", "Credit Card"),
-            () => new SaleContext(Catalog, new MoneySettings(3, RoundingMethod.Bankers, 0.25m), "Standard Selling", "Stores - AAML",
-                null, Vat, () => new DateOnly(2026, 10, 7)),
+            2, [CounterTwo, CounterOne],
+            profile => profile switch
+            {
+                "Al Ain Counter 2" => new SaleContext(Catalog, new MoneySettings(3, RoundingMethod.Bankers, 0.25m), "Standard Selling",
+                    "Stores - AAML", null, Vat, () => new DateOnly(2026, 10, 7)),
+                "Al Ain Counter 1" => new SaleContext(Catalog, new MoneySettings(3, RoundingMethod.Bankers, 0.25m, DisableRoundedTotal: true),
+                    "Standard Selling", "Counter 1 Stores - AAML", null, Vat, () => new DateOnly(2026, 10, 7)),
+                _ => throw new InvalidOperationException($"The POS settings of {profile} are not downloaded yet."),
+            },
             text => Catalog.Items.Where(i => i.ItemName.Contains(text, StringComparison.OrdinalIgnoreCase)).ToList(),
             new Authenticator(() => [Simran, Sup]), new PinAttemptLimiter(() => Clock.Now), new PinAttemptLimiter(() => Clock.Now),
             new ShiftStore(db), new ReceiptStore(db), new ApprovalStore(db), new CatalogStore(db),
             Clock, Output, Navigator, Dialogs, ShowReceiptPreview: true, new HeldCartStore(db));
     }
 
-    public void LogInWithOpenShift()
+    /// <summary>A shift opened at 08:00 with a 200 float at <paramref name="counter"/> (default: Counter 2), joined by Simran.</summary>
+    public void LogInWithOpenShift(CounterSettings? counter = null)
     {
+        counter ??= CounterTwo;
         Session.Cashier = Simran;
-        var shift = new ShiftOpening("TILL2-SHIFT-20261007080000", "simran", "", Clock.Now.AddHours(-2), [new ReceiptPayment("Cash Counter 2", 200m)]);
+        var shift = new ShiftOpening("TILL2-SHIFT-20261007080000", "simran", counter.PosProfile, Clock.Now.AddHours(-2),
+            [new ReceiptPayment(counter.CashMode, 200m)]) { CounterName = counter.DisplayName };
         Ctx.Shifts.Open(shift);
         Session.Shift = shift;
+        Session.Counter = counter;
     }
 
     public void Dispose() => Temp.Dispose();

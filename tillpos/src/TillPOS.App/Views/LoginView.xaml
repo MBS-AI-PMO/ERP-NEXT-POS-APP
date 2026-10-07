@@ -21,6 +21,23 @@
           <TextBlock Text="&#xE72E;" Style="{StaticResource Icon}" FontSize="22" Foreground="{StaticResource Accent}" Margin="0,0,10,0" />
           <TextBlock Text="Enter your PIN" FontSize="24" FontWeight="Bold" />
         </StackPanel>
+        <!-- A shift is open on this till: logging in joins it at its counter ("Counter 2 · shift open since 08:00"). -->
+        <Border Background="{StaticResource AccentSoft}" CornerRadius="{StaticResource Radius}" Padding="10,6" Margin="4,10,4,0"
+                HorizontalAlignment="Center">
+          <Border.Style>
+            <Style TargetType="Border">
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding ShiftInfo}" Value="">
+                  <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </Border.Style>
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Text="&#xE7F4;" Style="{StaticResource Icon}" FontSize="16" Foreground="{StaticResource Accent}" Margin="0,0,8,0" />
+            <TextBlock Text="{Binding ShiftInfo}" Foreground="{StaticResource Accent}" FontWeight="SemiBold" FontSize="15" VerticalAlignment="Center" />
+          </StackPanel>
+        </Border>
         <Border Background="{StaticResource Ground}" CornerRadius="{StaticResource Radius}" Margin="4,12,4,8" Height="52">
           <TextBlock Text="{Binding PinMask}" FontSize="28" HorizontalAlignment="Center" VerticalAlignment="Center" />
         </Border>

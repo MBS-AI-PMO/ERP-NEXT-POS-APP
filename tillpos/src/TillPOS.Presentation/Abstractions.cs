@@ -51,10 +51,13 @@ public interface IReceiptOutput
 }
 
 /// <summary>Everything the view models need from the rest of the till, assembled once by the app.</summary>
+/// <param name="Counters">The counters a shift can be opened at (at least one); the first is the default counter.</param>
+/// <param name="NewSaleContextFor">A sale context for a counter's POS Profile (its price list, warehouse, taxes and rounding);
+/// throws when that counter's POS settings are not on the till.</param>
 public sealed record TillContext(
     int TillNumber,
-    TenderModes Modes,
-    Func<SaleContext> NewSaleContext,
+    IReadOnlyList<CounterSettings> Counters,
+    Func<string, SaleContext> NewSaleContextFor,
     Func<string, IReadOnlyList<Item>> Search,
     Authenticator Authenticator,
     PinAttemptLimiter LoginLimiter,
@@ -68,4 +71,15 @@ public sealed record TillContext(
     INavigator Navigator,
     IDialogs Dialogs,
     bool ShowReceiptPreview,
-    HeldCartStore Held);
+    HeldCartStore Held)
+{
+    public CounterSettings DefaultCounter => Counters[0];
+
+    /// <summary>The counter the session's shift belongs to (the default counter when no shift is open). It comes from the
+    /// shift, so it cannot change until the shift is closed.</summary>
+    public CounterSettings CounterOf(SessionState session) =>
+        session.Shift is { } shift ? CounterSettings.ForShift(Counters, shift) : DefaultCounter;
+
+    /// <summary>A sale context for the session's counter.</summary>
+    public SaleContext SaleContextFor(SessionState session) => NewSaleContextFor(CounterOf(session).PosProfile);
+}

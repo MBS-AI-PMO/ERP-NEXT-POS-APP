@@ -1,17 +1,20 @@
+using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Printing;
 using System.Windows;
 using System.Windows.Media;
+using TillPOS.Core.Shifts;
 using TillPOS.Printing;
 
 namespace TillPOS.App.Dialogs;
 
-/// <summary>Printer, paper width, till number and invoice preview. Only those fields change; every other setting is kept.
+/// <summary>Printer, paper width, till number, invoice preview and the counters. Only those fields change; every other setting is kept.
 /// "Save" writes settings.json with SetupDone = true; the caller decides whether to start or restart.</summary>
 public partial class SetupDialog : Window
 {
     private const string NoPrinter = "(No printer — save receipts as files)";
     private readonly TillSettings settings;
+    private readonly ObservableCollection<CounterRow> counters;
 
     /// <param name="firstRun">At the first start an empty printer means "not chosen yet", so an installed receipt printer, else
     /// the Windows default unless it only makes files (PDF, XPS…), is offered (PrinterNames.PickDefault); later it means the
@@ -35,6 +38,10 @@ public partial class SetupDialog : Window
         (settings.PaperWidth == PaperWidth.Mm58 ? Paper58 : Paper80).IsChecked = true;
         TillBox.Text = settings.TillNumber.ToString(CultureInfo.InvariantCulture);
         PreviewBox.IsChecked = settings.ShowReceiptPreview;
+        counters = new ObservableCollection<CounterRow>(settings.EffectiveCounters()
+            .Where(c => c.PosProfile.Length > 0)
+            .Select(c => new CounterRow { PosProfile = c.PosProfile, Label = c.Label, CashMode = c.CashMode, CardMode = c.CardMode }));
+        CounterRows.ItemsSource = counters;
         if (problem is not null) ShowStatus($"Printers could not be listed: {problem}", ok: false);
     }
 
@@ -109,14 +116,21 @@ public partial class SetupDialog : Window
             return;
         }
 
-        var updated = settings with
+        var rows = counters.Select(r => new CounterSettings(r.PosProfile, r.Label, r.CashMode, r.CardMode)).ToList();
+        if (TillSettings.CounterProblem(rows) is { } problem)
+        {
+            ShowStatus(problem, ok: false);
+            return;
+        }
+
+        var updated = (settings with
         {
             PrinterName = SelectedPrinter,
             PaperWidth = SelectedPaper,
             TillNumber = till,
             ShowReceiptPreview = PreviewBox.IsChecked == true,
             SetupDone = true,
-        };
+        }).WithCounters(rows);
         try
         {
             SettingsStore.Save(updated, SettingsStore.ProgramDataPath);
@@ -130,9 +144,26 @@ public partial class SetupDialog : Window
         DialogResult = true;
     }
 
+    private void AddCounterClick(object sender, RoutedEventArgs e) =>
+        counters.Add(new CounterRow { CardMode = counters.FirstOrDefault()?.CardMode ?? settings.CardMode });
+
+    private void RemoveCounterClick(object sender, RoutedEventArgs e)
+    {
+        if (((FrameworkElement)sender).DataContext is CounterRow row) counters.Remove(row);
+    }
+
     private void ShowStatus(string text, bool ok)
     {
         StatusText.Text = text;
         StatusText.Foreground = (Brush)FindResource(ok ? "Accent" : "Danger");
     }
+}
+
+/// <summary>One editable counter row on the setup screen (only the screen changes it, so it needs no change notification).</summary>
+public sealed class CounterRow
+{
+    public string PosProfile { get; set; } = "";
+    public string Label { get; set; } = "";
+    public string CashMode { get; set; } = "";
+    public string CardMode { get; set; } = "";
 }

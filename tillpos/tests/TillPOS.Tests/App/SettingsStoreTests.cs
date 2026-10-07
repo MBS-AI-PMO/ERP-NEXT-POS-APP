@@ -196,4 +196,39 @@ public sealed class SettingsStoreTests : IDisposable
         Assert.Equal("", settings.PrinterName);
         Assert.Equal("", settings.CashMode);
     }
+
+    [Fact]
+    public void Packaged_counters_are_imported_and_saved_with_their_four_fields()
+    {
+        Write(besideExe, """
+            { "BaseUrl": "https://erp.example", "ApiKey": "k", "ApiSecret": "s", "PosProfile": "Test Counter", "TillNumber": 1,
+              "CashMode": "Cash Counter 2", "CardMode": "Credit Card",
+              "Counters": [
+                { "PosProfile": "Test Counter", "Label": "Test Counter", "CashMode": "Cash Counter 2", "CardMode": "Credit Card" },
+                { "PosProfile": "Al Ain Counter 1", "Label": "Counter 1", "CashMode": "Cash Counter 1", "CardMode": "Credit Card" }
+              ] }
+            """);
+
+        var settings = Resolve()!;
+
+        Assert.Equal(["Test Counter", "Al Ain Counter 1"], settings.EffectiveCounters().Select(c => c.PosProfile));
+        Assert.Equal("Cash Counter 1", settings.EffectiveCounters()[1].CashMode);
+        var saved = JsonDocument.Parse(File.ReadAllText(programData)).RootElement.GetProperty("Counters");
+        Assert.Equal(2, saved.GetArrayLength());
+        Assert.Equal(["PosProfile", "Label", "CashMode", "CardMode"], saved[1].EnumerateObject().Select(p => p.Name));
+        Assert.Equal("Counter 1", SettingsStore.Load(programData).Counters![1].Label);
+    }
+
+    [Fact]
+    public void Settings_without_counters_still_load_and_are_saved_without_them()
+    {
+        Write(programData, """{ "BaseUrl": "https://erp.example", "ApiKey": "k", "ApiSecretProtected": "P(x)", "PosProfile": "Test Counter", "CashMode": "Cash Counter 2" }""");
+
+        var settings = Resolve()!;
+
+        Assert.Null(settings.Counters);
+        Assert.Equal("Test Counter", Assert.Single(settings.EffectiveCounters()).PosProfile);
+        SettingsStore.Save(settings, programData);
+        Assert.False(HasProperty(programData, "Counters"));
+    }
 }

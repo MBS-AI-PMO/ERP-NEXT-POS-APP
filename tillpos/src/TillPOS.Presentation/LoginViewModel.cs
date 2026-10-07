@@ -2,6 +2,7 @@ using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using TillPOS.Core.Security;
+using TillPOS.Core.Shifts;
 
 namespace TillPOS.Presentation;
 
@@ -23,7 +24,12 @@ public sealed class LoginViewModel : ObservableObject
         ClearCommand = new RelayCommand(() => Pin = "");
         LoginCommand = new RelayCommand(Login);
         SettingsCommand = new AsyncRelayCommand(OpenSettingsAsync);
+        ShiftInfo = OpenShiftInfo();
     }
+
+    /// <summary>"Counter 2 · shift open since 08:00" when a shift is open on this till (logging in joins it, at its counter),
+    /// otherwise "".</summary>
+    public string ShiftInfo { get; }
 
     /// <summary>Till setup (printer, paper, till number), supervisor only. Nobody is logged in here, so the approval is
     /// logged without a cashier or shift.</summary>
@@ -50,6 +56,20 @@ public sealed class LoginViewModel : ObservableObject
         ctx.Dialogs.ShowSetup();
     }
 
+    private string OpenShiftInfo()
+    {
+        try
+        {
+            if (ctx.Shifts.Current() is not { } shift) return "";
+            var since = shift.OpenedAt.ToString("HH:mm", CultureInfo.InvariantCulture);
+            return $"{CounterSettings.ForShift(ctx.Counters, shift).DisplayName} · shift open since {since}";
+        }
+        catch (Exception)
+        {
+            return "";
+        }
+    }
+
     public void Login()
     {
         var typed = Pin;
@@ -72,6 +92,7 @@ public sealed class LoginViewModel : ObservableObject
         Message = "";
         session.Cashier = cashier;
         session.Shift = ctx.Shifts.Current();
+        session.Counter = session.Shift is null ? null : ctx.CounterOf(session);
         ctx.Navigator.Show(session.Shift is null ? new OpenShiftViewModel(ctx, session, newSale) : newSale());
     }
 }

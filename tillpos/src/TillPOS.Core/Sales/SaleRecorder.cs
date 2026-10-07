@@ -3,8 +3,9 @@ using TillPOS.Core.Tax;
 
 namespace TillPOS.Core.Sales;
 
-/// <summary>Turns a paid cart into a stored receipt (the outbox entry Plan 2b uploads) and clears the cart.</summary>
-public sealed class SaleRecorder(IReceiptStore store, int tillNumber, TenderModes modes, Func<DateTimeOffset> now)
+/// <summary>Turns a paid cart into a stored receipt (the outbox entry Plan 2b uploads) and clears the cart.
+/// <paramref name="modes"/> and <paramref name="counterName"/> are those of the shift's counter.</summary>
+public sealed class SaleRecorder(IReceiptStore store, int tillNumber, TenderModes modes, Func<DateTimeOffset> now, string? counterName = null)
 {
     public Receipt CompleteSale(Cart cart, PaymentPlan plan, string cashier, string shiftClientId, string? cashierUser = null,
         string? cashierName = null)
@@ -26,6 +27,7 @@ public sealed class SaleRecorder(IReceiptStore store, int tillNumber, TenderMode
         {
             CashierUser = cashierUser,
             CashierName = cashierName,
+            CounterName = counterName,
         };
         store.Save(receipt);
         cart.Clear();

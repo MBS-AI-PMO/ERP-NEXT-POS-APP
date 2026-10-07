@@ -13,9 +13,10 @@ public sealed record ReturnPreview(decimal GrandTotal, decimal TotalTaxes, decim
 
 /// <summary>Builds and stores return receipts. Lines keep the original sale's line number and rate; quantities are negative.
 /// A return without a receipt, refunds on one receipt that add up to more than the limit, or a receipt older than
-/// maxAgeDays calendar days (till local time) need a supervisor.</summary>
+/// maxAgeDays calendar days (till local time) need a supervisor. Refunds are paid in the modes of the shift's counter
+/// (<paramref name="modes"/>), whose label (<paramref name="counterName"/>) is printed on the credit note.</summary>
 public sealed class ReturnBuilder(IReceiptStore store, SaleContext ctx, int tillNumber, TenderModes modes, Func<DateTimeOffset> now,
-    decimal approvalLimit = 50m, int maxAgeDays = 7)
+    decimal approvalLimit = 50m, int maxAgeDays = 7, string? counterName = null)
 {
     public decimal Returnable(Receipt original, int lineNo)
     {
@@ -131,6 +132,7 @@ public sealed class ReturnBuilder(IReceiptStore store, SaleContext ctx, int till
             CashierUser = cashierUser,
             CashierName = cashierName,
             Reason = reason,
+            CounterName = counterName,
         };
         store.Save(receipt);
         return receipt;

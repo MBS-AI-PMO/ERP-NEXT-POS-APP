@@ -53,7 +53,7 @@ public sealed class SaleViewModel : ObservableObject
         this.gate = gate;
         this.newPayment = newPayment;
         this.newLogin = newLogin;
-        saleContext = ctx.NewSaleContext();
+        saleContext = ctx.SaleContextFor(session);
         Cart = new Cart(saleContext);
 
         ScanEnteredCommand = new RelayCommand(() => { var code = ScanText.Trim(); ScanText = ""; if (code.Length > 0) Scan(code); });
@@ -206,7 +206,7 @@ public sealed class SaleViewModel : ObservableObject
     /// <summary>F4: shows the price check; its "Add to bill" adds the item through the normal scan / search path.</summary>
     public void PriceCheck()
     {
-        var pick = ctx.Dialogs.ShowPriceCheck(new PriceCheckViewModel(ctx));
+        var pick = ctx.Dialogs.ShowPriceCheck(new PriceCheckViewModel(ctx, ctx.CounterOf(session).PosProfile));
         if (pick is null) return;
         if (pick.IsItemCode) AddFromSearch(pick.Code);
         else Scan(pick.Code);

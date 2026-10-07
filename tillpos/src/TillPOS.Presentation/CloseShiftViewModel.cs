@@ -61,6 +61,7 @@ public sealed class CloseShiftViewModel : ObservableObject
     private readonly SupervisorGate gate;
     private readonly Action back;
     private readonly Action done;
+    private readonly CounterSettings counter;
     private ShiftClosing? closing;
     private CloseCountState state;
     private bool busy;
@@ -75,6 +76,7 @@ public sealed class CloseShiftViewModel : ObservableObject
         this.gate = gate;
         this.back = back;
         this.done = done;
+        counter = ctx.CounterOf(session);
         Denominations = AedDenominations.Select(v => new Denomination(v)).ToList();
         foreach (var d in Denominations) d.Count.Changed += CountChanged;
         UseTotalInstead.Changed += CountChanged;
@@ -120,7 +122,7 @@ public sealed class CloseShiftViewModel : ObservableObject
     public string SalesCount => closing?.Sales.ToString(CultureInfo.InvariantCulture) ?? "";
     public string GrandTotalText => closing is null ? "" : Format.Money(closing.GrandTotal);
     public string VatText => closing is null ? "" : Format.Money(closing.TotalTaxes);
-    public decimal CashDifference => closing?.Modes.FirstOrDefault(m => m.ModeOfPayment == ctx.Modes.Cash)?.Difference ?? 0m;
+    public decimal CashDifference => closing?.Modes.FirstOrDefault(m => m.ModeOfPayment == counter.CashMode)?.Difference ?? 0m;
     public string CashDifferenceText => closing is null ? "" : Format.Money(CashDifference);
     public bool NeedsSupervisor => closing is not null && (state.OverLimit || Math.Abs(CashDifference) > VarianceLimit);
 
@@ -144,9 +146,9 @@ public sealed class CloseShiftViewModel : ObservableObject
         ShiftClosing result;
         try
         {
-            var counted = new Dictionary<string, decimal> { [ctx.Modes.Cash] = CountedCash, [ctx.Modes.Card] = CountedCard };
-            result = ShiftCalculator.Close(opening, ctx.Receipts.ByShift(opening.ClientId), counted, ctx.Modes, ctx.Clock.Now,
-                ctx.NewSaleContext().Money);
+            var counted = new Dictionary<string, decimal> { [counter.CashMode] = CountedCash, [counter.CardMode] = CountedCard };
+            result = ShiftCalculator.Close(opening, ctx.Receipts.ByShift(opening.ClientId), counted, counter.Modes, ctx.Clock.Now,
+                ctx.NewSaleContextFor(counter.PosProfile).Money);
         }
         catch (Exception ex)
         {
@@ -155,7 +157,7 @@ public sealed class CloseShiftViewModel : ObservableObject
         }
 
         // Record the count (state, then the audit row) before anything is shown; if that fails, nothing is revealed.
-        var diff = result.Modes.FirstOrDefault(m => m.ModeOfPayment == ctx.Modes.Cash)?.Difference ?? 0m;
+        var diff = result.Modes.FirstOrDefault(m => m.ModeOfPayment == counter.CashMode)?.Difference ?? 0m;
         var next = new CloseCountState(state.FirstCashDifference ?? diff, state.OverLimit || Math.Abs(diff) > VarianceLimit,
             state.Confirmations + 1);
         try

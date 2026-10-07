@@ -27,7 +27,8 @@ public sealed class PaymentViewModel : ObservableObject
         this.session = session;
         this.sale = sale;
         calculator = new PaymentCalculator(sale.Money);
-        recorder = new SaleRecorder(ctx.Receipts, ctx.TillNumber, ctx.Modes, () => ctx.Clock.Now);
+        var counter = ctx.CounterOf(session);
+        recorder = new SaleRecorder(ctx.Receipts, ctx.TillNumber, counter.Modes, () => ctx.Clock.Now, counter.DisplayName);
         grandTotal = sale.Cart.Totals().GrandTotal;
         Cash.Changed += Recalculate;
         Card.Changed += Recalculate;

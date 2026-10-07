@@ -29,6 +29,7 @@ public class ReceiptRendererTests
                 null, null, true, null),
         ],
         Payments = [new ReceiptPayment("Cash Counter 2 Main Entrance A", 500m)],
+        CounterName = "Al Ain Hypermarket Main Entrance Express Counter 12",
     };
 
     /// <summary>A credit note as the till stores it: negative quantities, amounts, totals and payment. The milk line was sold
@@ -531,4 +532,16 @@ public class ReceiptRendererTests
             if (haystack.AsSpan(i, needle.Length).SequenceEqual(needle)) return i;
         return -1;
     }
+
+    [Fact]
+    public void The_counter_is_printed_under_the_till()
+    {
+        var lines = Text(Sale() with { CounterName = "Counter 1" });
+        var till = lines.IndexOf("Till      : Till 2");
+        Assert.Equal("Counter   : Counter 1", lines[till + 1]);
+    }
+
+    [Fact]
+    public void A_bill_from_before_counters_has_no_counter_line() =>
+        Assert.DoesNotContain(Text(Sale()), l => l.StartsWith("Counter", StringComparison.Ordinal));
 }
