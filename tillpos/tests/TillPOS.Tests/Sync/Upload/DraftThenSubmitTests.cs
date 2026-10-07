@@ -122,6 +122,37 @@ public sealed class DraftThenSubmitTests : IDisposable
     }
 
     [Fact]
+    public async Task A_shift_draft_is_adopted_only_when_its_profile_and_offline_id_match()
+    {
+        erp.AddRow("POS Opening Shift", new()
+        {
+            ["name"] = "POS-OPE-DRAFT", ["docstatus"] = 0m, ["custom_offline_id"] = ShiftId, ["pos_profile"] = "Al Ain Counter 9",
+        });
+
+        await New().RunOnceAsync();
+
+        Assert.Empty(erp.Submitted);
+        Assert.Empty(erp.Inserted);
+        var sync = shifts.SyncInfo(ShiftId)!;
+        Assert.Equal(UploadStatus.Failed, sync.OpeningStatus);
+        Assert.StartsWith("Draft POS-OPE-DRAFT in ERPNext has this till's id but POS Profile Al Ain Counter 9", sync.LastError);
+    }
+
+    [Fact]
+    public async Task A_matching_shift_draft_is_submitted()
+    {
+        erp.AddRow("POS Opening Shift", new()
+        {
+            ["name"] = "POS-OPE-DRAFT", ["docstatus"] = 0m, ["custom_offline_id"] = ShiftId, ["pos_profile"] = "Al Ain Counter 1",
+        });
+
+        await New().RunOnceAsync();
+
+        Assert.Contains(("POS Opening Shift", "POS-OPE-DRAFT"), erp.Submitted);
+        Assert.Equal("POS-OPE-DRAFT", shifts.SyncInfo(ShiftId)!.ErpOpeningName);
+    }
+
+    [Fact]
     public async Task Our_own_draft_with_other_totals_is_not_submitted()
     {
         erp.AddRow("POS Invoice", new()

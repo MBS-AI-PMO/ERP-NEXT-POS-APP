@@ -238,7 +238,8 @@ public sealed class UploadProblemsViewModel : ObservableObject
             case OutboxKind.Closing when ctx.Shifts.Get(p.Id) is { Closing: { } closing } shift && ShiftSettings(p.Id) is { } settings:
                 var invoices = ctx.Receipts.Outbox(p.Id).Select(e => (e.Sync.ErpName ?? $"(not uploaded yet: {e.Receipt.ClientId})", e.Receipt)).ToList();
                 payload = ClosingShiftPayload.Build(shift.Opening, closing, OpeningName(p.Id), invoices, settings.PosProfile, settings.Company,
-                    "(the till's ERPNext user)", settings.Customer);
+                    "(the till's ERPNext user)", settings.Customer,
+                    settings.TaxesAndCharges is { Length: > 0 } taxes ? ctx.TaxTemplates(taxes) : null);
                 break;
             case OutboxKind.Approval when ctx.Approvals.Get(p.Id) is { } approval:
                 payload = ApprovalPayload.Build(approval, till, approval.ShiftClientId.Length > 0 ? OpeningName(approval.ShiftClientId) : null,

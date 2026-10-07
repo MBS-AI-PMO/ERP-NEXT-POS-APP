@@ -102,6 +102,7 @@ public sealed class AppHost
             new SystemClock(), Output, Shell, dialogs, settings.ShowReceiptPreview, new HeldCartStore(db))
         {
             RemoteReceipts = remoteReceipts,
+            TaxTemplates = catalog.FindSalesTaxTemplate,
         };
     }
 

@@ -44,14 +44,6 @@ public sealed class ApprovalStore(TillDb db)
             r => JsonSerializer.Deserialize<ApprovalRecord>(r.GetString(0), Json)!);
     }
 
-    public void MarkSynced(IEnumerable<string> ids)
-    {
-        using var c = db.Open();
-        using var tx = c.BeginTransaction();
-        foreach (var id in ids) c.Exec(tx, "UPDATE approval_log SET synced = 1, sync_status = 'Synced' WHERE id = @id", ("@id", id));
-        tx.Commit();
-    }
-
     /// <summary>Approvals still to upload (pending or failed), oldest first.</summary>
     public IReadOnlyList<ApprovalOutboxEntry> Outbox()
     {

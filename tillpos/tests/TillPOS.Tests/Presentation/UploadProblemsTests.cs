@@ -1,3 +1,4 @@
+using TillPOS.Core.Catalog;
 using TillPOS.Core.Sales;
 using TillPOS.Core.Security;
 using TillPOS.Core.Shifts;
@@ -160,6 +161,21 @@ public sealed class UploadProblemsTests : IDisposable
         Assert.Contains("Error: Item RICE5 is disabled", text);
         Assert.Contains("\"posa_client_request_id\": \"TILL2-A\"", text);
         Assert.Contains("\"posa_pos_opening_shift\": \"POS-OPE-1\"", text);
+    }
+
+    [Fact]
+    public void View_of_a_closing_carries_the_taxes_like_the_upload()
+    {
+        f.Ctx.Kv.SavePosSettings("Al Ain Counter 2", PayloadTests.Counter1 with { PosProfile = "Al Ain Counter 2" });
+        var vat = new SalesTaxTemplate("UAE VAT 5% - AAML", [new TaxRow(1, "VAT 5% - AAML", "VAT 5%", 5m, true)], null);
+        var ctx = f.Ctx with { TaxTemplates = name => name == vat.Name ? vat : null };
+        var vm = new UploadProblemsViewModel(ctx, new SupervisorGate(ctx, new SessionState()), () => loginMarker);
+
+        vm.ViewCommand.Execute(vm.Excluded.Single(r => r.Kind == "Closing shift"));
+
+        var text = Assert.Single(f.Dialogs.Texts).Text;
+        Assert.Contains("\"account_head\": \"VAT 5% - AAML\"", text);
+        Assert.Contains("\"pos_payments\": []", text);
     }
 
     [Fact]

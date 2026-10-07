@@ -90,6 +90,9 @@ public sealed record TillContext(
     /// <summary>The recent bills of the other tills, downloaded from ERPNext (cross-till returns); null = none.</summary>
     public RemoteReceiptStore? RemoteReceipts { get; init; }
 
+    /// <summary>The synced Sales Taxes and Charges Template by name (for previews built like the uploader's); none by default.</summary>
+    public Func<string, SalesTaxTemplate?> TaxTemplates { get; init; } = _ => null;
+
     /// <summary>The counter the session's shift belongs to (the default counter when no shift is open). It comes from the
     /// shift, so it cannot change until the shift is closed.</summary>
     public CounterSettings CounterOf(SessionState session) =>

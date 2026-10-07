@@ -145,6 +145,22 @@ public sealed class DryRunValidationTests : IDisposable
     }
 
     [Fact]
+    public async Task A_document_already_in_erpnext_is_looked_up_once_per_session()
+    {
+        Bill("TILL2-A");
+        erp.AddRow("POS Invoice", new() { ["name"] = "ACC-1", ["docstatus"] = 1m, ["posa_client_request_id"] = "TILL2-A" });
+        var uploader = New();
+
+        await uploader.RunOnceAsync();
+        var lookups = erp.ListCalls.Count(q => q.Doctype == "POS Invoice");
+        await uploader.RunOnceAsync();
+
+        Assert.Equal(1, lookups);
+        Assert.Equal(1, erp.ListCalls.Count(q => q.Doctype == "POS Invoice"));
+        Assert.DoesNotContain(files, f => f.Name == "TILL2-A.json");
+    }
+
+    [Fact]
     public async Task Each_distinct_document_is_read_once_per_run()
     {
         Bill("TILL2-A");

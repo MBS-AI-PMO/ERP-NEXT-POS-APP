@@ -34,7 +34,7 @@ public sealed class SecurityStoresTests : IDisposable
         Assert.Equal("simran", store.Unsynced()[0].CashierId);
         Assert.Equal("TILL2-SHIFT-20261006080000", store.Unsynced()[0].ShiftClientId);
 
-        store.MarkSynced(["1"]);
+        store.MarkUploaded("1", "TPA-0001");
         Assert.Equal("2", Assert.Single(store.Unsynced()).Id);
     }
 }

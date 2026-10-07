@@ -50,6 +50,7 @@ public sealed class Uploader
     private readonly Action<string, string> preview;
     private readonly HashSet<string> previewed = [];
     private readonly Dictionary<string, List<UploadProblem>> checkProblems = [];
+    private readonly Dictionary<string, string> knownNames = [];
 
     /// <summary>The DryRun summary's file name, written with the previews (counts and problems of the last run).</summary>
     public const string SummaryFile = "_summary.txt";
@@ -341,6 +342,8 @@ public sealed class Uploader
             if (found is { DocStatus: 0 } && marks.UnknownAttempts > UnknownLimit)
                 throw new DocumentFailure(
                     $"Draft {found.Name} is in ERPNext, but writing it got no answer {marks.UnknownAttempts} times. Last answer: {marks.LastError}");
+            if (found is { DocStatus: 0 } && doc.Expected is null && DraftMismatch(doc, found) is { } foreign)
+                throw new DocumentFailure(foreign);
             found ??= await InsertDraftAsync(doc, marks, ct);
             var draft = doc.Submittable && found.DocStatus == 0;
             if (Mismatch(doc, found) is { } mismatch)
@@ -374,11 +377,16 @@ public sealed class Uploader
     /// stand-in name so the documents that refer to it are previewed too.</summary>
     private async Task<string?> PreviewAsync(Doc doc, Run run, CancellationToken ct)
     {
-        if (previewed.Contains(doc.Key)) return run.Plan(doc.Key, doc.ClientId);
+        if (previewed.Contains(doc.Key)) return knownNames.GetValueOrDefault(doc.Key) ?? run.Plan(doc.Key, doc.ClientId);
         var problems = new List<UploadProblem>();
         try
         {
-            if (await LookupAsync(doc, ct) is { } found) return found.Name;
+            if (await LookupAsync(doc, ct) is { } found)
+            {
+                // Already in ERPNext: nothing to preview, and no need to look it up again this session.
+                previewed.Add(doc.Key);
+                return knownNames[doc.Key] = found.Name;
+            }
         }
         catch (Exception ex) when (ex is DocumentFailure or ErpException)
         {
@@ -494,7 +502,9 @@ public sealed class Uploader
     /// only cancelled is a failure to check by hand: it is never adopted and never inserted again.</summary>
     private async Task<Found?> LookupAsync(Doc doc, CancellationToken ct)
     {
-        IReadOnlyList<string> fields = doc.Expected is null ? ["name", "docstatus"] : InvoiceFields;
+        IReadOnlyList<string> fields = doc.Expected is not null ? InvoiceFields
+            : doc.Submittable ? ["name", "docstatus", "pos_profile", OfflineIdField]
+            : ["name", "docstatus"];
         var rows = await reader.GetListAsync(new ListQuery(doc.Doctype, fields, [[doc.IdField, "=", doc.ClientId]], "creation asc", 0, 10), ct);
         if (rows.Count == 0) return null;
         if (!doc.Submittable) return new Found(rows[0].Str("name"), rows[0], 0);
@@ -504,6 +514,18 @@ public sealed class Uploader
                     return new Found(row.Str("name"), row, status);
         throw new DocumentFailure(
             $"{doc.Doctype} {string.Join(", ", rows.Select(r => r.StrOrNull("name")))} has this till's id but is cancelled in ERPNext. Check it there.");
+    }
+
+    /// <summary>A shift draft found by the lookup is only this till's when its POS Profile and offline id are the ones the till
+    /// would send; otherwise it is left alone and reported (never submitted).</summary>
+    private static string? DraftMismatch(Doc doc, Found found)
+    {
+        var profile = doc.Build().GetValueOrDefault("pos_profile") as string;
+        var erpProfile = found.Doc.StrOrNull("pos_profile");
+        var offlineId = found.Doc.StrOrNull(OfflineIdField);
+        if (string.Equals(erpProfile, profile, StringComparison.OrdinalIgnoreCase) && offlineId == doc.ClientId) return null;
+        return $"Draft {found.Name} in ERPNext has this till's id but POS Profile {erpProfile ?? "(none)"} / offline id {offlineId ?? "(none)"}, " +
+            $"not {profile} / {doc.ClientId}: check it in ERPNext.";
     }
 
     /// <summary>Why ERPNext's invoice is not what the till charged, or null: grand and rounded total, and what was paid (paid −

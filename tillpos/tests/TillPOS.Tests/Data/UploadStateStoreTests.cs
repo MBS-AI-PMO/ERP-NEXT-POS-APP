@@ -133,7 +133,7 @@ public sealed class UploadStateStoreTests : IDisposable
         Assert.Equal(["a2"], approvals.Outbox().Select(a => a.Record.Id));
         Assert.Equal(["a2"], approvals.Unsynced().Select(a => a.Id));
 
-        approvals.MarkSynced(["a2"]);
+        approvals.MarkUploaded("a2", "TPA-0002");
         Assert.Empty(approvals.Outbox());
         Assert.Throws<KeyNotFoundException>(() => approvals.MarkUploaded("NOPE", "x"));
     }
