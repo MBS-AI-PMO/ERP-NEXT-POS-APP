@@ -1,8 +1,8 @@
 <#
 Builds the TillPOS field-test package.
 Usage (from the tillpos folder):
-  powershell -File tools\publish-field.ps1 -Version 0.3.6 [-CashierPin 4821] [-SupervisorPin 7350]             -> ..\publish\TillPOS-field-<Version>.zip
-  powershell -File tools\publish-field.ps1 -Version 0.3.6 -SingleExe [-CashierPin 4821] [-SupervisorPin 7350]  -> ..\publish\TillPOS-exe-<Version>\TillPOS.exe
+  powershell -File tools\publish-field.ps1 -Version 0.3.7 [-CashierPin 4821] [-SupervisorPin 7350]             -> ..\publish\TillPOS-field-<Version>.zip
+  powershell -File tools\publish-field.ps1 -Version 0.3.7 -SingleExe [-CashierPin 4821] [-SupervisorPin 7350]  -> ..\publish\TillPOS-exe-<Version>\TillPOS.exe
 Zip: TillPOS folder + settings.json beside the exe + START HERE.txt.
 -SingleExe: one self-contained TillPOS.exe with settings.json built in (imported into C:\ProgramData\TillPOS on the first
 start) + "TillPOS <Version> - START HERE.txt". The built-in plain API secret cannot be removed from the exe, so treat the exe
@@ -13,7 +13,7 @@ Test PINs: without -CashierPin / -SupervisorPin, random 4-digit PINs are generat
 They are written only into the package (settings and START HERE), never into the repo.
 #>
 param(
-    [string]$Version = "0.3.6",
+    [string]$Version = "0.3.7",
     [string]$CashierPin,
     [string]$SupervisorPin,
     [switch]$SingleExe
