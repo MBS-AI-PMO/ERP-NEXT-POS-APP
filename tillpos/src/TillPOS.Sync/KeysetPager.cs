@@ -14,6 +14,12 @@ public sealed class KeysetPager(IErpClient erp, ISyncStateStore state, TimeSpan?
 {
     private readonly TimeSpan effectiveOverlap = overlap ?? TimeSpan.FromMinutes(5);
 
+    /// <summary>Optional observer, called after each handled page with its number of fresh rows (download progress).</summary>
+    public Action<int>? PageHandled { get; set; }
+
+    /// <summary>True while nothing has been pulled for this key yet (the next pull is a full first download).</summary>
+    public bool IsAtStart(string key) => state.Get(key).Modified == SyncMark.Start.Modified;
+
     public async Task<int> PullAsync(
         string key, string doctype, IReadOnlyList<string> fields, IReadOnlyList<object[]> extraFilters,
         Func<IReadOnlyList<JsonElement>, Task> handlePage, int pageSize = 500, CancellationToken ct = default)
@@ -52,6 +58,7 @@ public sealed class KeysetPager(IErpClient erp, ISyncStateStore state, TimeSpan?
                 : [.. namesAtLast];
             mark = new SyncMark(last, processedAtMark.ToList());
             state.Set(key, mark);
+            PageHandled?.Invoke(fresh.Count);
 
             if (rows.Count < size) break;
             size = pageSize;

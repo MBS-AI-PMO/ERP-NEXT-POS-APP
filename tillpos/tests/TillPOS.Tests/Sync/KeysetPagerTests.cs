@@ -35,6 +35,29 @@ public class KeysetPagerTests
     }
 
     [Fact]
+    public async Task Page_handled_reports_the_fresh_rows_of_each_page()
+    {
+        for (var i = 1; i <= 5; i++) Row($"I{i}", Ts(i));
+        var pages = new List<int>();
+        var pager = new KeysetPager(erp, state, TimeSpan.Zero) { PageHandled = pages.Add };
+
+        await pager.PullAsync("Item", "Item", ["item_name"], [], Collect, 2);
+
+        // `modified >= mark` re-reads the last row of each page, so later pages have one fresh row less.
+        Assert.Equal(new[] { 2, 1, 1, 1 }, pages);
+        Assert.Equal(5, pages.Sum());
+    }
+
+    [Fact]
+    public void Is_at_start_until_a_page_is_saved()
+    {
+        var pager = new KeysetPager(erp, state, TimeSpan.Zero);
+        Assert.True(pager.IsAtStart("Item"));
+        state.Set("Item", new SyncMark(Ts(1), ["I1"]));
+        Assert.False(pager.IsAtStart("Item"));
+    }
+
+    [Fact]
     public async Task Second_pull_only_gets_changes()
     {
         Row("I1", Ts(1));

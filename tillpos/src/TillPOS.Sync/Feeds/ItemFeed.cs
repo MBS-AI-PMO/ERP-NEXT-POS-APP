@@ -8,7 +8,7 @@ namespace TillPOS.Sync.Feeds;
 
 /// <summary>Changed items, 500 per page; for each page, three join queries fetch barcodes, UOMs and item taxes.
 /// Saving an item in ERPNext updates the item's `modified` when any child row changes.</summary>
-public sealed class ItemFeed(SyncContext ctx) : ISyncFeed
+public sealed class ItemFeed(SyncContext ctx) : ISyncFeed, ICountedFeed
 {
     private static readonly string[] Fields = ["item_name", "item_group", "brand", "stock_uom", "disabled", "is_sales_item", "has_variants"];
 
@@ -33,6 +33,9 @@ public sealed class ItemFeed(SyncContext ctx) : ISyncFeed
                     taxes[code].Select(CatalogMapper.ItemTax).OfType<ItemTaxAssignment>().ToList());
             }));
         }, ct: ct);
+
+    public async Task<int?> ExpectedRowsAsync(CancellationToken ct) =>
+        ctx.Pager.IsAtStart("Item") ? await ctx.Erp.GetCountAsync("Item", [], ct) : null;
 
     private async Task<ILookup<string, JsonElement>> Children(List<string> names, string[] fields, CancellationToken ct)
     {

@@ -29,6 +29,18 @@ public sealed class FakeErp : IErpClient
         return Task.FromResult<IReadOnlyList<JsonElement>>(rows.Select(r => JsonSerializer.SerializeToElement(r)).ToList());
     }
 
+    public List<(string Doctype, IReadOnlyList<object[]> Filters)> CountCalls { get; } = [];
+    /// <summary>Return an exception to make a count fail.</summary>
+    public Func<string, Exception?>? FailCount { get; set; }
+
+    /// <summary>Counts the doctype's rows matching the filters (same operators as list queries).</summary>
+    public Task<int> GetCountAsync(string doctype, IReadOnlyList<object[]> filters, CancellationToken ct = default)
+    {
+        CountCalls.Add((doctype, filters));
+        if (FailCount?.Invoke(doctype) is { } ex) throw ex;
+        return Task.FromResult(Filtered(new ListQuery(doctype, ["name"], filters, "", 0, 0)).Count);
+    }
+
     public Task<JsonElement> GetDocAsync(string doctype, string name, CancellationToken ct = default) =>
         Docs.TryGetValue((doctype, name), out var d)
             ? Task.FromResult(JsonSerializer.SerializeToElement(d))

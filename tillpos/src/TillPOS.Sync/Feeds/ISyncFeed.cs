@@ -6,3 +6,11 @@ public interface ISyncFeed
     /// <summary>Pulls this feed's changes into the local store; returns rows processed.</summary>
     Task<int> RunAsync(CancellationToken ct);
 }
+
+/// <summary>A feed that can tell, before it runs, how many rows a full first download will page through
+/// (shown as "4,350 of 12,014" on the first-start screen).</summary>
+public interface ICountedFeed
+{
+    /// <summary>The row count when the next pull is a first download, otherwise null.</summary>
+    Task<int?> ExpectedRowsAsync(CancellationToken ct);
+}

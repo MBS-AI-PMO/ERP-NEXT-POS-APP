@@ -32,6 +32,24 @@ public class ErpClientTests
     }
 
     [Fact]
+    public async Task Get_count_posts_doctype_and_filters_and_returns_the_number()
+    {
+        var (client, handler) = Make(_ => StubHandler.Json("""{"message":12014}"""));
+
+        var count = await client.GetCountAsync("Item Price", [["price_list", "=", "Retail"]]);
+
+        Assert.Equal(12014, count);
+        var (req, body) = handler.Requests.Single();
+        Assert.Equal(HttpMethod.Post, req.Method);
+        Assert.Equal("https://erp.test/api/method/frappe.client.get_count", req.RequestUri!.ToString());
+        Assert.Equal("token key1:secret1", req.Headers.Authorization!.ToString());
+        using var sent = JsonDocument.Parse(body!);
+        Assert.Equal("Item Price", sent.RootElement.GetProperty("doctype").GetString());
+        Assert.Equal("price_list", sent.RootElement.GetProperty("filters")[0][0].GetString());
+        Assert.Equal("Retail", sent.RootElement.GetProperty("filters")[0][2].GetString());
+    }
+
+    [Fact]
     public async Task Get_doc_escapes_doctype_and_name()
     {
         var (client, handler) = Make(_ => StubHandler.Json("""{"data":{"name":"Offer 10/24"}}"""));

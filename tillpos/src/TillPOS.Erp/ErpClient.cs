@@ -36,6 +36,13 @@ public sealed class ErpClient : IErpClient
         return root.GetProperty("message").EnumerateArray().Select(e => e.Clone()).ToList();
     }
 
+    public async Task<int> GetCountAsync(string doctype, IReadOnlyList<object[]> filters, CancellationToken ct = default)
+    {
+        var body = new Dictionary<string, object?> { ["doctype"] = doctype, ["filters"] = filters };
+        var root = await SendAsync(HttpMethod.Post, "api/method/frappe.client.get_count", body, ct);
+        return root.GetProperty("message").GetInt32();
+    }
+
     public async Task<JsonElement> GetDocAsync(string doctype, string name, CancellationToken ct = default) =>
         (await SendAsync(HttpMethod.Get, ResourcePath(doctype, name), null, ct)).GetProperty("data").Clone();
 
