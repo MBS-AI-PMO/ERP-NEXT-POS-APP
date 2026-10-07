@@ -95,4 +95,4 @@ WHAT TO SEND BACK
 - The version number shown on the Login screen
 
 NOT IN THIS VERSION YET
-Returns, hold and recall, price check, and close shift.
+Uploading bills to ERPNext (bills stay on this PC until the sync is switched on by the shop).
