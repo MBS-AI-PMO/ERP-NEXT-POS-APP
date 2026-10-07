@@ -46,18 +46,16 @@ public sealed class RecentInvoicesFeed(SyncContext ctx, RemoteReceiptStore remot
                 var names = page.Select(r => r.Str("name")).ToList();
                 var items = await Children(names, ItemFields, ct);
                 var payments = await Children(names, PaymentFields, ct);
-                var fetched = now();
+                var cancelled = new List<string>();
+                var stored = new List<RemoteReceipt>();
                 foreach (var row in page)
                 {
                     var name = row.Str("name");
-                    if (row.Int("docstatus") != 1)
-                    {
-                        remote.Delete(name);                                    // cancelled: its quantities are free again
-                        continue;
-                    }
-                    if (row.StrOrNull("posa_client_request_id") is { } id && id.StartsWith(own, StringComparison.OrdinalIgnoreCase)) continue;
-                    remote.Upsert(Map(row, items[name], payments[name]), fetched);
+                    if (row.Int("docstatus") != 1) cancelled.Add(name);          // cancelled: its quantities are free again
+                    else if (row.StrOrNull("posa_client_request_id") is not { } id || !id.StartsWith(own, StringComparison.OrdinalIgnoreCase))
+                        stored.Add(Map(row, items[name], payments[name]));
                 }
+                remote.UpsertMany(stored, now(), cancelled);                    // the whole page, or nothing
             }, ct: ct);
         remote.DeleteOlderThan(Days, today);
         return rows;

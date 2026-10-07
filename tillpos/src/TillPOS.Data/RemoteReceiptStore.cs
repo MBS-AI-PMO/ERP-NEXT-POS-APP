@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using Microsoft.Data.Sqlite;
 using TillPOS.Core.Sales;
 
 namespace TillPOS.Data;
@@ -71,10 +72,27 @@ public sealed class RemoteReceiptStore(TillDb db) : IOtherTillReturns
     private const string PostingFormat = "yyyy-MM-dd HH:mm:ss";
 
     /// <summary>Adds the invoice, or replaces the copy downloaded before.</summary>
-    public void Upsert(RemoteReceipt receipt, DateTimeOffset fetchedAt)
+    public void Upsert(RemoteReceipt receipt, DateTimeOffset fetchedAt) => UpsertMany([receipt], fetchedAt);
+
+    /// <summary>One downloaded page in one transaction: removes <paramref name="deleting"/> (cancelled in ERPNext), then adds or
+    /// replaces <paramref name="receipts"/>. All or nothing: a failure leaves the store as it was.</summary>
+    public void UpsertMany(IEnumerable<RemoteReceipt> receipts, DateTimeOffset fetchedAt, IEnumerable<string>? deleting = null)
     {
         using var c = db.Open();
-        c.Exec(null, """
+        using var tx = c.BeginTransaction();
+        foreach (var name in deleting ?? []) c.Exec(tx, DeleteSql, ("@n", name));
+        foreach (var receipt in receipts) Upsert(c, tx, receipt, fetchedAt);
+        tx.Commit();
+    }
+
+    /// <summary>Removes invoices (cancelled in ERPNext) in one transaction.</summary>
+    public void DeleteMany(IEnumerable<string> erpNames) => UpsertMany([], DateTimeOffset.MinValue, erpNames);
+
+    private const string DeleteSql = "DELETE FROM remote_receipt WHERE erp_name = @n";
+
+    private static void Upsert(SqliteConnection c, SqliteTransaction tx, RemoteReceipt receipt,
+        DateTimeOffset fetchedAt) =>
+        c.Exec(tx, """
             INSERT INTO remote_receipt (erp_name, client_request_id, till, pos_profile, posting, customer, grand_total, rounded_total,
                 is_return, return_against, json, fetched_at)
             VALUES (@n, @cid, @till, @p, @at, @cu, @g, @r, @ret, @ra, @j, @f)
@@ -87,14 +105,9 @@ public sealed class RemoteReceiptStore(TillDb db) : IOtherTillReturns
             ("@at", receipt.Posting.ToString(PostingFormat, CultureInfo.InvariantCulture)), ("@cu", receipt.Customer),
             ("@g", SqlExt.Dec(receipt.GrandTotal)), ("@r", SqlExt.Dec(receipt.RoundedTotal)), ("@ret", receipt.IsReturn ? 1 : 0),
             ("@ra", receipt.ReturnAgainst), ("@j", JsonSerializer.Serialize(receipt, ReceiptStore.Json)), ("@f", SqlExt.Instant(fetchedAt)));
-    }
 
     /// <summary>Removes an invoice (cancelled in ERPNext).</summary>
-    public void Delete(string erpName)
-    {
-        using var c = db.Open();
-        c.Exec(null, "DELETE FROM remote_receipt WHERE erp_name = @n", ("@n", erpName));
-    }
+    public void Delete(string erpName) => DeleteMany([erpName]);
 
     public RemoteReceipt? FindByErpName(string erpName) =>
         Query("WHERE erp_name = @p COLLATE NOCASE", erpName).FirstOrDefault();

@@ -56,6 +56,29 @@ public sealed class RemoteReceiptStoreTests : IDisposable
     }
 
     [Fact]
+    public void A_page_is_stored_and_deleted_in_one_transaction_all_or_nothing()
+    {
+        var at = new DateTime(2026, 10, 6, 12, 0, 0);
+        store.Upsert(Sale("OLD-1", null, at, Milk("1", 1m)), Fetched);
+        store.Upsert(Sale("OLD-2", null, at, Milk("1", 1m)), Fetched);
+
+        IEnumerable<RemoteReceipt> Broken()
+        {
+            yield return Sale("NEW-1", null, at, Milk("1", 1m));
+            throw new FormatException("bad row");
+        }
+        Assert.Throws<FormatException>(() => store.UpsertMany(Broken(), Fetched, deleting: ["OLD-1"]));
+        Assert.Equal(new[] { "OLD-1", "OLD-2" }, new[] { "OLD-1", "OLD-2", "NEW-1" }.Where(n => store.FindByErpName(n) is not null));
+
+        store.UpsertMany([Sale("NEW-1", null, at, Milk("1", 1m)), Sale("NEW-2", null, at, Milk("1", 1m))], Fetched, deleting: ["OLD-1"]);
+        Assert.Equal(new[] { "OLD-2", "NEW-1", "NEW-2" },
+            new[] { "OLD-1", "OLD-2", "NEW-1", "NEW-2" }.Where(n => store.FindByErpName(n) is not null));
+
+        store.DeleteMany(["OLD-2", "NEW-2", "NOT-THERE"]);
+        Assert.Equal(1, store.Count());
+    }
+
+    [Fact]
     public void As_a_receipt_it_keeps_its_name_posting_time_and_tills_line_numbers()
     {
         var posting = new DateTime(2026, 10, 6, 12, 0, 5);
