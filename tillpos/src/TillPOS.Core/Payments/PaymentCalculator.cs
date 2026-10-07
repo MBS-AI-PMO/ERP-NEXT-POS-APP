@@ -12,7 +12,7 @@ public sealed record Tender(TenderKind Kind, decimal CardAmount, decimal CashTen
 }
 
 /// <summary>How a bill is paid. GrandTotal is ERPNext's exact total; AmountDue is what the customer pays.
-/// UsesErpRoundedTotal = cash-only bill (ERPNext rounded total applies); card and split bills are not rounded as a whole.
+/// UsesErpRoundedTotal = cash-only bill (ERPNext rounded total applies, unless the POS Profile disables it); card and split bills are not rounded as a whole.
 /// RoundingDifference = cash due − the exact cash portion (negative when rounding went down).</summary>
 public sealed record PaymentPlan(
     TenderKind Kind,
@@ -30,7 +30,9 @@ public sealed record PaymentPlan(
 }
 
 /// <summary>Spec §0 decision 4: card exact; cash rounded to the currency's smallest fraction with ERPNext's rule;
-/// split = card exact + cash remainder rounded.</summary>
+/// split = card exact + cash remainder rounded. When the POS Profile disables the rounded total (MoneySettings.DisableRoundedTotal),
+/// ERPNext keeps the exact grand total, so cash is exact too (only rounded to the currency precision) and no bill uses a
+/// rounded total.</summary>
 public sealed class PaymentCalculator(MoneySettings money)
 {
     public PaymentPlan Plan(decimal grandTotal, Tender tender) => tender.Kind switch
@@ -47,7 +49,7 @@ public sealed class PaymentCalculator(MoneySettings money)
         if (grandTotal >= 0m) throw new ArgumentOutOfRangeException(nameof(grandTotal), "A refund total is negative.");
         return kind switch
         {
-            TenderKind.Cash => WithCash(grandTotal, TenderKind.Cash, 0m, grandTotal, Rounder.RoundToSmallestFraction(grandTotal, money)),
+            TenderKind.Cash => WithCash(grandTotal, TenderKind.Cash, 0m, grandTotal, CashRound(grandTotal)),
             TenderKind.Card => CardOnly(grandTotal),
             _ => throw new ArgumentOutOfRangeException(nameof(kind), "Refunds are paid in cash or to the card."),
         };
@@ -61,17 +63,20 @@ public sealed class PaymentCalculator(MoneySettings money)
         if (tender.CardAmount <= 0m || tender.CardAmount >= grandTotal)
             throw new ArgumentOutOfRangeException(nameof(tender), "The card part must be more than zero and less than the bill total.");
         var remainder = grandTotal - tender.CardAmount;
-        if (Rounder.RoundToSmallestFraction(remainder, money) <= 0m)
+        if (CashRound(remainder) <= 0m)
             throw new ArgumentOutOfRangeException(nameof(tender), "The cash part rounds to zero; take the whole amount by card.");
         return WithCash(grandTotal, TenderKind.Split, tender.CardAmount, remainder, tender.CashTendered);
     }
 
+    private decimal CashRound(decimal value) =>
+        money.DisableRoundedTotal ? Rounder.Round(value, money) : Rounder.RoundToSmallestFraction(value, money);
+
     private PaymentPlan WithCash(decimal grandTotal, TenderKind kind, decimal card, decimal exactCash, decimal tendered)
     {
-        var cashDue = Rounder.RoundToSmallestFraction(exactCash, money);
+        var cashDue = CashRound(exactCash);
         var shortfall = Math.Max(0m, cashDue - tendered);
         var change = Math.Max(0m, tendered - cashDue);
-        return new PaymentPlan(kind, grandTotal, kind == TenderKind.Cash, card + cashDue, card, cashDue, tendered, change,
-            shortfall, Rounder.Round(cashDue - exactCash, money));
+        return new PaymentPlan(kind, grandTotal, kind == TenderKind.Cash && !money.DisableRoundedTotal, card + cashDue, card, cashDue,
+            tendered, change, shortfall, Rounder.Round(cashDue - exactCash, money));
     }
 }

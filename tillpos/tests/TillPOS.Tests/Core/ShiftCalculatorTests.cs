@@ -17,7 +17,7 @@ public class ShiftCalculatorTests
     [Fact]
     public void Expected_cash_is_opening_plus_cash_taken_minus_change_and_refunds()
     {
-        var opening = new ShiftOpening("S1", "c", At.AddHours(-12), [new ReceiptPayment("Cash Counter 2", 200m)]);
+        var opening = new ShiftOpening("S1", "c", "", At.AddHours(-12), [new ReceiptPayment("Cash Counter 2", 200m)]);
         var receipts = new[]
         {
             R(ReceiptKind.Sale, M("14.37"), M("13.686"), M("5.75"), new ReceiptPayment("Cash Counter 2", 20m)),
@@ -43,7 +43,7 @@ public class ShiftCalculatorTests
     [Fact]
     public void Uncounted_modes_count_as_zero()
     {
-        var opening = new ShiftOpening("S1", "c", At, []);
+        var opening = new ShiftOpening("S1", "c", "", At, []);
         var closing = ShiftCalculator.Close(opening, [R(ReceiptKind.Sale, 10m, M("9.524"), 0m, new ReceiptPayment("Credit Card", 10m))],
             new Dictionary<string, decimal>(), Modes, At, Money);
 
@@ -54,7 +54,7 @@ public class ShiftCalculatorTests
     [Fact]
     public void Receipts_from_another_shift_are_ignored_and_counted_amounts_are_rounded()
     {
-        var opening = new ShiftOpening("S1", "c", At, [new ReceiptPayment("Cash Counter 2", 100m)]);
+        var opening = new ShiftOpening("S1", "c", "", At, [new ReceiptPayment("Cash Counter 2", 100m)]);
         var other = R(ReceiptKind.Sale, 50m, M("47.619"), 0m, new ReceiptPayment("Cash Counter 2", 50m)) with { ShiftClientId = "OTHER" };
 
         var closing = ShiftCalculator.Close(opening, [other], new Dictionary<string, decimal> { ["Cash Counter 2"] = M("100.0004") },

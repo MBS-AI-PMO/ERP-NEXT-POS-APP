@@ -98,4 +98,48 @@ public class PaymentCalculatorTests
     [Fact]
     public void Split_whose_cash_part_rounds_to_zero_is_refused() =>
         Assert.Throws<ArgumentOutOfRangeException>(() => calc.Plan(M("10.10"), Tender.Split(M("10.00"), 0m)));
+
+    // POS Profile "Disable Rounded Total" (the live Test Counter has it on; the shop counters have it off): ERPNext keeps the
+    // exact grand total, so cash is not rounded to the quarter either.
+    private readonly PaymentCalculator exact = new(new MoneySettings(3, RoundingMethod.Bankers, 0.25m, DisableRoundedTotal: true));
+
+    [Fact]
+    public void Cash_is_exact_when_the_profile_disables_the_rounded_total()
+    {
+        var p = exact.Plan(M("14.37"), Tender.Cash(20m));
+        Assert.False(p.UsesErpRoundedTotal);
+        Assert.Equal(M("14.37"), p.AmountDue);
+        Assert.Equal(M("14.37"), p.CashDue);
+        Assert.Equal(M("5.63"), p.Change);
+        Assert.Equal(0m, p.RoundingDifference);
+        Assert.True(p.IsComplete);
+    }
+
+    [Fact]
+    public void Exact_cash_still_needs_the_full_amount()
+    {
+        var p = exact.Plan(M("14.37"), Tender.Cash(M("14.25")));
+        Assert.False(p.IsComplete);
+        Assert.Equal(M("0.12"), p.Shortfall);
+    }
+
+    [Fact]
+    public void Split_cash_part_is_exact_when_rounding_is_disabled()
+    {
+        var p = exact.Plan(M("10.10"), Tender.Split(M("10.00"), 1m));
+        Assert.Equal(M("0.10"), p.CashDue);
+        Assert.Equal(M("10.10"), p.AmountDue);
+        Assert.Equal(M("0.90"), p.Change);
+        Assert.Equal(0m, p.RoundingDifference);
+    }
+
+    [Fact]
+    public void Cash_refund_is_exact_when_rounding_is_disabled()
+    {
+        var p = exact.PlanRefund(M("-10.13"), TenderKind.Cash);
+        Assert.False(p.UsesErpRoundedTotal);
+        Assert.Equal(M("-10.13"), p.AmountDue);
+        Assert.Equal(M("-10.13"), p.CashTendered);
+        Assert.Equal(0m, p.RoundingDifference);
+    }
 }

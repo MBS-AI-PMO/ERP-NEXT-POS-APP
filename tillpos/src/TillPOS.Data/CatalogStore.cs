@@ -125,10 +125,29 @@ public sealed class CatalogStore(TillDb db)
         return c.Query("SELECT name FROM item_price", r => r.GetString(0));
     }
 
+    /// <summary>The default counter's POS settings (the key used before counters existed; company-wide data such as the
+    /// receipt header and the price list for the catalog sync come from here).</summary>
     public void SavePosSettings(PosSettings settings) => SetValue(PosSettingsKey, JsonSerializer.Serialize(settings));
 
-    public PosSettings? LoadPosSettings() =>
-        GetValue(PosSettingsKey) is { } json ? JsonSerializer.Deserialize<PosSettings>(json) : null;
+    public PosSettings? LoadPosSettings() => Deserialize(GetValue(PosSettingsKey));
+
+    /// <summary>One counter's POS settings, stored under the profile name as configured on the till.</summary>
+    public void SavePosSettings(string profile, PosSettings settings) =>
+        SetValue(CounterKey(profile), JsonSerializer.Serialize(settings));
+
+    /// <summary>A counter's POS settings; a till synced before counters existed only has the default key, which serves the
+    /// profile it was downloaded for. Null when the counter's settings were never downloaded.</summary>
+    public PosSettings? LoadPosSettings(string profile)
+    {
+        if (Deserialize(GetValue(CounterKey(profile))) is { } own) return own;
+        return LoadPosSettings() is { } legacy && string.Equals(legacy.PosProfile, profile.Trim(), StringComparison.OrdinalIgnoreCase)
+            ? legacy
+            : null;
+    }
+
+    private static string CounterKey(string profile) => PosSettingsKey + ":" + profile.Trim();
+
+    private static PosSettings? Deserialize(string? json) => json is null ? null : JsonSerializer.Deserialize<PosSettings>(json);
 
     public string? GetValue(string key)
     {

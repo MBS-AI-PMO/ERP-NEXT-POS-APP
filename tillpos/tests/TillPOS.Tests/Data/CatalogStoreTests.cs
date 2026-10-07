@@ -150,4 +150,38 @@ public sealed class CatalogStoreTests : IDisposable
         Assert.Equal("v", store.GetValue("k"));
         Assert.Null(store.GetValue("missing"));
     }
+
+    private static PosSettings Profile(string name, string warehouse, bool disableRounded = false) =>
+        new(name, "Shop LLC", "Shop LLC", null, null, "AED", warehouse, "Retail", "Walk-in Customer", "UAE VAT 5%", null,
+            disableRounded, M("0.25"), 0m, [new PaymentMode("Cash", true)]);
+
+    [Fact]
+    public void Each_counter_has_its_own_pos_settings()
+    {
+        store.SavePosSettings("Al Ain Counter 1", Profile("Al Ain Counter 1", "Stores 1 - S"));
+        store.SavePosSettings("Test Counter", Profile("Test Counter", "Stores T - S", disableRounded: true));
+
+        Assert.Equal("Stores 1 - S", store.LoadPosSettings("Al Ain Counter 1")!.Warehouse);
+        Assert.True(store.LoadPosSettings("Test Counter")!.DisableRoundedTotal);
+        Assert.Null(store.LoadPosSettings("Al Ain Counter 2"));
+        Assert.Null(store.LoadPosSettings());   // the default (legacy) key is separate
+    }
+
+    [Fact]
+    public void A_counter_falls_back_to_the_settings_saved_before_counters_existed()
+    {
+        store.SavePosSettings(Profile("Test Counter", "Stores T - S"));
+
+        Assert.Equal("Stores T - S", store.LoadPosSettings("Test Counter")!.Warehouse);
+        Assert.Equal("Stores T - S", store.LoadPosSettings("test counter")!.Warehouse);
+        Assert.Null(store.LoadPosSettings("Al Ain Counter 1"));
+    }
+
+    [Fact]
+    public void A_counters_own_settings_win_over_the_default_key()
+    {
+        store.SavePosSettings(Profile("Test Counter", "Old - S"));
+        store.SavePosSettings("Test Counter", Profile("Test Counter", "New - S"));
+        Assert.Equal("New - S", store.LoadPosSettings("Test Counter")!.Warehouse);
+    }
 }

@@ -40,7 +40,7 @@ public sealed class OpenShiftViewModel : ObservableObject
             return;
         }
         var now = ctx.Clock.Now;
-        var shift = new ShiftOpening(ClientIds.Shift(ctx.TillNumber, now), session.Cashier!.Id, now,
+        var shift = new ShiftOpening(ClientIds.Shift(ctx.TillNumber, now), session.Cashier!.Id, "", now,
             [new ReceiptPayment(ctx.Modes.Cash, amount)]);
         ctx.Shifts.Open(shift);
         session.Shift = shift;

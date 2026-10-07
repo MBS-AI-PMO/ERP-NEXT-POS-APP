@@ -3,7 +3,13 @@ using TillPOS.Core.Sales;
 
 namespace TillPOS.Core.Shifts;
 
-public sealed record ShiftOpening(string ClientId, string Cashier, DateTimeOffset OpenedAt, IReadOnlyList<ReceiptPayment> OpeningAmounts);
+/// <summary>An open shift. Counter is the POS Profile of the counter it was opened at (shifts saved before counters existed
+/// read as "" = the default counter); CounterName is that counter's label when the shift was opened (printed on the Z report).</summary>
+public sealed record ShiftOpening(string ClientId, string Cashier, string Counter, DateTimeOffset OpenedAt, IReadOnlyList<ReceiptPayment> OpeningAmounts)
+{
+    public string Counter { get; init; } = Counter ?? "";
+    public string? CounterName { get; init; }
+}
 
 public sealed record ShiftModeSummary(string ModeOfPayment, decimal Opening, decimal Expected, decimal Counted, decimal Difference);
 

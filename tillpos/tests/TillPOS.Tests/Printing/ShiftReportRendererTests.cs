@@ -11,7 +11,7 @@ public class ShiftReportRendererTests
     private static readonly ReceiptHeader Header = new("AL AIN MARKETING L.L.C", "Nuaimiya 1, Al Ain Market, Ajman, UAE", "100000000000003",
         "Till 1", "Thank you for shopping with us", "+971 6 000 0000");
 
-    private static readonly ShiftOpening Opening = new("TILL1-SHIFT-20261007080000", "simran",
+    private static readonly ShiftOpening Opening = new("TILL1-SHIFT-20261007080000", "simran", "",
         new DateTimeOffset(2026, 10, 7, 8, 0, 0, TimeSpan.FromHours(4)), [new ReceiptPayment("Cash Counter 2", 200m)]);
 
     private static ShiftClosing Closing(params ShiftModeSummary[] modes) => new("TILL1-SHIFT-20261007080000",

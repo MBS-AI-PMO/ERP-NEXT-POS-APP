@@ -49,7 +49,7 @@ public sealed class PresentationFixture : IDisposable
     public void LogInWithOpenShift()
     {
         Session.Cashier = Simran;
-        var shift = new ShiftOpening("TILL2-SHIFT-20261007080000", "simran", Clock.Now.AddHours(-2), [new ReceiptPayment("Cash Counter 2", 200m)]);
+        var shift = new ShiftOpening("TILL2-SHIFT-20261007080000", "simran", "", Clock.Now.AddHours(-2), [new ReceiptPayment("Cash Counter 2", 200m)]);
         Ctx.Shifts.Open(shift);
         Session.Shift = shift;
     }
