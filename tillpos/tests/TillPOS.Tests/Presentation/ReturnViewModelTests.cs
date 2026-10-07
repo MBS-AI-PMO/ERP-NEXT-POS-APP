@@ -113,8 +113,8 @@ public sealed class ReturnViewModelTests : IDisposable
         var vm = OpenReturns();
 
         Assert.Equal(new[] { second.ClientId, first.ClientId }, vm.RecentBills.Select(b => b.ClientId));
-        Assert.Equal(("", false), (vm.RecentBills[0].Returned, vm.RecentBills[0].PartlyReturned));
-        Assert.Equal(("partly returned", true), (vm.RecentBills[1].Returned, vm.RecentBills[1].PartlyReturned));
+        Assert.Equal(("", false), (vm.RecentBills[0].Returned, vm.RecentBills[0].HasReturns));
+        Assert.Equal(("partly returned", true), (vm.RecentBills[1].Returned, vm.RecentBills[1].HasReturns));
         Assert.Equal("13.58", vm.RecentBills[1].Total);
 
         vm.OpenBillCommand.Execute(first.ClientId);
@@ -280,7 +280,7 @@ public sealed class ReturnViewModelTests : IDisposable
             Assert.Equal(receipt.ClientId, r.ReceiptClientId);
             Assert.Equal("TILL2-SHIFT-20261007080000", r.ShiftClientId);
             Assert.Equal("Return: over AED 50 on this receipt; receipt older than 7 days", r.Reason);
-            Assert.Equal(credit.Payments.Sum(p => p.Amount), r.Amount);
+            Assert.Equal(-credit.Payments.Sum(p => p.Amount), r.Amount);  // logged positive, like every approval
         });
     }
 
@@ -348,6 +348,41 @@ public sealed class ReturnViewModelTests : IDisposable
         await second.ConfirmAsync();
         Assert.Equal(2, Returns().Count);
         Assert.Equal(ApprovalAction.ReturnOverLimit, Assert.Single(f.Ctx.Approvals.Unsynced()).Action);
+    }
+
+    [Fact]
+    public async Task A_return_that_needs_more_after_the_PIN_is_not_saved_and_can_be_confirmed_again()
+    {
+        var receipt = Sell(9, Milk(10));                            // old: every return on it needs a supervisor
+        var vm = Opened(receipt);
+        vm.Lines[0].ReturnQty.Text = "4";                           // 27.16: under the limit when previewed
+        vm.SetReasonCommand.Execute("Damaged");
+        Assert.Equal("Needs supervisor: receipt older than 7 days", vm.NeedsText);
+        var pin = new TaskCompletionSource<string?>();
+        f.Dialogs.PendingPin = pin;
+        var pending = vm.ConfirmAsync();
+
+        // Meanwhile another return of 4 is saved on the same receipt: together they are now over AED 50.
+        var other = new ReturnViewModel(f.Ctx, f.Session, gate, () => { });
+        other.Find(receipt.ClientId);
+        other.Lines[0].ReturnQty.Text = "4";
+        other.SetReasonCommand.Execute("Damaged");
+        f.Dialogs.Pins.Enqueue("9999");
+        await other.ConfirmAsync();
+        Assert.Single(Returns());
+
+        pin.SetResult("9999");
+        await pending;
+
+        Assert.Single(Returns());                                   // the first return was not saved
+        Assert.Equal(ReturnViewModel.SomethingChangedMessage, vm.Message);
+        Assert.True(vm.MessageIsError);
+        Assert.True(vm.ConfirmCommand.CanExecute(null));
+        Assert.Equal("Needs supervisor: over AED 50 on this receipt; receipt older than 7 days", vm.NeedsText);
+
+        f.Dialogs.Pins.Enqueue("9999");
+        await vm.ConfirmAsync();
+        Assert.Equal(2, Returns().Count);
     }
 
     // ---- Without receipt ----
@@ -507,7 +542,8 @@ public sealed class ReturnViewModelTests : IDisposable
         var credit = Assert.Single(Returns());
         Assert.Equal("Printer offline", Assert.Single(f.Dialogs.Receipts).PrintError);
         Assert.True(sale!.MessageIsError);
-        Assert.StartsWith($"Refund 6.75 — credit note {credit.ClientId}, but the printer failed (Printer offline)", sale.Message);
+        Assert.Equal("Refund 6.75 saved — the printer failed (Printer offline). Open the drawer with the key to pay the refund, " +
+            "then reprint the credit note with Ctrl+P.", sale.Message);
         Assert.Equal($"{credit.ClientId}|0", f.Ctx.Kv.GetValue(SaleViewModel.LastReceiptKey));
 
         f.Output.Fail = false;                                      // the first successful print is not a COPY

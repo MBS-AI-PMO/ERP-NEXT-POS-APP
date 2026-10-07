@@ -23,13 +23,17 @@ public partial class ReceiptDialog : Window
     private readonly ScanBuffer scanBuffer = new(() => DateTimeOffset.Now);
     private readonly Func<string?> reprint;
     private readonly bool hasPrinter;
+    private readonly bool isCreditNote;
 
     /// <param name="hasPrinter">False when receipts are saved as files; "Print again" then reports that instead of "Sent to printer".</param>
-    public ReceiptDialog(IReadOnlyList<PrintLine> lines, string? printError, Func<string?> reprint, bool hasPrinter)
+    /// <param name="isCreditNote">A return: the window and the printer message say "credit note" instead of invoice / bill.</param>
+    public ReceiptDialog(IReadOnlyList<PrintLine> lines, string? printError, Func<string?> reprint, bool hasPrinter, bool isCreditNote = false)
     {
         InitializeComponent();
         this.reprint = reprint;
         this.hasPrinter = hasPrinter;
+        this.isCreditNote = isCreditNote;
+        if (isCreditNote) Title = "Credit note";
         MaxHeight = SystemParameters.WorkArea.Height * 0.9;
         foreach (var line in lines) Paper.Children.Add(line.Style == LineStyle.Qr ? QrImage(line.Text) : LineBlock(line));
         if (printError is not null) ShowBanner(PrinterProblem(printError), ok: false);
@@ -138,5 +142,5 @@ public partial class ReceiptDialog : Window
         Banner.Visibility = Visibility.Visible;
     }
 
-    private static string PrinterProblem(string error) => $"Printer problem: {error}. The bill is saved.";
+    private string PrinterProblem(string error) => $"Printer problem: {error}. The {(isCreditNote ? "credit note" : "bill")} is saved.";
 }

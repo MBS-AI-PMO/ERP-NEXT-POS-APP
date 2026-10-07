@@ -272,6 +272,44 @@ public class ReturnBuilderTests
     }
 
     [Fact]
+    public void A_need_that_appears_after_the_approval_is_refused_and_nothing_is_saved()
+    {
+        var today = new DateOnly(2026, 10, 6);
+        var builder = new ReturnBuilder(store, ctx with { Today = () => today }, 2, Modes, () => At);
+        var sale = Sell("999", 1, daysAgo: 7);                     // 899 seven days ago: over the limit, not yet old
+        IReadOnlyList<ReturnLineRequest> all = [new ReturnLineRequest(1, 1m)];
+        var approved = builder.Preview(sale, all).Needs;
+        Assert.Equal(new[] { ApprovalAction.ReturnOverLimit }, approved);
+
+        today = today.AddDays(1);                                   // midnight passes while the supervisor types the PIN
+
+        var ex = Assert.Throws<ApprovalRequiredException>(() =>
+            builder.Build(sale, all, TenderKind.Cash, "c", "S2", "SUP-1", approvedNeeds: approved));
+        Assert.Contains("older than 7 days", ex.Message);
+        Assert.Empty(store.ReturnsAgainst(sale.ClientId));
+
+        var ret = builder.Build(sale, all, TenderKind.Cash, "c", "S2", "SUP-1",
+            approvedNeeds: [ApprovalAction.ReturnOverLimit, ApprovalAction.ReturnOldReceipt]);
+        Assert.Equal("SUP-1", ret.ApprovedBy);
+    }
+
+    [Fact]
+    public void Approved_needs_that_cover_the_return_or_are_not_given_build_as_before()
+    {
+        var sale = Sell("999", 1);
+        Builder().Build(sale, [new ReturnLineRequest(1, 1m)], TenderKind.Cash, "c", "S2", "SUP-1",
+            approvedNeeds: [ApprovalAction.ReturnOverLimit]);
+
+        var cart = new Cart(ctx);
+        cart.AddBarcode("111");
+        Assert.Throws<ApprovalRequiredException>(() =>
+            Builder().BuildWithoutReceipt(cart, TenderKind.Cash, "c", "S2", "SUP-1", approvedNeeds: []));
+        Assert.Single(cart.Lines);                                  // refused before anything was saved or cleared
+        Builder().BuildWithoutReceipt(cart, TenderKind.Cash, "c", "S2", "SUP-1");
+        Assert.Empty(cart.Lines);
+    }
+
+    [Fact]
     public void Returns_store_the_cashier_name()
     {
         var ret = Builder().Build(SellMilk(1), [new ReturnLineRequest(1, 1m)], TenderKind.Cash, "c", "S2", null, "Damaged", "s@x",

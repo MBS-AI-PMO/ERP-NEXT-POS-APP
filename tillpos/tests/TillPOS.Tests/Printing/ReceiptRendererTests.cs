@@ -284,7 +284,7 @@ public class ReceiptRendererTests
         var lines = Text(note);
 
         AssertInOrder(lines, "TAX CREDIT NOTE", "Invoice No", "Return of : TILL2-20261006120000-000000", "Till", "Reason    : Damaged",
-            "Approved by: SUP-1", "TOTAL AED", "Refund paid (cash)");
+            "Approved  : SUP-1", "TOTAL AED", "Refund paid (cash)");
         Assert.Contains(lines, l => l.StartsWith("Refund paid (cash)") && l.EndsWith(" -15.67"));
     }
 
@@ -294,14 +294,14 @@ public class ReceiptRendererTests
         var lines = Text(CreditNote() with { ReturnAgainst = null });
 
         Assert.Contains("Return without receipt", lines);
-        Assert.DoesNotContain(lines, l => l.StartsWith("Return of") || l.StartsWith("Reason") || l.StartsWith("Approved by"));
+        Assert.DoesNotContain(lines, l => l.StartsWith("Return of") || l.StartsWith("Reason") || l.StartsWith("Approved"));
     }
 
     [Fact]
     public void A_sale_has_no_refund_reason_or_approver_lines()
     {
         var lines = Text(Sale() with { Reason = "x", ApprovedBy = "SUP-1" });
-        Assert.DoesNotContain(lines, l => l.StartsWith("Reason") || l.StartsWith("Approved by") || l.Contains("Refund paid"));
+        Assert.DoesNotContain(lines, l => l.StartsWith("Reason") || l.StartsWith("Approved") || l.Contains("Refund paid"));
     }
 
     [Fact]

@@ -30,14 +30,20 @@ public sealed class ReturnBuilder(IReceiptStore store, SaleContext ctx, int till
     /// <summary>The return <see cref="BuildWithoutReceipt"/> would make, without saving anything or clearing the cart.</summary>
     public ReturnPreview PreviewWithoutReceipt(Cart cart) => ToPreview(PrepareWithoutReceipt(cart));
 
+    /// <param name="approvedNeeds">The approvals the supervisor gave (from the preview). When given with
+    /// <paramref name="approvedBy"/>, a return that now needs anything else (say the receipt just turned too old) is refused with
+    /// <see cref="ApprovalRequiredException"/> and nothing is saved.</param>
     public Receipt Build(Receipt original, IReadOnlyList<ReturnLineRequest> requests, TenderKind refundKind, string cashier,
-        string shiftClientId, string? approvedBy, string? reason = null, string? cashierUser = null, string? cashierName = null) =>
-        Finish(Prepare(original, requests), refundKind, cashier, shiftClientId, approvedBy, reason, cashierUser, cashierName);
+        string shiftClientId, string? approvedBy, string? reason = null, string? cashierUser = null, string? cashierName = null,
+        IReadOnlyCollection<ApprovalAction>? approvedNeeds = null) =>
+        Finish(Prepare(original, requests), refundKind, cashier, shiftClientId, approvedBy, reason, cashierUser, cashierName, approvedNeeds);
 
+    /// <param name="approvedNeeds">As for <see cref="Build"/>.</param>
     public Receipt BuildWithoutReceipt(Cart cart, TenderKind refundKind, string cashier, string shiftClientId, string? approvedBy,
-        string? reason = null, string? cashierUser = null, string? cashierName = null)
+        string? reason = null, string? cashierUser = null, string? cashierName = null, IReadOnlyCollection<ApprovalAction>? approvedNeeds = null)
     {
-        var receipt = Finish(PrepareWithoutReceipt(cart), refundKind, cashier, shiftClientId, approvedBy, reason, cashierUser, cashierName);
+        var receipt = Finish(PrepareWithoutReceipt(cart), refundKind, cashier, shiftClientId, approvedBy, reason, cashierUser, cashierName,
+            approvedNeeds);
         cart.Clear();
         return receipt;
     }
@@ -103,10 +109,13 @@ public sealed class ReturnBuilder(IReceiptStore store, SaleContext ctx, int till
     };
 
     private Receipt Finish(Draft draft, TenderKind refundKind, string cashier, string shiftClientId, string? approvedBy, string? reason,
-        string? cashierUser, string? cashierName)
+        string? cashierUser, string? cashierName, IReadOnlyCollection<ApprovalAction>? approvedNeeds)
     {
         var approved = !string.IsNullOrWhiteSpace(approvedBy);
         if (!approved && draft.Needs.Count > 0) throw new ApprovalRequiredException(NeedMessage(draft.Needs[0]));
+        if (approved && approvedNeeds is not null)
+            foreach (var need in draft.Needs)
+                if (!approvedNeeds.Contains(need)) throw new ApprovalRequiredException(NeedMessage(need));
 
         var totals = draft.Totals;
         var plan = new PaymentCalculator(ctx.Money).PlanRefund(totals.GrandTotal, refundKind);

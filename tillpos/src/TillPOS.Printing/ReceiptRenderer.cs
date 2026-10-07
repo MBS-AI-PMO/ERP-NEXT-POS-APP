@@ -57,7 +57,7 @@ public static class ReceiptRenderer
         foreach (var text in Field("Cashier", r.CashierName ?? r.Cashier, w)) Add(text);
         foreach (var text in Field("Till", h.TillName, w)) Add(text);
         if (isReturn && !string.IsNullOrWhiteSpace(r.Reason)) foreach (var text in Field("Reason", r.Reason, w)) Add(text);
-        if (isReturn && !string.IsNullOrWhiteSpace(r.ApprovedBy)) foreach (var text in Field("Approved by", r.ApprovedBy, w)) Add(text);
+        if (isReturn && !string.IsNullOrWhiteSpace(r.ApprovedBy)) foreach (var text in Field("Approved", r.ApprovedBy, w)) Add(text);
         // A sale's invoice number as a barcode, so the receipt can be scanned for a return.
         if (!isReturn) Add(r.ClientId, LineStyle.Barcode);
         Rule('-');

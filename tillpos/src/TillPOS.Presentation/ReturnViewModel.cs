@@ -14,7 +14,7 @@ public enum ReturnStage { Find, Choose, NoReceipt }
 /// <summary>A recent sale on the Returns screen's find stage. <see cref="Returned"/> is "", "partly returned" or "all returned".</summary>
 public sealed record RecentBill(string ClientId, string Time, string Total, string Returned)
 {
-    public bool PartlyReturned => Returned.Length > 0;
+    public bool HasReturns => Returned.Length > 0;
 }
 
 /// <summary>How a finished refund went, for the sale screen: its message, and a barcode scanned to close the credit-note popup
@@ -96,6 +96,7 @@ public sealed class ReturnViewModel : ObservableObject
     /// <summary>Receipts older than this many calendar days need a supervisor.</summary>
     public const int MaxAgeDays = 7;
     public const int RecentCount = 50;
+    public const string SomethingChangedMessage = "Something changed — confirm again";
 
     public static readonly IReadOnlyList<string> Reasons = ["Changed mind", "Damaged", "Expired", "Wrong item", "Other"];
 
@@ -336,7 +337,7 @@ public sealed class ReturnViewModel : ObservableObject
             if (check.Needs.Count > 0)
             {
                 var approvalReason = $"Return: {NeedsList(check.Needs)}";
-                approvedBy = await gate.ApproveAsync(check.Needs[0], approvalReason, against?.ClientId, null, check.RefundDue);
+                approvedBy = await gate.ApproveAsync(check.Needs[0], approvalReason, against?.ClientId, null, -check.RefundDue);
                 if (approvedBy is null)
                 {
                     Error("Not refunded: a supervisor must approve this return.");
@@ -346,7 +347,7 @@ public sealed class ReturnViewModel : ObservableObject
                 {
                     foreach (var need in check.Needs.Skip(1))
                         ctx.Approvals.Add(new ApprovalRecord(Guid.NewGuid().ToString("N"), need, cashier.Id, approvedBy, shift.ClientId,
-                            against?.ClientId, null, check.RefundDue, approvalReason, ctx.Clock.Now));
+                            against?.ClientId, null, -check.RefundDue, approvalReason, ctx.Clock.Now));
                 }
                 catch (Exception ex)
                 {
@@ -358,9 +359,19 @@ public sealed class ReturnViewModel : ObservableObject
             Receipt receipt;
             try
             {
+                // The supervisor approved exactly what the preview needed; if the return now needs more (say the receipt
+                // just turned too old), nothing is saved and the cashier confirms again.
                 receipt = against is not null
-                    ? builder.Build(against, requests, TenderKind.Cash, cashier.Id, shift.ClientId, approvedBy, why, cashier.User, cashier.Name)
-                    : builder.BuildWithoutReceipt(cart!, TenderKind.Cash, cashier.Id, shift.ClientId, approvedBy, why, cashier.User, cashier.Name);
+                    ? builder.Build(against, requests, TenderKind.Cash, cashier.Id, shift.ClientId, approvedBy, why, cashier.User, cashier.Name,
+                        check.Needs)
+                    : builder.BuildWithoutReceipt(cart!, TenderKind.Cash, cashier.Id, shift.ClientId, approvedBy, why, cashier.User,
+                        cashier.Name, check.Needs);
+            }
+            catch (ApprovalRequiredException)
+            {
+                Recompute();
+                Error(SomethingChangedMessage);
+                return;
             }
             catch (Exception ex)
             {
@@ -392,10 +403,10 @@ public sealed class ReturnViewModel : ObservableObject
         SaleViewModel.WriteLastReceipt(ctx.Kv, receipt.ClientId, printed: printError is null);
 
         var refund = Format.Money(-receipt.Payments.Sum(p => p.Amount));
-        var text = $"Refund {refund} — credit note {receipt.ClientId}";
-        if (printError is null) Info(text);
-        else if (ctx.ShowReceiptPreview) Error($"{text}, but the printer failed ({printError}). Use Print again on the invoice, or note credit note {receipt.ClientId}.");
-        else Error($"{text}, but the printer failed ({printError}). Reprint it with Ctrl+P, or note credit note {receipt.ClientId}.");
+        // The drawer opens through the printer, so when the printer failed the drawer stayed shut.
+        if (printError is null) Info($"Refund {refund} — credit note {receipt.ClientId}");
+        else Error($"Refund {refund} saved — the printer failed ({printError}). Open the drawer with the key to pay the refund, " +
+            "then reprint the credit note with Ctrl+P.");
 
         string? code = null;
         if (ctx.ShowReceiptPreview)

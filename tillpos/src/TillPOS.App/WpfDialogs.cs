@@ -36,7 +36,8 @@ public sealed class WpfDialogs(
         try
         {
             var (header, paper) = receiptLayout();
-            var dialog = new ReceiptDialog(ReceiptRenderer.Layout(receipt, header, paper), printError, reprint, hasPrinter)
+            var dialog = new ReceiptDialog(ReceiptRenderer.Layout(receipt, header, paper), printError, reprint, hasPrinter,
+                isCreditNote: receipt.Kind == ReceiptKind.Return)
             {
                 Owner = owner,
             };
