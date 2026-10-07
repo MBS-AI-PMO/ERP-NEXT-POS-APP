@@ -4,11 +4,18 @@ using TillPOS.Core.Sales;
 namespace TillPOS.Core.Shifts;
 
 /// <summary>An open shift. Counter is the POS Profile of the counter it was opened at (shifts saved before counters existed
-/// read as "" = the default counter); CounterName is that counter's label when the shift was opened (printed on the Z report).</summary>
+/// read as "" = the default counter). CounterName, CashMode and CardMode are that counter's label and payment modes when the
+/// shift was opened: the shift keeps them even if the counter is edited in the settings while it is open. Older shifts read
+/// them as null / "" and fall back (<see cref="CounterSettings.ForShift"/>).</summary>
 public sealed record ShiftOpening(string ClientId, string Cashier, string Counter, DateTimeOffset OpenedAt, IReadOnlyList<ReceiptPayment> OpeningAmounts)
 {
+    private readonly string cashMode = "";
+    private readonly string cardMode = "";
+
     public string Counter { get; init; } = Counter ?? "";
     public string? CounterName { get; init; }
+    public string CashMode { get => cashMode; init => cashMode = value ?? ""; }
+    public string CardMode { get => cardMode; init => cardMode = value ?? ""; }
 }
 
 public sealed record ShiftModeSummary(string ModeOfPayment, decimal Opening, decimal Expected, decimal Counted, decimal Difference);

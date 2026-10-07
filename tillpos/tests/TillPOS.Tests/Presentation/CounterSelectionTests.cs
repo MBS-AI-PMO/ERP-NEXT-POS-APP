@@ -34,7 +34,7 @@ public sealed class CounterSelectionTests : IDisposable
         var vm = OpenShift();
 
         Assert.True(vm.ShowCounters);
-        Assert.Equal(new[] { "Counter 2", "Counter 1" }, vm.Counters.Select(c => c.Name));
+        Assert.Equal(new[] { "Counter 2", "Test Counter" }, vm.Counters.Select(c => c.Name));
         Assert.All(vm.Counters, c => Assert.True(c.Available));
         Assert.Same(vm.Counters[0], vm.SelectedCounter);
         Assert.True(vm.Counters[0].IsSelected);
@@ -60,10 +60,11 @@ public sealed class CounterSelectionTests : IDisposable
         vm.OpenCommand.Execute(null);
 
         var shift = f.Ctx.Shifts.Current()!;
-        Assert.Equal("Al Ain Counter 1", shift.Counter);
-        Assert.Equal("Counter 1", shift.CounterName);
+        Assert.Equal("Test Counter", shift.Counter);
+        Assert.Equal("Test Counter", shift.CounterName);
         Assert.Equal(new ReceiptPayment("Cash Counter 1", 150m), Assert.Single(shift.OpeningAmounts));
-        Assert.Equal(CounterOne, f.Session.Counter);
+        Assert.Equal(("Cash Counter 1", "Credit Card"), (shift.CashMode, shift.CardMode));
+        Assert.Equal(TestCounter, f.Session.Counter);
         Assert.Same(saleMarker, f.Navigator.Current);
     }
 
@@ -77,7 +78,7 @@ public sealed class CounterSelectionTests : IDisposable
 
         var next = OpenShift();
 
-        Assert.Equal(CounterOne, next.SelectedCounter!.Counter);
+        Assert.Equal(TestCounter, next.SelectedCounter!.Counter);
     }
 
     [Fact]
@@ -106,7 +107,46 @@ public sealed class CounterSelectionTests : IDisposable
         vm.OpenCommand.Execute(null);
 
         Assert.Null(f.Ctx.Shifts.Current());
-        Assert.Equal("Choose your counter.", vm.Message);
+        Assert.Equal("Counter 9 is not available (settings not downloaded). Call a supervisor.", vm.Message);
+    }
+
+    [Fact]
+    public void A_single_counter_that_cannot_be_chosen_shows_why()
+    {
+        var vm = OpenShift(f.Ctx with { Counters = [CounterNine] });
+
+        Assert.True(vm.ShowCounters);                                    // the panel shows the reason instead of nothing
+        Assert.Equal("Not available — settings not downloaded", vm.Counters[0].Detail);
+        Assert.Null(vm.SelectedCounter);
+        Assert.Contains("settings not downloaded", vm.Message);
+    }
+
+    [Fact]
+    public void A_counter_with_another_price_list_cannot_be_chosen()
+    {
+        var vm = OpenShift(f.Ctx with { Counters = [CounterTwo, WholesaleCounter] });
+
+        Assert.True(vm.Counters[0].Available);
+        Assert.False(vm.Counters[1].Available);
+        Assert.Equal("Not available — different price list", vm.Counters[1].Detail);
+    }
+
+    [Fact]
+    public void Choosing_a_counter_checks_it_again()
+    {
+        var vm = OpenShift();
+        Assert.True(vm.Counters[1].Available);
+        f.NotDownloaded.Add(TestCounter.PosProfile);                     // e.g. its settings were removed since the screen opened
+
+        vm.SelectCounterCommand.Execute(vm.Counters[1]);
+
+        Assert.False(vm.Counters[1].Available);
+        Assert.Equal(CounterTwo, vm.SelectedCounter!.Counter);
+        Assert.Contains("settings not downloaded", vm.Message);
+
+        f.NotDownloaded.Clear();
+        vm.SelectCounterCommand.Execute(vm.Counters[1]);
+        Assert.Equal(TestCounter, vm.SelectedCounter!.Counter);
     }
 
     // ---- Joining an open shift ----
@@ -114,18 +154,18 @@ public sealed class CounterSelectionTests : IDisposable
     [Fact]
     public void Logging_in_joins_the_open_shift_at_its_counter()
     {
-        f.LogInWithOpenShift(CounterOne);
+        f.LogInWithOpenShift(TestCounter);
         f.Session.Cashier = null;
         f.Session.Shift = null;
         f.Session.Counter = null;
 
         var login = new LoginViewModel(f.Ctx, f.Session, () => saleMarker);
-        Assert.Equal("Counter 1 · shift open since 08:00", login.ShiftInfo);
+        Assert.Equal("Test Counter · shift open since 08:00", login.ShiftInfo);
         foreach (var c in "1111") login.DigitCommand.Execute(c.ToString());
         login.LoginCommand.Execute(null);
 
         Assert.Same(saleMarker, f.Navigator.Current);
-        Assert.Equal(CounterOne, f.Session.Counter);
+        Assert.Equal(TestCounter, f.Session.Counter);
     }
 
     [Fact]
@@ -139,6 +179,12 @@ public sealed class CounterSelectionTests : IDisposable
 
         Assert.Equal(CounterTwo, f.Session.Counter);
         Assert.Equal("Counter 2 · shift open since 09:00", new LoginViewModel(f.Ctx, f.Session, () => saleMarker).ShiftInfo);
+
+        var saved = f.Ctx.Shifts.Current()!;                             // saved on the shift once
+        Assert.Equal(("Al Ain Counter 2", "Counter 2", "Cash Counter 2", "Credit Card"),
+            (saved.Counter, saved.CounterName, saved.CashMode, saved.CardMode));
+        Assert.Equal(50m, saved.OpeningAmounts[0].Amount);
+        Assert.Equal(f.Clock.Now.AddHours(-1), saved.OpenedAt);
     }
 
     [Fact]
@@ -150,9 +196,9 @@ public sealed class CounterSelectionTests : IDisposable
     [Fact]
     public void A_cash_sale_uses_the_counters_cash_mode_and_rounding_and_names_the_counter()
     {
-        f.LogInWithOpenShift(CounterOne);
+        f.LogInWithOpenShift(TestCounter);
         var sale = NewSale();
-        sale.Scan("111");                                              // 6.79; Counter 1 does not round cash
+        sale.Scan("111");                                              // 6.79; Test Counter does not round cash
 
         var pay = new PaymentViewModel(f.Ctx, f.Session, sale, TenderKind.Cash);
         pay.QuickCashCommand.Execute(10m);
@@ -164,7 +210,8 @@ public sealed class CounterSelectionTests : IDisposable
         Assert.Equal(new[] { new ReceiptPayment("Cash Counter 1", 10m) }, receipt.Payments);
         Assert.False(receipt.UsesErpRoundedTotal);
         Assert.Equal(0m, receipt.RoundedTotal);
-        Assert.Equal("Counter 1", receipt.CounterName);
+        Assert.Equal("Test Counter", receipt.CounterName);
+        Assert.Equal(("Test Counter", "Test Stores - AAML", true), (receipt.PosProfile, receipt.Warehouse, receipt.DisableRoundedTotal));
     }
 
     [Fact]
@@ -187,7 +234,7 @@ public sealed class CounterSelectionTests : IDisposable
     [Fact]
     public void A_cash_refund_uses_the_counters_cash_mode()
     {
-        f.LogInWithOpenShift(CounterOne);
+        f.LogInWithOpenShift(TestCounter);
         var sale = NewSale();
         sale.Scan("111");
         var pay = new PaymentViewModel(f.Ctx, f.Session, sale, TenderKind.Card);
@@ -204,13 +251,14 @@ public sealed class CounterSelectionTests : IDisposable
 
         var credit = f.Ctx.Receipts.ListPending(10).Single(r => r.Kind == ReceiptKind.Return);
         Assert.Equal(new[] { new ReceiptPayment("Cash Counter 1", -6.79m) }, credit.Payments);
-        Assert.Equal("Counter 1", credit.CounterName);
+        Assert.Equal("Test Counter", credit.CounterName);
+        Assert.Equal(("Test Counter", "Test Stores - AAML", true), (credit.PosProfile, credit.Warehouse, credit.DisableRoundedTotal));
     }
 
     [Fact]
     public void Closing_the_shift_expects_cash_in_the_counters_cash_mode()
     {
-        f.LogInWithOpenShift(CounterOne);
+        f.LogInWithOpenShift(TestCounter);
         var sale = NewSale();
         sale.Scan("111");
         var pay = new PaymentViewModel(f.Ctx, f.Session, sale, TenderKind.Cash);
@@ -230,13 +278,47 @@ public sealed class CounterSelectionTests : IDisposable
     [Fact]
     public void Price_check_prices_at_the_shifts_counter()
     {
-        f.LogInWithOpenShift(CounterOne);
+        f.LogInWithOpenShift(TestCounter);
         PriceCheckViewModel? seen = null;
         f.Dialogs.OnPriceCheck = vm => { seen = vm; vm.ScanText = "111"; vm.ScanEnteredCommand.Execute(null); return null; };
 
         NewSale().PriceCheck();
 
         Assert.True(seen!.HasResult, seen.Message);
+    }
+
+    [Fact]
+    public async Task Editing_the_counter_mid_shift_changes_nothing_for_the_open_shift()
+    {
+        f.LogInWithOpenShift(TestCounter);                                // float 200 in "Cash Counter 1"
+        // The supervisor changes the counter in the settings; the till restarts with the new counters.
+        var edited = f.Ctx with { Counters = [CounterTwo, TestCounter with { Label = "Renamed", CashMode = "Cash Counter X", CardMode = "Card X" }] };
+        f.Session.Counter = edited.CounterOf(f.Session);
+        var gate = new SupervisorGate(edited, f.Session);
+        var sale = new SaleViewModel(edited, f.Session, gate, (s, kind) => new PaymentViewModel(edited, f.Session, s, kind), () => "login");
+        sale.Scan("111");
+        var pay = new PaymentViewModel(edited, f.Session, sale, TenderKind.Cash);
+        pay.QuickCashCommand.Execute(10m);
+        pay.CompleteCommand.Execute(null);
+        sale.Scan("111");
+        new PaymentViewModel(edited, f.Session, sale, TenderKind.Card).CompleteCommand.Execute(null);
+
+        var bills = f.Ctx.Receipts.ListPending(10);
+        Assert.Contains(bills, b => b.Payments.SequenceEqual([new ReceiptPayment("Cash Counter 1", 10m)]));
+        Assert.Contains(bills, b => b.Payments.Single().ModeOfPayment == "Credit Card");
+        Assert.All(bills, b => Assert.Equal("Test Counter", b.CounterName));
+
+        sale.CloseShift();
+        var close = Assert.IsType<CloseShiftViewModel>(f.Navigator.Current);
+        close.UseTotalInstead.Text = "206.79";
+        close.CardTotal.Text = "6.79";
+        close.ConfirmCount();
+        Assert.Equal(0m, close.CashDifference);
+        await close.CloseAsync();
+
+        var (opening, closing, _, _, _) = Assert.Single(f.Output.ShiftReports);
+        Assert.Equal(("Test Counter", "Cash Counter 1"), (opening.CounterName, opening.CashMode));
+        Assert.Equal(["Cash Counter 1", "Credit Card"], closing.Modes.Select(m => m.ModeOfPayment));
     }
 
     // ---- Header ----
@@ -249,9 +331,9 @@ public sealed class CounterSelectionTests : IDisposable
         ((INotifyPropertyChanged)shell).PropertyChanged += (_, e) => changed.Add(e.PropertyName);
         Assert.Equal("Till 2", shell.TillHeader);
 
-        shell.Session.Counter = CounterOne;
+        shell.Session.Counter = TestCounter;
 
-        Assert.Equal("Till 2 · Counter 1", shell.TillHeader);
+        Assert.Equal("Till 2 · Test Counter", shell.TillHeader);
         Assert.Contains(nameof(ShellViewModel.TillHeader), changed);
 
         shell.Session.Shift = null;      // closing the shift forgets the counter

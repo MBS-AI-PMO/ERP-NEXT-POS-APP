@@ -28,6 +28,8 @@ The till keeps the settings it already has in C:\ProgramData\TillPOS.
 To start with this version's settings (and the sample QR code), close
 TillPOS, delete C:\ProgramData\TillPOS\settings.json, then start it again.
 The setup screen then opens again.
+A PC that already has settings gets this version's counters by itself (you
+do not need to delete settings.json for them).
 
 FIRST-TIME SETUP
 The setup screen opens by itself the first time.
@@ -46,8 +48,12 @@ COUNTERS
 When you open a shift, first press the counter you are working at, then
 count the cash in its drawer. The counter stays with the shift until the
 shift is closed; the top bar shows it next to the till number.
-A counter marked "Not available" could not be downloaded from ERPNext
-(for example the test login cannot read it); choose another counter.
+A counter marked "Not available" cannot be used on this till: its settings
+could not be downloaded from ERPNext (for example the test login cannot
+read it), or it uses a different price list or company. Choose another one.
+At "Test Counter" cash is not rounded to 0.25 (its ERPNext profile turns
+rounding off), so amounts can show three decimals, for example 9.875.
+At "Counter 1" cash is rounded to 0.25 as usual.
 The counters are set up on the setup screen (Settings on the Login screen).
 
 KEYS

@@ -103,7 +103,8 @@ public class TillSettingsTests
     public void Removing_every_counter_row_keeps_the_single_profile()
     {
         var saved = Single with { Counters = [new CounterSettings("X", "", "Cash X", "Card")] };
-        Assert.Null(saved.WithCounters([]).Counters);
+        Assert.Empty(saved.WithCounters([]).Counters!);
+        Assert.Equal("Test Counter", Assert.Single(saved.WithCounters([]).EffectiveCounters()).PosProfile);
         Assert.Equal("Test Counter", saved.WithCounters([]).PosProfile);
     }
 
@@ -120,4 +121,16 @@ public class TillSettingsTests
             new CounterSettings("Al Ain Counter 1", "A", "Cash 1", ""),
             new CounterSettings("al ain counter 1", "B", "Cash 2", ""),
         ]));
+
+    [Fact]
+    public void An_added_row_with_only_its_prefilled_card_mode_counts_as_empty()
+    {
+        var rows = new[]
+        {
+            new CounterSettings("Al Ain Counter 1", "Counter 1", "Cash Counter 1", "Credit Card"),
+            new CounterSettings("", "", "", "Credit Card"),
+        };
+        Assert.Null(TillSettings.CounterProblem(rows));
+        Assert.Single(Single.WithCounters(rows).Counters!);
+    }
 }

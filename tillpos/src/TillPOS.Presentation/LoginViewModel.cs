@@ -72,6 +72,30 @@ public sealed class LoginViewModel : ObservableObject
         }
     }
 
+    /// <summary>A shift opened before counters existed (blank Counter) is saved once with the counter it belongs to (the
+    /// default counter, with the cash mode its float was counted in), so it no longer depends on the settings. A failure only
+    /// means the shift keeps working it out each time.</summary>
+    private ShiftOpening? BackfillCounter(ShiftOpening? shift)
+    {
+        if (shift is null || !string.IsNullOrWhiteSpace(shift.Counter)) return shift;
+        var counter = CounterSettings.ForShift(ctx.Counters, shift);
+        var filled = shift with
+        {
+            Counter = counter.PosProfile,
+            CounterName = counter.DisplayName,
+            CashMode = counter.CashMode,
+            CardMode = counter.CardMode,
+        };
+        try
+        {
+            return ctx.Shifts.UpdateOpening(filled) ? filled : shift;
+        }
+        catch (Exception)
+        {
+            return shift;
+        }
+    }
+
     public void Login()
     {
         var typed = Pin;
@@ -93,7 +117,7 @@ public sealed class LoginViewModel : ObservableObject
         ctx.LoginLimiter.Succeeded();
         Message = "";
         session.Cashier = cashier;
-        session.Shift = ctx.Shifts.Current();
+        session.Shift = BackfillCounter(ctx.Shifts.Current());
         session.Counter = session.Shift is null ? null : ctx.CounterOf(session);
         ctx.Navigator.Show(session.Shift is null ? new OpenShiftViewModel(ctx, session, newSale) : newSale());
     }

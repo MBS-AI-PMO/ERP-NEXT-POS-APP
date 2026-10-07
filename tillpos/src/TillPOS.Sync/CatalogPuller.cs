@@ -6,11 +6,18 @@ using TillPOS.Sync.Feeds;
 
 namespace TillPOS.Sync;
 
-public sealed record FeedResult(string Feed, int Rows, TimeSpan Duration, string? Error);
+/// <summary>One feed's outcome. Error makes the pull not Ok; Note (e.g. a skipped counter) is information only.</summary>
+public sealed record FeedResult(string Feed, int Rows, TimeSpan Duration, string? Error)
+{
+    public string? Note { get; init; }
+}
 
 public sealed record PullReport(IReadOnlyList<FeedResult> Feeds)
 {
     public bool Ok => Feeds.All(f => f.Error is null);
+
+    /// <summary>The feeds' notes (information that does not fail the pull), e.g. a counter that could not be read.</summary>
+    public IReadOnlyList<string> Notes => Feeds.Select(f => f.Note).OfType<string>().ToList();
 }
 
 /// <summary>Download progress for the first-start screen. Step is 1-based (of Steps); Rows counts the current feed's rows so far;
@@ -51,7 +58,10 @@ public sealed class CatalogPuller(IReadOnlyList<ISyncFeed> feeds, Action afterPu
                 FeedResult result;
                 try
                 {
-                    result = new FeedResult(feed.Name, await feed.RunAsync(ct), sw.Elapsed, null);
+                    result = new FeedResult(feed.Name, await feed.RunAsync(ct), sw.Elapsed, null)
+                    {
+                        Note = (feed as INotingFeed)?.LastNote,
+                    };
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
                 {

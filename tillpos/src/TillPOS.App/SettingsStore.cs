@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using TillPOS.Core.Shifts;
 
 namespace TillPOS.App;
 
@@ -52,7 +53,14 @@ public static partial class SettingsStore
             // till has no secret at all, never over a working one.
             else if (!HasPlainSecret(settings) && string.IsNullOrEmpty(settings.ApiSecretProtected) && EmbeddedPlainSecret(embedded) is { } builtIn)
                 settings = settings with { ApiSecret = builtIn };
-            if (HasPlainSecret(settings))
+            // Counters arrived with 0.3.6: a till whose settings have none takes the package's (beside the exe, else built in),
+            // so an upgraded PC gets them without deleting its settings. Counters it already has are never replaced, and an
+            // empty list (every counter removed on the setup screen) stays empty.
+            var adoptCounters = settings.Counters is null
+                ? PackagedCounters(besideExePath, programDataPath) ?? EmbeddedCounters(embedded)
+                : null;
+            if (adoptCounters is not null) settings = settings with { Counters = adoptCounters };
+            if (HasPlainSecret(settings) || adoptCounters is not null)
             {
                 settings = ProtectSecret(settings, protect);
                 Save(settings, programDataPath);
@@ -140,6 +148,33 @@ public static partial class SettingsStore
             if (!File.Exists(besideExePath) || IsSameFile(besideExePath, programDataPath)) return null;
             var packaged = Load(besideExePath);
             return HasPlainSecret(packaged) ? packaged.ApiSecret : null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>The packaged file's counters, if it is a different file and has some (unreadable = none).</summary>
+    private static IReadOnlyList<CounterSettings>? PackagedCounters(string besideExePath, string programDataPath)
+    {
+        try
+        {
+            if (!File.Exists(besideExePath) || IsSameFile(besideExePath, programDataPath)) return null;
+            return Load(besideExePath).Counters is { Count: > 0 } counters ? counters : null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>The built-in settings' counters, if any (unreadable = none).</summary>
+    private static IReadOnlyList<CounterSettings>? EmbeddedCounters(Func<string?> embedded)
+    {
+        try
+        {
+            return embedded() is { } json && Parse(json, BuiltInName).Counters is { Count: > 0 } counters ? counters : null;
         }
         catch (Exception)
         {

@@ -29,8 +29,15 @@ public sealed class PresentationFixture : IDisposable
     /// <summary>The default counter (the fixture's usual one): rounded cash, "Cash Counter 2".</summary>
     public static readonly CounterSettings CounterTwo = new("Al Ain Counter 2", "Counter 2", "Cash Counter 2", "Credit Card");
 
-    /// <summary>A second counter whose POS Profile disables the rounded total (like the live "Test Counter"): exact cash.</summary>
-    public static readonly CounterSettings CounterOne = new("Al Ain Counter 1", "Counter 1", "Cash Counter 1", "Credit Card");
+    /// <summary>A second counter like the live "Test Counter": its POS Profile disables the rounded total, so cash is exact (the
+    /// live "Al Ain Counter 1/2" round cash to 0.25, like <see cref="CounterTwo"/>). Its own cash mode tells the counters apart.</summary>
+    public static readonly CounterSettings TestCounter = new("Test Counter", "Test Counter", "Cash Counter 1", "Credit Card");
+
+    /// <summary>A counter whose POS Profile sells from another price list (prices are synced for the default one only).</summary>
+    public static readonly CounterSettings WholesaleCounter = new("Wholesale Counter", "Wholesale", "Cash Wholesale", "Credit Card");
+
+    /// <summary>Profiles whose POS settings the fake "has not downloaded" (tests add to it).</summary>
+    public HashSet<string> NotDownloaded { get; } = [];
 
     /// <summary>A configured counter whose POS settings were never downloaded.</summary>
     public static readonly CounterSettings CounterNine = new("Al Ain Counter 9", "Counter 9", "Cash Counter 9", "Credit Card");
@@ -46,13 +53,20 @@ public sealed class PresentationFixture : IDisposable
 
         var db = Temp.Db;
         Ctx = new TillContext(
-            2, [CounterTwo, CounterOne],
-            profile => profile switch
+            2, [CounterTwo, TestCounter],
+            profile => NotDownloaded.Contains(profile)
+                ? throw new InvalidOperationException($"{profile} is not downloaded.")
+                : profile switch
             {
                 "Al Ain Counter 2" => new SaleContext(Catalog, new MoneySettings(3, RoundingMethod.Bankers, 0.25m), "Standard Selling",
-                    "Stores - AAML", null, Vat, () => new DateOnly(2026, 10, 7)),
-                "Al Ain Counter 1" => new SaleContext(Catalog, new MoneySettings(3, RoundingMethod.Bankers, 0.25m, DisableRoundedTotal: true),
-                    "Standard Selling", "Counter 1 Stores - AAML", null, Vat, () => new DateOnly(2026, 10, 7)),
+                    "Stores - AAML", null, Vat, () => new DateOnly(2026, 10, 7))
+                    { PosProfile = "Al Ain Counter 2", Company = "Al Ain Marketing LLC" },
+                "Test Counter" => new SaleContext(Catalog, new MoneySettings(3, RoundingMethod.Bankers, 0.25m, DisableRoundedTotal: true),
+                    "Standard Selling", "Test Stores - AAML", null, Vat, () => new DateOnly(2026, 10, 7))
+                    { PosProfile = "Test Counter", Company = "Al Ain Marketing LLC" },
+                "Wholesale Counter" => new SaleContext(Catalog, new MoneySettings(3, RoundingMethod.Bankers, 0.25m), "Wholesale",
+                    "Stores - AAML", null, Vat, () => new DateOnly(2026, 10, 7))
+                    { PosProfile = "Wholesale Counter", Company = "Al Ain Marketing LLC" },
                 _ => throw new InvalidOperationException($"The POS settings of {profile} are not downloaded yet."),
             },
             text => Catalog.Items.Where(i => i.ItemName.Contains(text, StringComparison.OrdinalIgnoreCase)).ToList(),
@@ -67,7 +81,12 @@ public sealed class PresentationFixture : IDisposable
         counter ??= CounterTwo;
         Session.Cashier = Simran;
         var shift = new ShiftOpening("TILL2-SHIFT-20261007080000", "simran", counter.PosProfile, Clock.Now.AddHours(-2),
-            [new ReceiptPayment(counter.CashMode, 200m)]) { CounterName = counter.DisplayName };
+            [new ReceiptPayment(counter.CashMode, 200m)])
+        {
+            CounterName = counter.DisplayName,
+            CashMode = counter.CashMode,
+            CardMode = counter.CardMode,
+        };
         Ctx.Shifts.Open(shift);
         Session.Shift = shift;
         Session.Counter = counter;

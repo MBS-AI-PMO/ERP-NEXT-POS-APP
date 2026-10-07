@@ -52,6 +52,14 @@ public sealed record Receipt(
     public string? Reason { get; init; }
     /// <summary>The counter (its label) the bill was taken at, printed under the till; null on bills from before counters.</summary>
     public string? CounterName { get; init; }
+
+    /// <summary>The POS Profile, warehouse and "Disable Rounded Total" in force when the bill was taken (the upload sends
+    /// these); null on bills from before they were saved, which then use the shift's counter.</summary>
+    public string? PosProfile { get; init; }
+
+    public string? Warehouse { get; init; }
+
+    public bool? DisableRoundedTotal { get; init; }
 }
 
 /// <summary>The POS Profile payment modes the till uses for cash and card.</summary>

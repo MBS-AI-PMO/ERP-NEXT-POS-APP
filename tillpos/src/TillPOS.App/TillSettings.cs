@@ -69,9 +69,9 @@ public sealed record TillSettings(
         return counters.Count > 0 ? counters : [new CounterSettings((PosProfile ?? "").Trim(), "", CashMode ?? "", CardMode ?? "")];
     }
 
-    /// <summary>Why counter rows from the setup screen cannot be saved, or null. Empty rows are ignored; each other row needs
-    /// its POS Profile and cash mode (the card mode may stay blank: it is then the till's CardMode), and a profile can be only
-    /// one counter.</summary>
+    /// <summary>Why counter rows from the setup screen cannot be saved, or null. Empty rows (also one with only a card mode)
+    /// are ignored; each other row needs its POS Profile and cash mode (the card mode may stay blank: it is then the till's
+    /// CardMode), and a profile can be only one counter.</summary>
     public static string? CounterProblem(IReadOnlyList<CounterSettings> rows)
     {
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -86,12 +86,12 @@ public sealed record TillSettings(
     }
 
     /// <summary>These settings with the counters from the setup screen (see <see cref="CounterProblem"/>). The first counter
-    /// also becomes PosProfile / CashMode (and CardMode when set), so the single-profile settings stay meaningful; with no
-    /// rows, Counters is removed and the single profile is the only counter again.</summary>
+    /// also becomes PosProfile / CashMode (and CardMode when set), so the single-profile settings stay meaningful. With no
+    /// rows, Counters is an empty list (a package never adds counters back to it) and the single profile is the only counter.</summary>
     public TillSettings WithCounters(IReadOnlyList<CounterSettings> rows)
     {
         var counters = Cleaned(rows).ToList();
-        if (counters.Count == 0) return this with { Counters = null };
+        if (counters.Count == 0) return this with { Counters = [] };
         var first = counters[0];
         return this with
         {
@@ -106,7 +106,8 @@ public sealed record TillSettings(
         rows.Where(r => r is not null)
             .Select(r => new CounterSettings((r.PosProfile ?? "").Trim(), (r.Label ?? "").Trim(), (r.CashMode ?? "").Trim(),
                 (r.CardMode ?? "").Trim()))
-            .Where(r => r.PosProfile.Length > 0 || r.Label.Length > 0 || r.CashMode.Length > 0 || r.CardMode.Length > 0);
+            // A row with only the card mode is an untouched "Add counter" row (it comes pre-filled with the card mode).
+            .Where(r => r.PosProfile.Length > 0 || r.Label.Length > 0 || r.CashMode.Length > 0);
 
     private static string OrDefault(string? value, string? fallback) =>
         !string.IsNullOrWhiteSpace(value) ? value.Trim() : (fallback ?? "").Trim();

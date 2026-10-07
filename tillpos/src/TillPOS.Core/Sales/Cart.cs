@@ -22,11 +22,21 @@ public sealed record SaleContext(
         if (settings.TaxesAndCharges is { } name)
             template = findSalesTaxTemplate(name)
                 ?? throw new UnsupportedTaxSetupException($"sales tax template '{name}' is not in the local catalog");
-        return new SaleContext(catalog, money, settings.PriceList, settings.Warehouse, settings.TaxCategory, template, today);
+        return new SaleContext(catalog, money, settings.PriceList, settings.Warehouse, settings.TaxCategory, template, today)
+        {
+            PosProfile = settings.PosProfile,
+            Company = settings.Company,
+        };
     }
 
     /// <summary>Units whose scale-label value is grams (quantity = value ÷ 1000); any other unit reads the value as a piece count.</summary>
     public IReadOnlySet<string> WeightUoms { get; init; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Kg" };
+
+    /// <summary>The POS Profile these settings came from (saved on each bill for the upload); null when not built from one.</summary>
+    public string? PosProfile { get; init; }
+
+    /// <summary>The POS Profile's company; null when not built from one.</summary>
+    public string? Company { get; init; }
 }
 
 public sealed class CartLine
@@ -76,6 +86,9 @@ public sealed class Cart(SaleContext ctx)
     private readonly PricingRuleSelector rules = new(ctx.Catalog, ctx.Money, ctx.PriceList, ctx.Warehouse);
     private readonly ItemTaxResolver itemTaxes = new(ctx.Catalog, ctx.TaxCategory);
     private readonly TaxCalculator taxes = new(ctx.Money, ctx.Catalog.FindItemTaxTemplate);
+
+    /// <summary>The counter settings the cart prices with.</summary>
+    public SaleContext Context => ctx;
 
     public IReadOnlyList<CartLine> Lines => lines;
 

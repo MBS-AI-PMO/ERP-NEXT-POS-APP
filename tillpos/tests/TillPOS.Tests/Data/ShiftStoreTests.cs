@@ -71,4 +71,18 @@ public sealed class ShiftStoreTests : IDisposable
         Assert.Equal("OLD", current.ClientId);
         Assert.Equal("", current.Counter);
     }
+
+    [Fact]
+    public void Only_an_open_shifts_opening_can_be_updated()
+    {
+        var opening = new ShiftOpening("A", "c", "", At, [new ReceiptPayment("Cash Counter 2", 100m)]);
+        store.Open(opening);
+
+        Assert.True(store.UpdateOpening(opening with { Counter = "Al Ain Counter 2", CashMode = "Cash Counter 2" }));
+        Assert.Equal(("Al Ain Counter 2", "Cash Counter 2"), (store.Current()!.Counter, store.Current()!.CashMode));
+
+        store.Close(new ShiftClosing("A", At.AddHours(1), [], 0, 0, 0m, 0m, 0m));
+        Assert.False(store.UpdateOpening(opening with { Counter = "X" }));
+        Assert.Equal("Al Ain Counter 2", store.Get("A")!.Value.Opening.Counter);
+    }
 }

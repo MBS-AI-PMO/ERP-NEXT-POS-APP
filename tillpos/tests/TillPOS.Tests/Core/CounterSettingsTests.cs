@@ -31,11 +31,36 @@ public class CounterSettingsTests
 
     [Fact]
     public void A_shift_without_a_counter_belongs_to_the_default_counter() =>
-        Assert.Same(One, CounterSettings.ForShift(Both, new ShiftOpening("S", "c", "", At, [])));
+        Assert.Equal(One, CounterSettings.ForShift(Both, new ShiftOpening("S", "c", "", At, [])));
 
     [Fact]
     public void A_shift_belongs_to_its_counter() =>
-        Assert.Same(Two, CounterSettings.ForShift(Both, new ShiftOpening("S", "c", "Al Ain Counter 2", At, [])));
+        Assert.Equal(Two, CounterSettings.ForShift(Both, new ShiftOpening("S", "c", "Al Ain Counter 2", At, [])));
+
+    [Fact]
+    public void The_shifts_saved_label_and_modes_win_over_the_settings()
+    {
+        var shift = new ShiftOpening("S", "c", "Al Ain Counter 2", At, [new ReceiptPayment("Cash Counter 2", 100m)])
+            { CounterName = "Old name", CashMode = "Old cash", CardMode = "Old card" };
+        Assert.Equal(new CounterSettings("Al Ain Counter 2", "Old name", "Old cash", "Old card"), CounterSettings.ForShift(Both, shift));
+    }
+
+    [Fact]
+    public void Without_saved_modes_the_float_names_the_cash_mode()
+    {
+        var shift = new ShiftOpening("S", "c", "Al Ain Counter 2", At, [new ReceiptPayment("Cash Counter 2 Old", 100m)]);
+        Assert.Equal(new CounterSettings("Al Ain Counter 2", "Counter 2", "Cash Counter 2 Old", "Credit Card"), CounterSettings.ForShift(Both, shift));
+    }
+
+    [Fact]
+    public void Shift_json_without_saved_modes_reads_them_as_blank()
+    {
+        var json = """{"ClientId":"S1","Cashier":"c","Counter":"X","CounterName":null,"CashMode":null,"OpenedAt":"2026-10-07T08:00:00+04:00","OpeningAmounts":[]}""";
+        var shift = JsonSerializer.Deserialize<ShiftOpening>(json)!;
+        Assert.Equal(("", ""), (shift.CashMode, shift.CardMode));
+        var back = JsonSerializer.Deserialize<ShiftOpening>(JsonSerializer.Serialize(shift with { CashMode = "C", CardMode = "D" }))!;
+        Assert.Equal(("C", "D"), (back.CashMode, back.CardMode));
+    }
 
     [Fact]
     public void A_shift_at_a_counter_no_longer_configured_keeps_its_profile_and_opening_cash_mode()

@@ -7,13 +7,16 @@ namespace TillPOS.Sync.Feeds;
 /// the Company and Currency are read once per pull). Each counter is stored under its own key; the default counter also under
 /// the default key. A failure on the default counter fails the feed; another counter that cannot be read (deleted, or not
 /// readable by this till's ERPNext user) is skipped and keeps whatever was downloaded before — with nothing downloaded, the
-/// Open Shift screen shows it as unavailable.</summary>
-public sealed class PosProfileFeed(SyncContext ctx) : ISyncFeed
+/// Open Shift screen shows it as unavailable. Skipped counters are named in <see cref="LastNote"/> (the pull stays Ok).</summary>
+public sealed class PosProfileFeed(SyncContext ctx) : ISyncFeed, INotingFeed
 {
     public string Name => "POS Profile";
 
+    public string? LastNote { get; private set; }
+
     public async Task<int> RunAsync(CancellationToken ct)
     {
+        LastNote = null;
         var docs = new Dictionary<(string, string), JsonElement>();
         async Task<JsonElement> Get(string doctype, string name)
         {
@@ -22,6 +25,7 @@ public sealed class PosProfileFeed(SyncContext ctx) : ISyncFeed
         }
 
         var stored = 0;
+        var skipped = new List<string>();
         foreach (var name in ctx.AllProfiles())
         {
             var isDefault = string.Equals(name, ctx.PosProfile.Trim(), StringComparison.OrdinalIgnoreCase);
@@ -36,11 +40,12 @@ public sealed class PosProfileFeed(SyncContext ctx) : ISyncFeed
                 if (isDefault) ctx.Store.SavePosSettings(settings);
                 stored++;
             }
-            catch (Exception) when (!isDefault && !ct.IsCancellationRequested)
+            catch (Exception ex) when (!isDefault && !ct.IsCancellationRequested)
             {
-                // Another counter: skipped (see the summary).
+                skipped.Add($"{name} ({ex.Message})");
             }
         }
+        if (skipped.Count > 0) LastNote = "Counter(s) not readable, skipped: " + string.Join("; ", skipped);
         return stored;
     }
 }

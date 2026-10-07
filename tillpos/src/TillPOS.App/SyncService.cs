@@ -42,6 +42,7 @@ public sealed class SyncService(Func<CatalogPuller> newPuller, IErpClient erp, U
         {
             var online = false;
             string? status = "Offline";
+            string? notes = null;
             UploadReport? upload = null;
             try
             {
@@ -52,8 +53,10 @@ public sealed class SyncService(Func<CatalogPuller> newPuller, IErpClient erp, U
                 {
                     status = "Sync error";
                     var report = await newPuller().RunAsync(ct);
+                    var noted = report.Notes;
+                    notes = noted.Count == 0 ? "" : string.Join(Environment.NewLine, noted);
                     status = report.Ok
-                        ? $"Online · synced {DateTime.Now.ToString("HH:mm", CultureInfo.InvariantCulture)}"
+                        ? $"Online · synced {DateTime.Now.ToString("HH:mm", CultureInfo.InvariantCulture)}" + (noted.Count > 0 ? $" · {noted.Count} note(s)" : "")
                         : $"Online · {report.Feeds.Count(f => f.Error is not null)} sync problem(s)";
                 }
                 upload = await uploader.RunOnceAsync(ct);
@@ -71,6 +74,7 @@ public sealed class SyncService(Func<CatalogPuller> newPuller, IErpClient erp, U
             {
                 shell.Online = online;
                 if (status is not null) shell.SyncStatus = status;
+                if (notes is not null) shell.SyncNotes = notes.Length == 0 ? null : notes;
                 shell.PendingUploads = upload.Waiting;
                 shell.FailedUploads = upload.Failed;
                 shell.UploadProblems = upload.Problems;

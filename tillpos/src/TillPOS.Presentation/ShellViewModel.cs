@@ -10,6 +10,7 @@ public sealed class ShellViewModel : ObservableObject, INavigator
     private string shopName = "";
     private string tillName = "";
     private string syncStatus = "Starting…";
+    private string? syncNotes;
     private bool online;
     private int pendingUploads;
     private string clock = "";
@@ -44,6 +45,10 @@ public sealed class ShellViewModel : ObservableObject, INavigator
     public string TillHeader => CounterName.Length == 0 ? TillName : $"{TillName} · {CounterName}";
 
     public string SyncStatus { get => syncStatus; set => SetProperty(ref syncStatus, value); }
+
+    /// <summary>Notes of the last catalog pull that did not fail it (e.g. a counter that could not be read), one per line, or
+    /// null: the sync status' tooltip.</summary>
+    public string? SyncNotes { get => syncNotes; set => SetProperty(ref syncNotes, value); }
     public bool Online { get => online; set => SetProperty(ref online, value); }
     /// <summary>Documents waiting for upload (bills, shift documents, approvals): the header's "N waiting".</summary>
     public int PendingUploads { get => pendingUploads; set => SetProperty(ref pendingUploads, value); }

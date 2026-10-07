@@ -32,6 +32,15 @@ public sealed class ShiftStore(TillDb db)
             r => JsonSerializer.Deserialize<ShiftOpening>(r.GetString(0))!).FirstOrDefault();
     }
 
+    /// <summary>Rewrites the opening of a shift that is still open (e.g. to save the counter on a shift opened before counters
+    /// existed). Its client id, time and float must not change. Returns false when the shift is not open.</summary>
+    public bool UpdateOpening(ShiftOpening opening)
+    {
+        using var c = db.Open();
+        return c.Exec(null, "UPDATE shift SET opening_json = @j WHERE client_id = @id AND closed_at IS NULL",
+            ("@id", opening.ClientId), ("@j", JsonSerializer.Serialize(opening))) > 0;
+    }
+
     public void Close(ShiftClosing closing)
     {
         using (var c = db.Open())

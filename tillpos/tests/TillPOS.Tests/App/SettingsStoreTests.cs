@@ -247,4 +247,48 @@ public sealed class SettingsStoreTests : IDisposable
         Assert.Equal("Live", JsonDocument.Parse(File.ReadAllText(programData)).RootElement.GetProperty("Upload").GetString());
         Assert.Equal(UploadMode.Live, SettingsStore.Load(programData).Upload);
     }
+
+    private const string PackagedCountersJson = """
+        { "BaseUrl": "https://erp.example", "ApiKey": "k", "PosProfile": "Test Counter", "TillNumber": 1,
+          "Counters": [
+            { "PosProfile": "Test Counter", "Label": "Test Counter", "CashMode": "Cash Counter 2", "CardMode": "Credit Card" },
+            { "PosProfile": "Al Ain Counter 1", "Label": "Counter 1", "CashMode": "Cash Counter 1", "CardMode": "Credit Card" }
+          ] }
+        """;
+
+    private const string OldTillJson =
+        """{ "BaseUrl": "https://erp.example", "ApiKey": "k", "ApiSecretProtected": "P(x)", "PosProfile": "Test Counter", "TillNumber": 3, "PrinterName": "EPSON" }""";
+
+    [Fact]
+    public void An_upgraded_till_without_counters_adopts_the_packaged_ones_and_keeps_its_own_settings()
+    {
+        Write(programData, OldTillJson);
+        Write(besideExe, PackagedCountersJson);
+
+        var settings = Resolve()!;
+
+        Assert.Equal(["Test Counter", "Al Ain Counter 1"], settings.Counters!.Select(c => c.PosProfile));
+        Assert.Equal((3, "EPSON", "P(x)"), (settings.TillNumber, settings.PrinterName, settings.ApiSecretProtected));
+        Assert.Equal(2, SettingsStore.Load(programData).Counters!.Count);             // saved, so it happens once
+    }
+
+    [Fact]
+    public void An_upgraded_till_adopts_the_built_in_counters_when_there_is_no_packaged_file()
+    {
+        Write(programData, OldTillJson);
+        embedded = PackagedCountersJson;
+
+        Assert.Equal(2, Resolve()!.Counters!.Count);
+    }
+
+    [Fact]
+    public void Counters_the_till_has_or_removed_are_never_replaced_by_the_package()
+    {
+        Write(besideExe, PackagedCountersJson);
+        Write(programData, OldTillJson.Replace("\"TillNumber\": 3", "\"TillNumber\": 3, \"Counters\": [ { \"PosProfile\": \"Al Ain Counter 2\", \"CashMode\": \"Cash Counter 2\" } ]"));
+        Assert.Equal("Al Ain Counter 2", Assert.Single(Resolve()!.Counters!).PosProfile);
+
+        Write(programData, OldTillJson.Replace("\"TillNumber\": 3", "\"TillNumber\": 3, \"Counters\": []"));
+        Assert.Empty(Resolve()!.Counters!);
+    }
 }

@@ -20,15 +20,22 @@ public sealed record CounterSettings(string PosProfile, string Label = "", strin
             ? null
             : counters.FirstOrDefault(c => string.Equals(c.PosProfile, profile.Trim(), StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>The counter a shift was opened at. A shift saved before counters existed (blank) belongs to the default
-    /// (first) counter. A counter removed from the settings while its shift is open keeps its profile, label and the cash
-    /// mode its float was counted in, so the drawer still balances; the card mode is the default counter's.</summary>
+    /// <summary>The counter a shift was opened at, as it was then: what the shift saved wins over the settings, so editing or
+    /// removing a counter while its shift is open changes nothing for that shift (the drawer still balances).
+    /// Profile: the shift's (a blank one, saved before counters existed, is the default counter's). Label: the shift's
+    /// CounterName, else the configured one. Cash mode: the shift's, else the mode its float was counted in, else the
+    /// configured one. Card mode: the shift's, else the configured one (the default counter's for an unknown counter).</summary>
     public static CounterSettings ForShift(IReadOnlyList<CounterSettings> counters, ShiftOpening shift)
     {
         if (counters.Count == 0) throw new ArgumentException("No counter is configured.", nameof(counters));
-        if (string.IsNullOrWhiteSpace(shift.Counter)) return counters[0];
-        return Find(counters, shift.Counter)
-            ?? new CounterSettings(shift.Counter, shift.CounterName ?? shift.Counter,
-                shift.OpeningAmounts.FirstOrDefault()?.ModeOfPayment ?? counters[0].CashMode, counters[0].CardMode);
+        var configured = string.IsNullOrWhiteSpace(shift.Counter) ? counters[0] : Find(counters, shift.Counter);
+        return new CounterSettings(
+            configured?.PosProfile ?? shift.Counter.Trim(),
+            NonBlank(shift.CounterName) ?? configured?.Label ?? shift.Counter.Trim(),
+            NonBlank(shift.CashMode) ?? NonBlank(shift.OpeningAmounts.FirstOrDefault()?.ModeOfPayment)
+                ?? configured?.CashMode ?? counters[0].CashMode,
+            NonBlank(shift.CardMode) ?? configured?.CardMode ?? counters[0].CardMode);
     }
+
+    private static string? NonBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

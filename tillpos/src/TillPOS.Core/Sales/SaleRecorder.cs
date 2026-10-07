@@ -28,6 +28,9 @@ public sealed class SaleRecorder(IReceiptStore store, int tillNumber, TenderMode
             CashierUser = cashierUser,
             CashierName = cashierName,
             CounterName = counterName,
+            PosProfile = cart.Context.PosProfile,
+            Warehouse = cart.Context.Warehouse,
+            DisableRoundedTotal = cart.Context.Money.DisableRoundedTotal,
         };
         store.Save(receipt);
         cart.Clear();

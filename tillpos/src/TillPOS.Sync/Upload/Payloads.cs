@@ -23,8 +23,9 @@ public static class PosInvoicePayload
     public const string Doctype = "POS Invoice";
 
     /// <param name="r">The receipt.</param>
-    /// <param name="posProfile">The POS Profile of the shift's counter (ShiftOpening.Counter).</param>
-    /// <param name="profile">That profile's synced settings.</param>
+    /// <param name="posProfile">The POS Profile of the shift's counter (ShiftOpening.Counter); the receipt's own PosProfile wins
+    /// when it has one (saved at sale time).</param>
+    /// <param name="profile">That profile's synced settings; the receipt's own Warehouse wins when it has one.</param>
     /// <param name="openingShiftErpName">The ERPNext name of the uploaded POS Opening Shift.</param>
     /// <param name="cashierUser">The cashier's ERPNext user (posa_cashier), if known.</param>
     /// <param name="till">The till's name (custom_till), e.g. "TILL2".</param>
@@ -32,23 +33,26 @@ public static class PosInvoicePayload
     public static InvoicePayload Build(Receipt r, string posProfile, PosSettings profile, string openingShiftErpName, string? cashierUser,
         string till, string? returnAgainstErpName)
     {
+        var posProfileName = string.IsNullOrWhiteSpace(r.PosProfile) ? posProfile : r.PosProfile;
+        var warehouse = string.IsNullOrWhiteSpace(r.Warehouse) ? profile.Warehouse : r.Warehouse;
         var doc = new Dictionary<string, object?>
         {
             ["doctype"] = Doctype,
             ["is_pos"] = 1,
-            ["pos_profile"] = posProfile,
+            ["pos_profile"] = posProfileName,
             ["company"] = profile.Company,
             ["customer"] = profile.Customer,
             ["set_posting_time"] = 1,
             ["posting_date"] = ErpFormat.Date(r.CreatedAt),
             ["posting_time"] = ErpFormat.Time(r.CreatedAt),
             ["selling_price_list"] = profile.PriceList,
-            ["set_warehouse"] = profile.Warehouse,
+            ["set_warehouse"] = warehouse,
             ["ignore_pricing_rule"] = 1,
         };
         if (!string.IsNullOrWhiteSpace(profile.TaxesAndCharges)) doc["taxes_and_charges"] = profile.TaxesAndCharges;
-        doc["disable_rounded_total"] = r.UsesErpRoundedTotal ? 0 : 1;
-        doc["items"] = r.Lines.Select(l => Item(l, profile.Warehouse)).ToList();
+        // A profile that disabled the rounded total at sale time stays disabled; otherwise only cash-only bills use it.
+        doc["disable_rounded_total"] = r.DisableRoundedTotal == true || !r.UsesErpRoundedTotal ? 1 : 0;
+        doc["items"] = r.Lines.Select(l => Item(l, warehouse)).ToList();
         doc["payments"] = r.Payments
             .Select(p => new Dictionary<string, object?> { ["mode_of_payment"] = p.ModeOfPayment, ["amount"] = p.Amount })
             .ToList();

@@ -48,7 +48,9 @@ public sealed class PosProfileFeedTests : IDisposable
     [Fact]
     public async Task Every_counter_gets_its_own_settings()
     {
-        Assert.Equal(2, await new PosProfileFeed(Ctx("Test Counter", "Test Counter", "Al Ain Counter 1")).RunAsync(default));
+        var feed = new PosProfileFeed(Ctx("Test Counter", "Test Counter", "Al Ain Counter 1"));
+        Assert.Equal(2, await feed.RunAsync(default));
+        Assert.Null(feed.LastNote);
 
         Assert.Equal("Test Counter", store.LoadPosSettings()!.PosProfile);
         Assert.True(store.LoadPosSettings("Test Counter")!.DisableRoundedTotal);
@@ -61,7 +63,9 @@ public sealed class PosProfileFeedTests : IDisposable
     [Fact]
     public async Task A_counter_that_cannot_be_read_does_not_fail_the_sync()
     {
-        Assert.Equal(1, await new PosProfileFeed(Ctx("Test Counter", "Test Counter", "Al Ain Counter 9")).RunAsync(default));
+        var feed = new PosProfileFeed(Ctx("Test Counter", "Test Counter", "Al Ain Counter 9"));
+        Assert.Equal(1, await feed.RunAsync(default));
+        Assert.Contains("Al Ain Counter 9", feed.LastNote);
 
         Assert.NotNull(store.LoadPosSettings("Test Counter"));
         Assert.Null(store.LoadPosSettings("Al Ain Counter 9"));
@@ -83,5 +87,17 @@ public sealed class PosProfileFeedTests : IDisposable
     {
         await Assert.ThrowsAsync<ErpException>(() => new PosProfileFeed(Ctx("Al Ain Counter 9", "Test Counter")).RunAsync(default));
         Assert.Null(store.LoadPosSettings());
+    }
+
+    [Fact]
+    public async Task A_skipped_counter_is_a_note_of_the_pull_which_stays_ok()
+    {
+        var report = await CatalogPuller.CreateDefault(Ctx("Test Counter", "Test Counter", "Al Ain Counter 9"), () => { }).RunAsync();
+
+        var feed = report.Feeds.Single(f => f.Feed == "POS Profile");
+        Assert.Null(feed.Error);
+        Assert.Contains("Al Ain Counter 9", feed.Note);
+        Assert.Contains(report.Notes, n => n.Contains("Al Ain Counter 9", StringComparison.Ordinal));
+        Assert.DoesNotContain(report.Feeds, f => f.Feed == "POS Profile" && f.Error is not null);
     }
 }

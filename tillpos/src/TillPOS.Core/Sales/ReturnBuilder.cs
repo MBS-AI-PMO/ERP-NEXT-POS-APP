@@ -133,6 +133,9 @@ public sealed class ReturnBuilder(IReceiptStore store, SaleContext ctx, int till
             CashierName = cashierName,
             Reason = reason,
             CounterName = counterName,
+            PosProfile = ctx.PosProfile,
+            Warehouse = ctx.Warehouse,
+            DisableRoundedTotal = ctx.Money.DisableRoundedTotal,
         };
         store.Save(receipt);
         return receipt;
