@@ -18,4 +18,11 @@ public class TillSettingsTests
         foreach (var hidden in new[] { "key-12345", "PROTECTED-BLOB", "plain-secret", "4821" }) Assert.DoesNotContain(hidden, text);
         Assert.DoesNotContain("4821", new LocalTestCashier("c1", "Test Cashier", "4821", false).ToString());
     }
+
+    [Fact]
+    public void ToString_lists_the_sample_qr_setting_last()
+    {
+        Assert.EndsWith(", SetupDone = False, SampleQr = True }", new TillSettings("https://erp.example", "k", SampleQr: true).ToString());
+        Assert.False(new TillSettings("https://erp.example", "k").SampleQr);
+    }
 }

@@ -16,14 +16,7 @@
                   Focusable="True" FocusVisualStyle="{x:Null}">
       <Border Background="White" BorderBrush="{StaticResource Line}" BorderThickness="1" Padding="14,18" Margin="12,12,12,0"
               HorizontalAlignment="Center">
-        <StackPanel>
-          <StackPanel x:Name="Paper" />
-          <Border x:Name="QrBox" Visibility="Collapsed" Background="#E6E6E6" Width="120" Height="72" Margin="0,12,0,0"
-                  HorizontalAlignment="Center">
-            <TextBlock Text="QR code printed on paper" Foreground="{StaticResource Muted}" FontSize="12" TextWrapping="Wrap"
-                       TextAlignment="Center" VerticalAlignment="Center" Margin="8" />
-          </Border>
-        </StackPanel>
+        <StackPanel x:Name="Paper" />
       </Border>
     </ScrollViewer>
   </DockPanel>

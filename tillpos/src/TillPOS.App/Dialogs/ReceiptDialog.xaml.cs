@@ -1,8 +1,11 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using QRCoder;
 using TillPOS.Presentation;
 using TillPOS.Printing;
 
@@ -13,6 +16,7 @@ namespace TillPOS.App.Dialogs;
 public partial class ReceiptDialog : Window
 {
     private const double PaperFontSize = 12.5;
+    private const double QrSize = 160;
     private static readonly FontFamily Mono = new("Consolas");
 
     // A dialog is its own window, so the main window's scanner watch does not see this input.
@@ -21,14 +25,13 @@ public partial class ReceiptDialog : Window
     private readonly bool hasPrinter;
 
     /// <param name="hasPrinter">False when receipts are saved as files; "Print again" then reports that instead of "Sent to printer".</param>
-    public ReceiptDialog(IReadOnlyList<PrintLine> lines, bool hasQr, string? printError, Func<string?> reprint, bool hasPrinter)
+    public ReceiptDialog(IReadOnlyList<PrintLine> lines, string? printError, Func<string?> reprint, bool hasPrinter)
     {
         InitializeComponent();
         this.reprint = reprint;
         this.hasPrinter = hasPrinter;
         MaxHeight = SystemParameters.WorkArea.Height * 0.9;
-        foreach (var line in lines) Paper.Children.Add(LineBlock(line));
-        if (hasQr) QrBox.Visibility = Visibility.Visible;
+        foreach (var line in lines) Paper.Children.Add(line.Style == LineStyle.Qr ? QrImage(line.Text) : LineBlock(line));
         if (printError is not null) ShowBanner(PrinterProblem(printError), ok: false);
 
         Loaded += (_, _) => Scroller.Focus();
@@ -74,6 +77,40 @@ public partial class ReceiptDialog : Window
                 break;
         }
         return block;
+    }
+
+    /// <summary>The receipt's QR code (the same payload the printer gets), centred, square and with crisp modules.</summary>
+    private static Image QrImage(string payload)
+    {
+        byte[] png;
+        using (var generator = new QRCodeGenerator())
+        using (var data = generator.CreateQrCode(payload, QRCodeGenerator.ECCLevel.M))
+        using (var code = new PngByteQRCode(data))
+        {
+            png = code.GetGraphic(8);
+        }
+
+        var bitmap = new BitmapImage();
+        using (var stream = new MemoryStream(png))
+        {
+            bitmap.BeginInit();
+            bitmap.CacheOption = BitmapCacheOption.OnLoad;   // read now, so the stream can be closed
+            bitmap.StreamSource = stream;
+            bitmap.EndInit();
+        }
+        bitmap.Freeze();
+
+        var image = new Image
+        {
+            Source = bitmap,
+            Width = QrSize,
+            Height = QrSize,
+            Stretch = Stretch.Uniform,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 8, 0, 4),
+        };
+        RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.NearestNeighbor);
+        return image;
     }
 
     private void PrintAgain(object sender, RoutedEventArgs e)

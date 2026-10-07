@@ -5,8 +5,9 @@ using System.Text.Json.Serialization;
 namespace TillPOS.App;
 
 /// <summary>Finds, imports and saves settings.json. The till's own copy lives in ProgramData; a packaged copy next to the
-/// exe is imported on the first start. A plain API secret is protected before any file is written, and is removed from
-/// every settings file the till can write. (Plain .NET, so the tests compile it; DPAPI is in SettingsStore.Windows.cs.)</summary>
+/// exe (zip package), else the copy built into a single-file exe (publish-field.ps1 -SingleExe), is imported on the first
+/// start. A plain API secret is protected before any file is written, and is removed from every settings file the till can
+/// write. (Plain .NET, so the tests compile it; DPAPI and the exe's resources are in SettingsStore.Windows.cs.)</summary>
 public static partial class SettingsStore
 {
     private static readonly JsonSerializerOptions ReadOptions = new()
@@ -31,10 +32,12 @@ public static partial class SettingsStore
     /// <summary>The packaged settings shipped in the zip next to TillPOS.exe.</summary>
     public static string BesideExePath => Path.Combine(AppContext.BaseDirectory, "settings.json");
 
-    /// <summary>Loads the till's settings from <paramref name="programDataPath"/>, or imports <paramref name="besideExePath"/>
-    /// into it. Returns null when neither exists. A plain secret is replaced by <paramref name="protect"/>(secret) before the
-    /// settings are saved; the packaged file is then cleaned too, and a failure there is only logged.</summary>
-    public static TillSettings? Resolve(string programDataPath, string besideExePath, Func<string, string> protect,
+    /// <summary>Loads the till's settings from <paramref name="programDataPath"/>, or imports <paramref name="besideExePath"/>,
+    /// else the <paramref name="embedded"/> settings JSON (null when the exe has none), into it. Returns null when there are
+    /// none. A plain secret is replaced by <paramref name="protect"/>(secret) before the settings are saved; the packaged file
+    /// is then cleaned too, and a failure there is only logged. The built-in copy cannot be cleaned: it is part of the exe,
+    /// so its plain secret stays readable to anyone who has the exe file (test builds only; never ship one to customers).</summary>
+    public static TillSettings? Resolve(string programDataPath, string besideExePath, Func<string?> embedded, Func<string, string> protect,
         Action<TillSettings, Exception> logError)
     {
         TillSettings settings;
@@ -45,6 +48,10 @@ public static partial class SettingsStore
             // or recovering after a used folder was copied from another PC): adopt it.
             if (!HasPlainSecret(settings) && PackagedPlainSecret(besideExePath, programDataPath) is { } fresh)
                 settings = settings with { ApiSecret = fresh };
+            // The built-in secret is in the exe on every start, so it is no sign of a newer key: it is adopted only when the
+            // till has no secret at all, never over a working one.
+            else if (!HasPlainSecret(settings) && string.IsNullOrEmpty(settings.ApiSecretProtected) && EmbeddedPlainSecret(embedded) is { } builtIn)
+                settings = settings with { ApiSecret = builtIn };
             if (HasPlainSecret(settings))
             {
                 settings = ProtectSecret(settings, protect);
@@ -54,6 +61,12 @@ public static partial class SettingsStore
         else if (File.Exists(besideExePath))
         {
             settings = ProtectSecret(WithDefaultDbPath(Load(besideExePath), programDataPath), protect);
+            Save(settings, programDataPath);
+        }
+        else if (embedded() is { } builtInJson)
+        {
+            // Imported exactly like a packaged file beside the exe.
+            settings = ProtectSecret(WithDefaultDbPath(Parse(builtInJson, BuiltInName), programDataPath), protect);
             Save(settings, programDataPath);
         }
         else
@@ -66,9 +79,12 @@ public static partial class SettingsStore
     }
 
     /// <summary>Reads settings.json. JSON nulls in the text settings become "" (the till treats blank as "not set").</summary>
-    public static TillSettings Load(string path)
+    public static TillSettings Load(string path) => Parse(File.ReadAllText(path), path);
+
+    /// <summary>Settings JSON text; <paramref name="source"/> names it in errors.</summary>
+    private static TillSettings Parse(string json, string source)
     {
-        var s = JsonSerializer.Deserialize<TillSettings>(File.ReadAllText(path), ReadOptions) ?? throw new InvalidDataException($"{path} is empty.");
+        var s = JsonSerializer.Deserialize<TillSettings>(json, ReadOptions) ?? throw new InvalidDataException($"{source} is empty.");
         return s with
         {
             BaseUrl = s.BaseUrl ?? "",
@@ -109,6 +125,8 @@ public static partial class SettingsStore
         }
     }
 
+    private const string BuiltInName = "The settings built into TillPOS.exe";
+
     private static bool HasPlainSecret(TillSettings settings) => !string.IsNullOrEmpty(settings.ApiSecret);
 
     private static bool IsSameFile(string a, string b) => string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);
@@ -122,6 +140,21 @@ public static partial class SettingsStore
             if (!File.Exists(besideExePath) || IsSameFile(besideExePath, programDataPath)) return null;
             var packaged = Load(besideExePath);
             return HasPlainSecret(packaged) ? packaged.ApiSecret : null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>The plain secret of the built-in settings, if any. Unreadable built-in settings count as none here.</summary>
+    private static string? EmbeddedPlainSecret(Func<string?> embedded)
+    {
+        try
+        {
+            if (embedded() is not { } json) return null;
+            var builtIn = Parse(json, BuiltInName);
+            return HasPlainSecret(builtIn) ? builtIn.ApiSecret : null;
         }
         catch (Exception)
         {

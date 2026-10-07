@@ -21,7 +21,8 @@ public sealed record LocalTestCashier(string Id, string Name, string Pin, bool I
 /// LocalTestCashiers are only used while ERPNext has no POS Cashier list yet (testing; removed in Plan 4).
 /// Trn / ShopAddress are used on receipts only when ERPNext has none (Company Tax ID / POS Profile company address). ShopPhone is printed under the address when set.
 /// ShowReceiptPreview shows the invoice in a popup after each sale (with "Print again").
-/// SetupDone is set by the setup screen; until then it is shown at start.</summary>
+/// SetupDone is set by the setup screen; until then it is shown at start.
+/// SampleQr (testing): with no TRN, receipts carry a QR code with a zero TRN marked "SAMPLE QR - FOR TESTING ONLY".</summary>
 public sealed record TillSettings(
     string BaseUrl,
     string ApiKey,
@@ -43,7 +44,8 @@ public sealed record TillSettings(
     string? ShopPhone = null,
     bool ShowReceiptPreview = true,
     string? ApiSecret = null,
-    bool SetupDone = false)
+    bool SetupDone = false,
+    bool SampleQr = false)
 {
     /// <summary>"***" for a value that is set, so ToString (logs, exception text) never shows the key, the secrets or PINs.</summary>
     internal static string Mask(string? value) => string.IsNullOrEmpty(value) ? "" : "***";
@@ -70,7 +72,8 @@ public sealed record TillSettings(
             .Append(", ShopAddress = ").Append(ShopAddress)
             .Append(", ShopPhone = ").Append(ShopPhone)
             .Append(", ShowReceiptPreview = ").Append(ShowReceiptPreview)
-            .Append(", SetupDone = ").Append(SetupDone);
+            .Append(", SetupDone = ").Append(SetupDone)
+            .Append(", SampleQr = ").Append(SampleQr);
         return true;
     }
 }

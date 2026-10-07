@@ -36,7 +36,7 @@ public sealed class WpfDialogs(
         try
         {
             var (header, paper) = receiptLayout();
-            var dialog = new ReceiptDialog(ReceiptRenderer.Layout(receipt, header, paper), header.Trn is not null, printError, reprint, hasPrinter)
+            var dialog = new ReceiptDialog(ReceiptRenderer.Layout(receipt, header, paper), printError, reprint, hasPrinter)
             {
                 Owner = owner,
             };

@@ -28,10 +28,11 @@ public sealed class ReceiptOutput(TillSettings settings, CatalogStore store) : I
     {
         var pos = store.LoadPosSettings() ?? throw new InvalidOperationException("POS settings are not downloaded yet.");
         return new ReceiptHeader(pos.CompanyName, FirstNonBlank(pos.AddressText, settings.ShopAddress), FirstNonBlank(pos.TaxId, settings.Trn),
-            $"Till {settings.TillNumber}", settings.ReceiptFooter, FirstNonBlank(null, settings.ShopPhone));
+            $"Till {settings.TillNumber}", settings.ReceiptFooter, FirstNonBlank(null, settings.ShopPhone), SampleQr: settings.SampleQr);
     }
 
-    /// <summary>ERPNext's value, else the settings fallback; blank counts as missing (a blank TRN prints no TRN line and no QR).</summary>
+    /// <summary>ERPNext's value, else the settings fallback; blank counts as missing (a blank TRN prints no TRN line and no real
+    /// QR; with SampleQr set it prints the marked sample QR instead).</summary>
     private static string? FirstNonBlank(string? erp, string? fallback) =>
         !string.IsNullOrWhiteSpace(erp) ? erp : !string.IsNullOrWhiteSpace(fallback) ? fallback : null;
 }

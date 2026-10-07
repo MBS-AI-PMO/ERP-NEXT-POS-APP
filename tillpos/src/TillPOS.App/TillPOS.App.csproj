@@ -5,8 +5,8 @@
     <UseWPF>true</UseWPF>
     <AssemblyName>TillPOS</AssemblyName>
     <RootNamespace>TillPOS.App</RootNamespace>
-    <Version>0.3.1</Version>
-    <InformationalVersion>0.3.1-field</InformationalVersion>
+    <Version>0.3.2</Version>
+    <InformationalVersion>0.3.2-test</InformationalVersion>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\TillPOS.Core\TillPOS.Core.csproj" />
@@ -15,5 +15,13 @@
     <ProjectReference Include="..\TillPOS.Sync\TillPOS.Sync.csproj" />
     <ProjectReference Include="..\TillPOS.Printing\TillPOS.Printing.csproj" />
     <ProjectReference Include="..\TillPOS.Presentation\TillPOS.Presentation.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="QRCoder" Version="1.8.0" />
+  </ItemGroup>
+  <!-- Test builds only (tools\publish-field.ps1 -SingleExe): settings.json built into the exe, imported on the first start
+       (SettingsStore.EmbeddedSettingsName). It holds the plain API secret and cannot be scrubbed from the exe. -->
+  <ItemGroup>
+    <EmbeddedResource Include="$(PackagedSettings)" LogicalName="packaged-settings.json" Condition="'$(PackagedSettings)' != ''" />
   </ItemGroup>
 </Project>

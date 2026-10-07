@@ -10,6 +10,7 @@ public sealed class SettingsStoreTests : IDisposable
     private readonly string programData;
     private readonly string besideExe;
     private readonly List<Exception> logged = [];
+    private string? embedded;   // the settings built into a single-file exe (publish-field.ps1 -SingleExe), if any
 
     public SettingsStoreTests()
     {
@@ -26,7 +27,7 @@ public sealed class SettingsStoreTests : IDisposable
 
     private static string Protect(string s) => "P(" + s + ")";
 
-    private TillSettings? Resolve() => SettingsStore.Resolve(programData, besideExe, Protect, (_, ex) => logged.Add(ex));
+    private TillSettings? Resolve() => SettingsStore.Resolve(programData, besideExe, () => embedded, Protect, (_, ex) => logged.Add(ex));
 
     private static void Write(string path, string json)
     {
@@ -125,6 +126,65 @@ public sealed class SettingsStoreTests : IDisposable
 
     [Fact]
     public void No_settings_file_anywhere_returns_null() => Assert.Null(Resolve());
+
+    [Fact]
+    public void Built_in_settings_alone_are_imported_with_the_secret_protected()
+    {
+        embedded = Json($"\"ApiSecret\": \"{PlainSecret}\", \"SampleQr\": true", dbPath: "");
+
+        var settings = Resolve()!;
+
+        Assert.Equal($"P({PlainSecret})", settings.ApiSecretProtected);
+        Assert.Null(settings.ApiSecret);
+        Assert.True(settings.SampleQr);
+        Assert.Equal(Path.Combine(Path.GetDirectoryName(programData)!, "till.db"), settings.DbPath);
+        var text = File.ReadAllText(programData);
+        Assert.DoesNotContain(PlainSecret, text.Replace($"P({PlainSecret})", ""));
+        Assert.False(HasProperty(programData, "ApiSecret"));
+        Assert.Equal($"P({PlainSecret})", JsonDocument.Parse(text).RootElement.GetProperty("ApiSecretProtected").GetString());
+        Assert.True(SettingsStore.Load(programData).SampleQr);
+        Assert.False(File.Exists(besideExe));
+        Assert.Empty(Directory.EnumerateFiles(root, "*.tmp", SearchOption.AllDirectories));
+        Assert.Empty(logged);
+    }
+
+    [Fact]
+    public void Built_in_settings_never_override_a_working_installed_secret()
+    {
+        Write(programData, Json("\"ApiSecretProtected\": \"P(installed)\""));
+        var before = File.ReadAllText(programData);
+        embedded = Json("\"ApiSecret\": \"built-in\", \"SampleQr\": true");
+
+        var settings = Resolve()!;
+
+        Assert.Equal("P(installed)", settings.ApiSecretProtected);
+        Assert.False(settings.SampleQr);
+        Assert.Equal(before, File.ReadAllText(programData));
+    }
+
+    [Fact]
+    public void Built_in_secret_is_adopted_when_the_installed_settings_have_no_secret_at_all()
+    {
+        Write(programData, Json("\"ApiSecretProtected\": \"\""));
+        embedded = Json("\"ApiSecret\": \"built-in\"");
+
+        var settings = Resolve()!;
+
+        Assert.Equal("P(built-in)", settings.ApiSecretProtected);
+        Assert.Null(settings.ApiSecret);
+        Assert.Equal("P(built-in)", SettingsStore.Load(programData).ApiSecretProtected);
+        Assert.False(HasProperty(programData, "ApiSecret"));
+    }
+
+    [Fact]
+    public void A_packaged_file_beside_the_exe_comes_before_the_built_in_settings()
+    {
+        Write(besideExe, Json("\"ApiSecret\": \"beside\""));
+        embedded = Json("\"ApiSecret\": \"built-in\"");
+
+        Assert.Equal("P(beside)", Resolve()!.ApiSecretProtected);
+        Assert.Equal("P(beside)", SettingsStore.Load(programData).ApiSecretProtected);
+    }
 
     [Fact]
     public void Null_strings_in_the_file_load_as_empty()
