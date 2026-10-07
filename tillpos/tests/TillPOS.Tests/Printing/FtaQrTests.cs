@@ -6,7 +6,7 @@ namespace TillPOS.Tests.Printing;
 
 public class FtaQrTests
 {
-    private static Dictionary<int, string> Decode(string base64)
+    internal static Dictionary<int, string> Decode(string base64)
     {
         var bytes = Convert.FromBase64String(base64);
         var fields = new Dictionary<int, string>();

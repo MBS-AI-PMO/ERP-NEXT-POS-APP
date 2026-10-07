@@ -5,19 +5,26 @@ namespace TillPOS.Printing;
 
 public enum PaperWidth { Mm80 = 48, Mm58 = 32 }
 
-public sealed record ReceiptHeader(string CompanyName, string? Address, string? Trn, string TillName, string? Footer, string? Phone = null);
+/// <param name="SampleQr">Testing only: with no TRN, print a QR code with a zero TRN and a "SAMPLE QR" note under it, so the
+/// QR position and size can be checked on real paper. A real TRN always wins (real QR, no note).</param>
+public sealed record ReceiptHeader(string CompanyName, string? Address, string? Trn, string TillName, string? Footer, string? Phone = null,
+    bool SampleQr = false);
 
 /// <summary>How a receipt line is printed. Title = double width + double height + bold + centred (its text is unpadded and
-/// at most half the paper columns); Big = double height + bold (full width); Bold = bold only.</summary>
-public enum LineStyle { Normal, Bold, Title, Big }
+/// at most half the paper columns); Big = double height + bold (full width); Bold = bold only; Qr = a centred QR code whose
+/// Text is the QR payload (not paper text).</summary>
+public enum LineStyle { Normal, Bold, Title, Big, Qr }
 
-/// <summary>One receipt line. Except for Title lines, the text is already padded for the paper width.</summary>
+/// <summary>One receipt line. Except for Title and Qr lines, the text is already padded for the paper width.</summary>
 public sealed record PrintLine(string Text, LineStyle Style = LineStyle.Normal);
 
 /// <summary>UAE simplified tax invoice / tax credit note layout (spec §9), as styled lines, plain text and ESC/POS bytes.</summary>
 public static class ReceiptRenderer
 {
     private const int LabelWidth = 10;   // "Invoice No"
+    private const string SampleTrn = "000000000000000";
+    private const string SampleQrNote = "SAMPLE QR - FOR TESTING ONLY";
+    private const string QrPlaceholder = "[QR code]";
 
     public static IReadOnlyList<PrintLine> Layout(Receipt r, ReceiptHeader h, PaperWidth paper)
     {
@@ -84,25 +91,38 @@ public static class ReceiptRenderer
 
         if (h.Footer is { } footer) Centered(footer);
         Centered("Prices include 5% VAT");
+
+        // Field 4 is the VAT-inclusive invoice value (consistent with field 5); cash rounding is a payment adjustment.
+        if (h.Trn is { } qrTrn)
+        {
+            Add(FtaQr.Encode(h.CompanyName, qrTrn, r.CreatedAt, r.GrandTotal, r.TotalTaxes), LineStyle.Qr);
+        }
+        else if (h.SampleQr)
+        {
+            Add(FtaQr.Encode(h.CompanyName, SampleTrn, r.CreatedAt, r.GrandTotal, r.TotalTaxes), LineStyle.Qr);
+            Centered(SampleQrNote);
+        }
         return lines;
     }
 
-    /// <summary>Plain text (receipt files). Title lines, whose text is bare, are centred across the full paper width here.</summary>
+    /// <summary>Plain text (receipt files). Title lines, whose text is bare, are centred across the full paper width here;
+    /// a text file cannot hold the QR image, so a QR line becomes a centred "[QR code]".</summary>
     public static IReadOnlyList<string> TextLines(Receipt r, ReceiptHeader h, PaperWidth paper) =>
-        Layout(r, h, paper).Select(l => l.Style == LineStyle.Title ? Center(l.Text, (int)paper) : l.Text).ToList();
+        Layout(r, h, paper).Select(l => l.Style switch
+        {
+            LineStyle.Title => Center(l.Text, (int)paper),
+            LineStyle.Qr => Center(QrPlaceholder, (int)paper),
+            _ => l.Text,
+        }).ToList();
 
     public static byte[] EscPosBytes(Receipt r, ReceiptHeader h, PaperWidth paper, bool openDrawer)
     {
         var printer = new EscPos().Init().Style(LineStyle.Normal);
         foreach (var line in Layout(r, h, paper))
         {
-            if (line.Style == LineStyle.Normal) printer.Line(line.Text);
+            if (line.Style == LineStyle.Qr) printer.Align(Alignment.Center).Qr(line.Text).Style(LineStyle.Normal);
+            else if (line.Style == LineStyle.Normal) printer.Line(line.Text);
             else printer.Style(line.Style).Line(line.Text).Style(LineStyle.Normal);
-        }
-        if (h.Trn is { } trn)
-        {
-            // Field 4 is the VAT-inclusive invoice value (consistent with field 5); cash rounding is a payment adjustment.
-            printer.Align(Alignment.Center).Qr(FtaQr.Encode(h.CompanyName, trn, r.CreatedAt, r.GrandTotal, r.TotalTaxes));
         }
         printer.Style(LineStyle.Normal).Feed(3).Cut();
         if (openDrawer) printer.KickDrawer();

@@ -108,7 +108,9 @@ public class ReceiptRendererTests
         foreach (var receipt in new[] { Sale(), Long(), Long(ReceiptKind.Return, "TILL2-20261006120000-000000") })
         {
             var layout = ReceiptRenderer.Layout(receipt, Header, paper);
-            Assert.All(layout, l => Assert.True(l.Text.Length <= columns, $"[{l.Text}]"));
+            // A QR line's text is the QR payload, not paper text; the text file prints a placeholder for it.
+            Assert.All(layout.Where(l => l.Style != LineStyle.Qr), l => Assert.True(l.Text.Length <= columns, $"[{l.Text}]"));
+            Assert.All(Text(receipt, paper), l => Assert.True(l.Length <= columns, $"[{l}]"));
             Assert.All(layout.Where(l => l.Style == LineStyle.Title), l => Assert.True(l.Text.Length <= columns / 2, $"[{l.Text}]"));
         }
     }
@@ -176,7 +178,8 @@ public class ReceiptRendererTests
         Assert.Contains(layout, l => l.Style == LineStyle.Big && l.Text.StartsWith("AMOUNT DUE"));
         Assert.Equal(LineStyle.Bold, layout[0].Style);
         Assert.Contains("AL AIN MARKETING L.L.C", layout[0].Text);
-        Assert.Equal(ReceiptRenderer.TextLines(Sale(), Header, PaperWidth.Mm80).Select(l => l.Trim()), layout.Select(l => l.Text.Trim()));
+        Assert.Equal(ReceiptRenderer.TextLines(Sale(), Header, PaperWidth.Mm80).Select(l => l.Trim()),
+            layout.Select(l => l.Style == LineStyle.Qr ? "[QR code]" : l.Text.Trim()));
     }
 
     [Theory]
@@ -212,7 +215,7 @@ public class ReceiptRendererTests
         var lines = Text(CreditNote(), paper);
 
         Assert.Equal("CREDIT NOTE", Assert.Single(layout, l => l.Style == LineStyle.Title).Text);
-        Assert.All(layout, l => Assert.True(l.Text.Length <= width, $"[{l.Text}]"));
+        Assert.All(layout.Where(l => l.Style != LineStyle.Qr), l => Assert.True(l.Text.Length <= width, $"[{l.Text}]"));
         Assert.Contains(lines, l => l.StartsWith("VAT 5%") && l.EndsWith(" -0.746"));
         Assert.Contains(lines, l => l.StartsWith("TOTAL AED") && l.EndsWith(" -15.67"));
         Assert.Contains(lines, l => l.StartsWith("Cash Counter 2") && l.EndsWith(" -15.67"));
@@ -322,6 +325,111 @@ public class ReceiptRendererTests
         var header = Header with { Trn = null };
         Assert.False(EscPosTests.Contains(ReceiptRenderer.EscPosBytes(Sale(), header, PaperWidth.Mm80, false), [0x1D, 0x28, 0x6B]));
         Assert.DoesNotContain(Text(Sale(), header: header), l => l.Contains("TRN"));
+    }
+
+    private const string SampleNote = "SAMPLE QR - FOR TESTING ONLY";
+    private static readonly byte[] QrCommand = [0x1D, 0x28, 0x6B];
+    private static readonly byte[] QrPrint = [0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30];
+
+    [Theory]
+    [InlineData(PaperWidth.Mm80)]
+    [InlineData(PaperWidth.Mm58)]
+    public void With_a_trn_the_real_qr_is_the_last_line_and_has_no_sample_note(PaperWidth paper)
+    {
+        var receipt = Sale();
+        var layout = ReceiptRenderer.Layout(receipt, Header with { SampleQr = true }, paper);
+
+        var qr = Assert.Single(layout, l => l.Style == LineStyle.Qr);
+        Assert.Equal(FtaQr.Encode(Header.CompanyName, Header.Trn!, receipt.CreatedAt, receipt.GrandTotal, receipt.TotalTaxes), qr.Text);
+        Assert.Equal("100000000000003", FtaQrTests.Decode(qr.Text)[2]);
+        Assert.Same(qr, layout[^1]);
+        Assert.Contains("Prices include 5% VAT", layout[^2].Text);
+        Assert.DoesNotContain(layout, l => l.Text.Contains(SampleNote));
+    }
+
+    [Theory]
+    [InlineData(PaperWidth.Mm80)]
+    [InlineData(PaperWidth.Mm58)]
+    public void Without_a_trn_a_sample_qr_has_a_zero_trn_and_a_centred_sample_note(PaperWidth paper)
+    {
+        var layout = ReceiptRenderer.Layout(Sale(), Header with { Trn = null, SampleQr = true }, paper);
+
+        var qr = Assert.Single(layout, l => l.Style == LineStyle.Qr);
+        var fields = FtaQrTests.Decode(qr.Text);
+        Assert.Equal(Header.CompanyName, fields[1]);
+        Assert.Equal("000000000000000", fields[2]);
+        Assert.Equal("2026-10-06T11:30:00Z", fields[3]);
+        Assert.Equal("16.17", fields[4]);
+        Assert.Equal("0.77", fields[5]);
+        Assert.Same(qr, layout[^2]);
+        Assert.Contains("Prices include 5% VAT", layout[^3].Text);
+        Assert.Equal(new PrintLine(new string(' ', ((int)paper - SampleNote.Length) / 2) + SampleNote), layout[^1]);
+        Assert.DoesNotContain(layout, l => l.Text.Contains("TRN"));
+    }
+
+    [Fact]
+    public void Without_a_trn_or_the_sample_setting_there_is_no_qr_at_all()
+    {
+        var header = Header with { Trn = null };
+
+        Assert.DoesNotContain(ReceiptRenderer.Layout(Sale(), header, PaperWidth.Mm80), l => l.Style == LineStyle.Qr || l.Text.Contains(SampleNote));
+        Assert.DoesNotContain(Text(Sale(), header: header), l => l.Contains("[QR code]"));
+        Assert.False(EscPosTests.Contains(ReceiptRenderer.EscPosBytes(Sale(), header, PaperWidth.Mm80, true), QrCommand));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Escpos_prints_the_qr_once_centred_then_resets_before_feed_cut_and_drawer(bool sample)
+    {
+        var receipt = Sale();
+        var header = sample ? Header with { Trn = null, SampleQr = true } : Header;
+        var bytes = ReceiptRenderer.EscPosBytes(receipt, header, PaperWidth.Mm80, openDrawer: true);
+        var payload = ReceiptRenderer.Layout(receipt, header, PaperWidth.Mm80).Single(l => l.Style == LineStyle.Qr).Text;
+
+        Assert.Equal(1, Count(bytes, QrPrint));
+        Assert.Equal(4 + 1, Count(bytes, QrCommand));                                           // model, size, ECC, store + print
+        Assert.Equal(1, Count(bytes, System.Text.Encoding.ASCII.GetBytes(payload)));
+        var qrStart = IndexOf(bytes, QrCommand);
+        Assert.Equal(new byte[] { 0x1B, 0x61, 0x01 }, bytes[(qrStart - 3)..qrStart]);          // centred
+        var qrEnd = IndexOf(bytes, QrPrint) + QrPrint.Length;
+        Assert.Equal(new byte[] { 0x1B, 0x61, 0x00, 0x1B, 0x45, 0x00, 0x1D, 0x21, 0x00 }, bytes[qrEnd..(qrEnd + 9)]); // reset
+        var note = IndexOf(bytes, System.Text.Encoding.ASCII.GetBytes(SampleNote));
+        if (sample) Assert.True(note > qrEnd);
+        else Assert.Equal(-1, note);
+        var cut = LastIndexOf(bytes, [0x1D, 0x56, 0x42, 0x00]);
+        Assert.True(cut > qrEnd && cut > note);
+        Assert.Equal(new byte[] { 0x1B, 0x64, 0x03 }, bytes[(cut - 3)..cut]);
+        Assert.Equal(new byte[] { 0x1B, 0x70, 0x00, 0x19, 0xFA }, bytes[^5..]);
+    }
+
+    [Theory]
+    [InlineData(PaperWidth.Mm80)]
+    [InlineData(PaperWidth.Mm58)]
+    public void Text_receipt_shows_a_centred_qr_placeholder(PaperWidth paper)
+    {
+        var lines = Text(Sale(), paper, Header with { Trn = null, SampleQr = true });
+
+        var at = lines.FindIndex(l => l.Contains("[QR code]"));
+        Assert.Equal(new string(' ', ((int)paper - "[QR code]".Length) / 2) + "[QR code]", lines[at]);
+        Assert.Equal(new string(' ', ((int)paper - SampleNote.Length) / 2) + SampleNote, lines[at + 1]);
+        Assert.Single(lines, l => l.Contains("[QR code]"));
+        Assert.All(lines, l => Assert.True(l.Length <= (int)paper, $"[{l}]"));
+    }
+
+    private static int Count(byte[] haystack, byte[] needle)
+    {
+        var count = 0;
+        for (var i = 0; i <= haystack.Length - needle.Length; i++)
+            if (haystack.AsSpan(i, needle.Length).SequenceEqual(needle)) count++;
+        return count;
+    }
+
+    private static int IndexOf(byte[] haystack, byte[] needle)
+    {
+        for (var i = 0; i <= haystack.Length - needle.Length; i++)
+            if (haystack.AsSpan(i, needle.Length).SequenceEqual(needle)) return i;
+        return -1;
     }
 
     private static int LastIndexOf(byte[] haystack, byte[] needle)
