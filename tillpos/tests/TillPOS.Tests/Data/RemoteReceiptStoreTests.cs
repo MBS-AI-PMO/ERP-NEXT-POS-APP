@@ -128,6 +128,23 @@ public sealed class RemoteReceiptStoreTests : IDisposable
     }
 
     [Fact]
+    public void A_return_matched_by_item_spreads_over_the_lines_of_that_item_without_going_below_zero()
+    {
+        var sale = Sale("SALE-2", "TILL3-2", new DateTime(2026, 10, 6, 12, 0, 0), Milk("k1", 2m), Rice("k2", 1m), Milk("k3", 3m));
+        store.Upsert(sale, Fetched);
+        store.Upsert(Return("RET-A", "SALE-2", new DateTime(2026, 10, 6, 13, 0, 0), Milk("zz", -4m)), Fetched);
+
+        var ret = Assert.Single(store.ReturnsAgainst(sale.ToReceipt()));
+        Assert.Equal(new[] { (1, M("-2")), (3, M("-2")) }, ret.Lines.Select(l => (l.LineNo, l.Qty)));
+        Assert.Equal(M("-27.16"), ret.Lines.Sum(l => l.Amount));
+
+        // More than was sold: what does not fit stays on the last line of the item, so nothing more can be returned.
+        store.Upsert(Return("RET-B", "SALE-2", new DateTime(2026, 10, 6, 14, 0, 0), Milk(null, -2m)), Fetched);
+        var returned = store.ReturnedQtyByLine("SALE-2");
+        Assert.Equal((M("2"), M("4")), (returned[1], returned[3]));
+    }
+
+    [Fact]
     public void Returns_of_other_tills_against_a_sale_of_this_till_are_found_once_it_is_uploaded()
     {
         var local = LocalSale("TILL2-20261006100000-000001");

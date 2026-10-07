@@ -144,8 +144,8 @@ public sealed class RemoteReceiptStore(TillDb db) : IOtherTillReturns
 
     /// <summary>The return invoices of other tills against <paramref name="original"/>: a downloaded sale (by its ERPNext name), or
     /// a sale of this till once it is uploaded (by the ERPNext name it got). Each return line is given the sale's line number:
-    /// the sale line with the same posa_row_id and item, else the first line of that item with something left (lines of items not
-    /// on the sale are left out).</summary>
+    /// the sale line with the same posa_row_id and item, else the lines of that item in order, each down to nothing left (lines
+    /// of items not on the sale are left out).</summary>
     public IReadOnlyList<Receipt> ReturnsAgainst(Receipt original)
     {
         string? erpName;
@@ -176,21 +176,41 @@ public sealed class RemoteReceiptStore(TillDb db) : IOtherTillReturns
             for (var i = 0; i < ret.Lines.Count; i++)
             {
                 var line = ret.Lines[i];
-                int? lineNo = line.RowId is { } id && rowIds.TryGetValue(id, out var n) && original.Lines.Any(o => o.LineNo == n && o.ItemCode == line.ItemCode)
-                    ? n
-                    : null;
-                lineNo ??= original.Lines.Where(o => o.ItemCode == line.ItemCode)
-                    .OrderBy(o => left[o.LineNo] > 0m ? 0 : 1)
-                    .Select(o => (int?)o.LineNo)
-                    .FirstOrDefault();
-                if (lineNo is not { } no) continue;
-                left[no] += line.Qty;
-                lines.Add(receipt.Lines[i] with { LineNo = no });
+                var mapped = receipt.Lines[i];
+                if (line.RowId is { } id && rowIds.TryGetValue(id, out var n) && original.Lines.Any(o => o.LineNo == n && o.ItemCode == line.ItemCode))
+                {
+                    left[n] += line.Qty;
+                    lines.Add(mapped with { LineNo = n });
+                    continue;
+                }
+                var candidates = original.Lines.Where(o => o.ItemCode == line.ItemCode).Select(o => o.LineNo).ToList();
+                if (candidates.Count == 0) continue;
+                // Spread the returned quantity over the item's lines in order, each down to zero left; what does not fit stays on
+                // the last of them (an over-return: nothing more can be returned).
+                var rest = -line.Qty;
+                foreach (var no in candidates)
+                {
+                    var take = Math.Min(rest, Math.Max(left[no], 0m));
+                    if (take <= 0m) continue;
+                    lines.Add(Part(mapped, no, take, line.Qty));
+                    left[no] -= take;
+                    rest -= take;
+                }
+                if (rest != 0m)
+                {
+                    lines.Add(Part(mapped, candidates[^1], rest, line.Qty));
+                    left[candidates[^1]] -= rest;
+                }
             }
             result.Add(receipt with { ReturnAgainst = original.ClientId, Lines = lines });
         }
         return result;
     }
+
+    /// <summary><paramref name="returnedQty"/> (positive) of a return line of <paramref name="lineQty"/> (negative), on sale line
+    /// <paramref name="lineNo"/>, with its share of the amount.</summary>
+    private static ReceiptLine Part(ReceiptLine line, int lineNo, decimal returnedQty, decimal lineQty) =>
+        line with { LineNo = lineNo, Qty = -returnedQty, Amount = lineQty == 0m ? 0m : line.Amount * -returnedQty / lineQty };
 
     private List<RemoteReceipt> Query(string where, string p)
     {
