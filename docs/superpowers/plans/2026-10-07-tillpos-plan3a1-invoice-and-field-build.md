@@ -226,3 +226,22 @@ Unzip the package into a scratch folder. Point `TILLPOS_SETTINGS` at an empty sc
 - "Print again" works with no printer (writes the text file again).
 
 Record the results in this plan's acceptance section and commit.
+
+---
+
+## Acceptance (2026-10-07, controller, package TillPOS-field-0.3.1.zip, 61.7 MB)
+
+I unzipped the package into a scratch folder, with `TILLPOS_SETTINGS` pointing at an empty scratch path so the "new PC" import path was exercised. ERPNext was live and used read-only.
+
+| Check | Result |
+|---|---|
+| The packaged settings.json has the plain secret and `SetupDone=false` | ✅ |
+| First start: imported settings hold only `ApiSecretProtected`; the beside-exe file is scrubbed too | ✅ |
+| The setup window lists the installed printers. Windows' default printer ("Microsoft Print to PDF" on this laptop) is preselected, so the shop must pick the thermal printer | ✅ (noted in the hand-over) |
+| Save and start → catalog download (46 s) → PIN screen showing "TillPOS 0.3.1-field" and a Settings button | ✅ |
+| Login with the package's random cashier PIN, open shift, scan milk + cucumber label, F12, type 20, Enter | ✅ |
+| The invoice popup shows the full tax invoice: Ajman address, phone, item table, VAT, TOTAL, rounding 5.923 → 6.00, change 14.00 | ✅ |
+| Scanning while the popup is open closes it and adds the item to the next bill | ✅ |
+| The receipt text file is written to the receipts folder | ✅ |
+
+Not run here (needs the shop's hardware): a thermal printer, the drawer kick, "Test print", and printer-offline reporting. Those are in START HERE.
