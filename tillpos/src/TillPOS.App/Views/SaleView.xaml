@@ -3,9 +3,14 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
   <UserControl.InputBindings>
     <KeyBinding Key="F3" Command="{Binding SetQtySelectedCommand}" />
+    <KeyBinding Key="F4" Command="{Binding PriceCheckCommand}" />
+    <KeyBinding Key="F5" Command="{Binding HoldCommand}" />
+    <KeyBinding Key="F7" Command="{Binding RecallCommand}" />
+    <KeyBinding Key="F8" Command="{Binding VoidBillCommand}" />
     <KeyBinding Key="F11" Command="{Binding PayCardCommand}" />
     <KeyBinding Key="F12" Command="{Binding PayCashCommand}" />
     <KeyBinding Key="Delete" Command="{Binding RemoveSelectedCommand}" />
+    <KeyBinding Key="P" Modifiers="Control" Command="{Binding ReprintLastCommand}" />
   </UserControl.InputBindings>
   <Grid>
     <Grid.ColumnDefinitions>
@@ -76,23 +81,65 @@
       </ListBox>
     </DockPanel>
 
-    <StackPanel Grid.Column="1">
-      <Border Background="{StaticResource Panel}" CornerRadius="12" Padding="20">
-        <StackPanel>
-          <DockPanel><TextBlock Text="Lines" Foreground="{StaticResource Muted}" /><TextBlock Text="{Binding ItemCount}" HorizontalAlignment="Right" Style="{StaticResource Money}" /></DockPanel>
-          <DockPanel><TextBlock Text="Offers &amp; discounts" Foreground="{StaticResource Warn}" /><TextBlock Text="{Binding Discount}" HorizontalAlignment="Right" Foreground="{StaticResource Warn}" Style="{StaticResource Money}" /></DockPanel>
-          <DockPanel><TextBlock Text="VAT 5% (included)" Foreground="{StaticResource Muted}" /><TextBlock Text="{Binding Vat}" HorizontalAlignment="Right" Style="{StaticResource Money}" /></DockPanel>
-          <Separator Margin="0,8" />
-          <DockPanel><TextBlock Text="TOTAL AED" FontWeight="Bold" VerticalAlignment="Bottom" /><TextBlock Text="{Binding Total}" HorizontalAlignment="Right" FontSize="40" Style="{StaticResource Money}" /></DockPanel>
-        </StackPanel>
-      </Border>
-      <Button Style="{StaticResource PrimaryButton}" Height="96" Margin="0,12,0,0" Content="PAY CASH  (F12)" Command="{Binding PayCashCommand}" />
-      <UniformGrid Columns="2" Margin="0,8,0,0">
-        <Button Style="{StaticResource KeyButton}" Height="64" Content="Card (F11)" Command="{Binding PayCardCommand}" />
-        <Button Style="{StaticResource KeyButton}" Height="64" Content="Set qty (F3)" Command="{Binding SetQtySelectedCommand}" />
-        <Button Style="{StaticResource KeyButton}" Height="64" Content="Search (F2)" Click="FocusSearch" />
-        <Button Style="{StaticResource DangerButton}" Height="64" Content="Void bill" Command="{Binding VoidBillCommand}" />
-      </UniformGrid>
-    </StackPanel>
+    <!-- The right column scrolls only if a small screen cannot fit it; every button is non-focusable so the scan box keeps the keyboard. -->
+    <ScrollViewer Grid.Column="1" Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+      <StackPanel>
+        <Border Background="{StaticResource Panel}" CornerRadius="12" Padding="20">
+          <StackPanel>
+            <DockPanel><TextBlock Text="Lines" Foreground="{StaticResource Muted}" /><TextBlock Text="{Binding ItemCount}" HorizontalAlignment="Right" Style="{StaticResource Money}" /></DockPanel>
+            <DockPanel><TextBlock Text="Offers &amp; discounts" Foreground="{StaticResource Warn}" /><TextBlock Text="{Binding Discount}" HorizontalAlignment="Right" Foreground="{StaticResource Warn}" Style="{StaticResource Money}" /></DockPanel>
+            <DockPanel><TextBlock Text="VAT 5% (included)" Foreground="{StaticResource Muted}" /><TextBlock Text="{Binding Vat}" HorizontalAlignment="Right" Style="{StaticResource Money}" /></DockPanel>
+            <Separator Margin="0,8" />
+            <DockPanel><TextBlock Text="TOTAL AED" FontWeight="Bold" VerticalAlignment="Bottom" /><TextBlock Text="{Binding Total}" HorizontalAlignment="Right" FontSize="40" Style="{StaticResource Money}" /></DockPanel>
+          </StackPanel>
+        </Border>
+        <Button Focusable="False" Style="{StaticResource PrimaryButton}" Height="80" Margin="4,12,4,4" Content="PAY CASH  (F12)" Command="{Binding PayCashCommand}" />
+        <Grid Margin="0,4,0,0">
+          <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition /></Grid.ColumnDefinitions>
+          <Grid.RowDefinitions><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /></Grid.RowDefinitions>
+          <Grid.Resources>
+            <Style TargetType="Button" x:Key="PadButton" BasedOn="{StaticResource KeyButton}">
+              <Setter Property="Focusable" Value="False" />
+              <Setter Property="MinHeight" Value="52" />
+              <Setter Property="Height" Value="52" />
+            </Style>
+          </Grid.Resources>
+          <Button Grid.Row="0" Grid.Column="0" Style="{StaticResource PadButton}" Content="Card (F11)" Command="{Binding PayCardCommand}" />
+          <Button Grid.Row="0" Grid.Column="1" Style="{StaticResource PadButton}" Content="Set qty (F3)" Command="{Binding SetQtySelectedCommand}" />
+          <Button Grid.Row="1" Grid.Column="0" Style="{StaticResource PadButton}" Content="Search (F2)" Click="FocusSearch" />
+          <Button Grid.Row="1" Grid.Column="1" Style="{StaticResource PadButton}" Content="Price check (F4)" Command="{Binding PriceCheckCommand}" />
+          <Button Grid.Row="2" Grid.Column="0" Style="{StaticResource PadButton}" Content="Hold (F5)" Command="{Binding HoldCommand}" />
+          <Button Grid.Row="2" Grid.Column="1" Style="{StaticResource PadButton}" Command="{Binding RecallCommand}">
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Text="Recall (F7)" VerticalAlignment="Center" />
+              <!-- How many bills are on hold; hidden when none. -->
+              <Border Background="{StaticResource Accent}" CornerRadius="11" MinWidth="24" Height="22" Padding="6,0" Margin="8,0,0,0"
+                      VerticalAlignment="Center" Visibility="{Binding HeldCount, Converter={StaticResource CountToVisibility}}">
+                <TextBlock Text="{Binding HeldCount}" Foreground="White" FontSize="14" FontWeight="Bold"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+              </Border>
+            </StackPanel>
+          </Button>
+          <Button Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2" Focusable="False" Style="{StaticResource DangerButton}" MinHeight="52" Height="52"
+                  Content="Void bill (F8)" Command="{Binding VoidBillCommand}" />
+        </Grid>
+        <UniformGrid Columns="3" Margin="0,4,0,0">
+          <UniformGrid.Resources>
+            <Style TargetType="Button" BasedOn="{StaticResource KeyButton}">
+              <Setter Property="Focusable" Value="False" />
+              <Setter Property="MinHeight" Value="48" />
+              <Setter Property="Height" Value="48" />
+              <Setter Property="FontSize" Value="14" />
+              <Setter Property="Foreground" Value="{StaticResource Muted}" />
+            </Style>
+          </UniformGrid.Resources>
+          <Button Command="{Binding ReprintLastCommand}">
+            <TextBlock Text="Reprint last (Ctrl+P)" TextWrapping="Wrap" TextAlignment="Center" />
+          </Button>
+          <Button Content="Log out" Command="{Binding LogOutCommand}" />
+          <Button Content="Close shift" Command="{Binding CloseShiftCommand}" />
+        </UniformGrid>
+      </StackPanel>
+    </ScrollViewer>
   </Grid>
 </UserControl>

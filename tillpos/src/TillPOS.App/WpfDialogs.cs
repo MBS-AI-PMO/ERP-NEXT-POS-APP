@@ -50,11 +50,17 @@ public sealed class WpfDialogs(
         }
     }
 
-    // Dialog added in Plan 3b Task 3; until then the price check closes without adding anything.
-    public PriceCheckPick? ShowPriceCheck(PriceCheckViewModel vm) => null;
+    public PriceCheckPick? ShowPriceCheck(PriceCheckViewModel vm)
+    {
+        var dialog = new PriceCheckDialog(vm) { Owner = owner };
+        return dialog.ShowDialog() == true ? dialog.Pick : null;
+    }
 
-    // Dialog added in Plan 3b Task 3; until then nothing is recalled.
-    public string? ShowHeldBills(HeldBillsViewModel vm) => null;
+    public string? ShowHeldBills(HeldBillsViewModel vm)
+    {
+        var dialog = new HeldBillsDialog(vm) { Owner = owner };
+        return dialog.ShowDialog() == true ? dialog.ChosenId : null;
+    }
 
     /// <summary>Starts from the file on disk (not the settings the till started with), so hand edits made since are kept.</summary>
     public bool ShowSetup()

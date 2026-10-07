@@ -51,8 +51,8 @@ public partial class MainWindow : Window
         if (code is null) return;
 
         // A scan never acts as typing: put the focused box back as it was before the burst and swallow its Enter.
-        // Only the sale screen uses it; elsewhere (e.g. payment) it is ignored, so a scan can never
-        // change a cash amount or press "Complete".
+        // Only the sale screen uses it; elsewhere (payment, close shift) it is ignored, so a scan can never
+        // change a cash amount or count, or press "Complete".
         if (beforeBurst is { } saved && ReferenceEquals(Keyboard.FocusedElement, saved.Box))
         {
             saved.Box.Text = saved.Text;
