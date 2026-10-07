@@ -31,22 +31,48 @@ public sealed class HeldBillsViewModel : ObservableObject
     public string Message { get => message; private set => SetProperty(ref message, value); }
     public AsyncRelayCommand DeleteSelectedCommand { get; }
 
+    /// <summary>Lists the held bills again; a store failure leaves the list empty with a message (never throws).</summary>
     public void Reload()
     {
-        var selectedId = Selected?.Id;
-        Bills.Clear();
-        foreach (var held in ctx.Held.List())
-            Bills.Add(new HeldBillRow(held.Id, held.Label, held.HeldAt.ToString("dd/MM HH:mm", CultureInfo.InvariantCulture)));
-        Selected = Bills.FirstOrDefault(b => b.Id == selectedId) ?? Bills.FirstOrDefault();
+        if (LoadBills() is { } error) Message = error;
     }
 
-    /// <summary>Deletes the selected held bill after a supervisor approves (logged as <see cref="ApprovalAction.HeldBillDelete"/>).</summary>
+    /// <summary>Fills <see cref="Bills"/>; returns the problem when the store failed (the list is then empty).</summary>
+    private string? LoadBills()
+    {
+        var selectedId = Selected?.Id;
+        string? error = null;
+        Bills.Clear();
+        try
+        {
+            foreach (var held in ctx.Held.List())
+                Bills.Add(new HeldBillRow(held.Id, held.Label, held.HeldAt.ToString("dd/MM HH:mm", CultureInfo.InvariantCulture)));
+        }
+        catch (Exception ex)
+        {
+            Bills.Clear();
+            error = $"Could not read the bills on hold: {ex.Message}";
+        }
+        Selected = Bills.FirstOrDefault(b => b.Id == selectedId) ?? Bills.FirstOrDefault();
+        return error;
+    }
+
+    /// <summary>Deletes the selected held bill after a supervisor approves (logged as <see cref="ApprovalAction.HeldBillDelete"/>).
+    /// If the store fails the bill stays on hold and the message says so.</summary>
     public async Task DeleteSelectedAsync()
     {
         if (Selected is not { } bill) return;
         if (await gate.ApproveAsync(ApprovalAction.HeldBillDelete, $"Delete held bill {bill.Label}", null, null, 0m) is null) return;
-        Message = ctx.Held.Take(bill.Id) is null ? "That bill was already recalled" : "Held bill deleted";
+        string result;
+        try
+        {
+            result = ctx.Held.Take(bill.Id) is null ? "That bill was already recalled" : "Held bill deleted";
+        }
+        catch (Exception)
+        {
+            result = "Could not delete the bill — it is still on hold";
+        }
         Selected = null;
-        Reload();
+        Message = LoadBills() is { } error ? $"{result}. {error}" : result;
     }
 }

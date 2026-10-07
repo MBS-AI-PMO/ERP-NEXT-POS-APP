@@ -18,7 +18,7 @@ public sealed record PriceCheckPick(string Code, bool IsItemCode);
 public sealed class PriceCheckViewModel : ObservableObject
 {
     private readonly TillContext ctx;
-    private readonly SaleContext saleContext;
+    private SaleContext? saleContext;                // made on the first lookup, so a failure there is a message
     private string scanText = "";
     private string searchText = "";
     private bool hasResult;
@@ -35,7 +35,6 @@ public sealed class PriceCheckViewModel : ObservableObject
     public PriceCheckViewModel(TillContext ctx)
     {
         this.ctx = ctx;
-        saleContext = ctx.NewSaleContext();
         ScanEnteredCommand = new RelayCommand(() => { var code = ScanText.Trim(); ScanText = ""; if (code.Length > 0) Lookup(code); });
         SelectCommand = new RelayCommand<string>(code => { if (code is not null) Select(code); });
     }
@@ -75,8 +74,16 @@ public sealed class PriceCheckViewModel : ObservableObject
         {
             if (!SetProperty(ref searchText, value)) return;
             SearchResults.Clear();
-            if (value.Trim().Length >= 2)
+            if (value.Trim().Length < 2) return;
+            try
+            {
                 foreach (var item in ctx.Search(value.Trim())) SearchResults.Add(item);
+            }
+            catch (Exception ex)
+            {
+                SearchResults.Clear();
+                Message = $"Search failed: {ex.Message}";
+            }
         }
     }
 
@@ -88,21 +95,40 @@ public sealed class PriceCheckViewModel : ObservableObject
     {
         code = code.Trim();
         if (code.Length == 0) return;
-        var cart = new Cart(saleContext);
-        Show(cart, cart.AddBarcode(code), code, new PriceCheckPick(code, false));
+        Price(code, cart => cart.AddBarcode(code), new PriceCheckPick(code, false));
     }
 
     /// <summary>An item picked from the search results.</summary>
     public void Select(string itemCode)
     {
-        var cart = new Cart(saleContext);
-        Show(cart, cart.AddItem(itemCode), itemCode, new PriceCheckPick(itemCode, true));
+        Price(itemCode, cart => cart.AddItem(itemCode), new PriceCheckPick(itemCode, true));
         SearchText = "";
     }
 
-    private void Show(Cart cart, AddResult result, string code, PriceCheckPick pick)
+    /// <summary>Prices the item in a throw-away cart. Any failure (catalog, tax setup) becomes a message; nothing throws.</summary>
+    private void Price(string code, Func<Cart, AddResult> add, PriceCheckPick pick)
     {
         Clear();
+        try
+        {
+            saleContext ??= ctx.NewSaleContext();
+            var cart = new Cart(saleContext);
+            Show(saleContext, cart, add(cart), code, pick);
+        }
+        catch (UnsupportedTaxSetupException)
+        {
+            Clear();
+            Message = Problem(AddOutcome.UnsupportedTax, code);
+        }
+        catch (Exception ex)
+        {
+            Clear();
+            Message = $"Could not price {code}: {ex.Message}";
+        }
+    }
+
+    private void Show(SaleContext sc, Cart cart, AddResult result, string code, PriceCheckPick pick)
+    {
         if (result.Outcome != AddOutcome.Added)
         {
             Message = Problem(result.Outcome, code);
@@ -110,34 +136,25 @@ public sealed class PriceCheckViewModel : ObservableObject
         }
 
         var line = result.Line!;
-        try
-        {
-            var listPrice = Gross(line.PriceListRate, 1m, line.ItemTaxTemplate);
-            var offerPrice = Gross(line.Rate, 1m, line.ItemTaxTemplate);
-            Name = line.Item.ItemName;
-            ItemCode = line.Item.ItemCode;
-            Barcode = line.Barcode ?? "";
-            UnitText = $"per {line.Uom}";
-            PriceText = Format.Money(listPrice);
-            if (line.Rate < line.PriceListRate)
-                OfferText = line.Rule is { } rule ? $"Offer: {Format.Money(offerPrice)} ({rule.Label})" : $"Offer: {Format.Money(offerPrice)}";
-            if (line.FromScaleLabel)
-                ScaleText = $"{line.Qty.ToString("0.000", CultureInfo.InvariantCulture)} {line.Uom} × {Format.Money(offerPrice)} = {Format.Money(cart.Totals().GrandTotal)}";
-        }
-        catch (UnsupportedTaxSetupException)
-        {
-            Clear();
-            Message = Problem(AddOutcome.UnsupportedTax, code);
-            return;
-        }
+        var listPrice = Gross(sc, line.PriceListRate, line.ItemTaxTemplate);
+        var offerPrice = Gross(sc, line.Rate, line.ItemTaxTemplate);
+        Name = line.Item.ItemName;
+        ItemCode = line.Item.ItemCode;
+        Barcode = line.Barcode ?? "";
+        UnitText = $"per {line.Uom}";
+        PriceText = Format.Money(listPrice);
+        if (line.Rate < line.PriceListRate)
+            OfferText = line.Rule is { } rule ? $"Offer: {Format.Money(offerPrice)} ({rule.Label})" : $"Offer: {Format.Money(offerPrice)}";
+        if (line.FromScaleLabel)
+            ScaleText = $"{line.Qty.ToString("0.000", CultureInfo.InvariantCulture)} {line.Uom} × {Format.Money(offerPrice)} = {Format.Money(cart.Totals().GrandTotal)}";
         HasResult = true;
         AddToBill = pick;
     }
 
-    /// <summary>The amount including VAT (inclusive templates leave it unchanged; exclusive ones add the tax).</summary>
-    private decimal Gross(decimal rate, decimal qty, string? itemTaxTemplate) =>
-        new TaxCalculator(saleContext.Money, saleContext.Catalog.FindItemTaxTemplate)
-            .Calculate([new TaxLineInput(qty, rate, itemTaxTemplate)], saleContext.TaxTemplate).GrandTotal;
+    /// <summary>One unit's amount including VAT (inclusive templates leave it unchanged; exclusive ones add the tax).</summary>
+    private static decimal Gross(SaleContext sc, decimal rate, string? itemTaxTemplate) =>
+        new TaxCalculator(sc.Money, sc.Catalog.FindItemTaxTemplate)
+            .Calculate([new TaxLineInput(1m, rate, itemTaxTemplate)], sc.TaxTemplate).GrandTotal;
 
     private void Clear()
     {

@@ -393,6 +393,76 @@ public sealed class PriceHoldRecallTests : IDisposable
         Assert.Empty(sale.Lines);
     }
 
+    // ---- Store and catalog failures become messages ----
+
+    private void Sql(string sql)
+    {
+        using var c = f.Temp.Db.Open();
+        using var cmd = c.CreateCommand();
+        cmd.CommandText = sql;
+        cmd.ExecuteNonQuery();
+    }
+
+    [Fact]
+    public void A_catalog_failure_during_a_price_check_is_a_message()
+    {
+        var pc = new PriceCheckViewModel(f.Ctx);
+        pc.Lookup("222");
+        Assert.True(pc.HasResult);
+        f.Catalog.OnFindItem = _ => throw new InvalidOperationException("database is locked");
+
+        pc.Lookup("111");
+        Assert.False(pc.HasResult);
+        Assert.Null(pc.AddToBill);
+        Assert.Equal("", pc.PriceText);
+        Assert.Equal("Could not price 111: database is locked", pc.Message);
+
+        pc.Select("MILK");
+        Assert.False(pc.HasResult);
+        Assert.Equal("Could not price MILK: database is locked", pc.Message);
+    }
+
+    [Fact]
+    public void A_search_failure_during_a_price_check_is_a_message()
+    {
+        var pc = new PriceCheckViewModel(f.Ctx with { Search = _ => throw new InvalidOperationException("database is locked") });
+
+        pc.SearchText = "milk";
+
+        Assert.Empty(pc.SearchResults);
+        Assert.Equal("Search failed: database is locked", pc.Message);
+    }
+
+    [Fact]
+    public void A_held_bills_store_failure_is_a_message()
+    {
+        Sql("DROP TABLE held_cart");
+
+        var vm = new HeldBillsViewModel(f.Ctx, f.Session, Gate());
+
+        Assert.Empty(vm.Bills);
+        Assert.Null(vm.Selected);
+        Assert.StartsWith("Could not read the bills on hold: ", vm.Message);
+    }
+
+    [Fact]
+    public async Task A_delete_that_fails_after_approval_leaves_the_bill_on_hold()
+    {
+        var sale = NewSale();
+        sale.Scan("111");
+        sale.Hold();
+        var vm = new HeldBillsViewModel(f.Ctx, f.Session, Gate());
+        Sql("CREATE TRIGGER no_delete BEFORE DELETE ON held_cart BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END");
+        f.Dialogs.Pins.Enqueue("9999");
+
+        await vm.DeleteSelectedAsync();
+
+        Assert.Equal("Could not delete the bill — it is still on hold", vm.Message);
+        Assert.Single(vm.Bills);
+        Assert.Single(f.Ctx.Held.List());
+        Assert.Single(f.Ctx.Approvals.Unsynced(), a => a.Action == ApprovalAction.HeldBillDelete);
+    }
+
     // ---- Reprint last ----
 
     private string CompleteCashSale(SaleViewModel sale)
@@ -500,6 +570,40 @@ public sealed class PriceHoldRecallTests : IDisposable
         sale.ReprintLast();
 
         Assert.False(f.Output.Printed[^1].Copy);
+    }
+
+    [Fact]
+    public void The_last_receipt_and_its_printed_flag_are_one_kv_value()
+    {
+        var sale = NewSale();
+        f.Output.Fail = true;
+        var id = CompleteCashSale(sale);
+        Assert.Equal($"{id}|0", f.Ctx.Kv.GetValue(SaleViewModel.LastReceiptKey));
+        f.Output.Fail = false;
+
+        sale.ReprintLast();
+
+        Assert.Equal($"{id}|1", f.Ctx.Kv.GetValue(SaleViewModel.LastReceiptKey));
+        Assert.Null(f.Ctx.Kv.GetValue(SaleViewModel.LastReceiptPrintedKey));
+    }
+
+    [Theory]
+    [InlineData("1", true)]
+    [InlineData("0", false)]
+    [InlineData(null, false)]
+    public void The_older_two_key_format_is_still_read(string? printedFlag, bool expectCopy)
+    {
+        var id = CompleteCashSale(NewSale());
+        f.Ctx.Kv.SetValue(SaleViewModel.LastReceiptKey, id);                   // as written by 0.3.3
+        if (printedFlag is not null) f.Ctx.Kv.SetValue(SaleViewModel.LastReceiptPrintedKey, printedFlag);
+
+        NewSale().ReprintLast();
+
+        var (receipt, drawer, copy) = f.Output.Printed[^1];
+        Assert.Equal(id, receipt.ClientId);
+        Assert.False(drawer);
+        Assert.Equal(expectCopy, copy);
+        Assert.Equal($"{id}|1", f.Ctx.Kv.GetValue(SaleViewModel.LastReceiptKey));
     }
 
     [Fact]

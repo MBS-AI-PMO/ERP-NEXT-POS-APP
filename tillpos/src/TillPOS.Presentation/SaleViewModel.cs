@@ -18,9 +18,11 @@ public sealed record SaleLine(Guid Id, int No, string Name, string? Barcode, str
 public sealed class SaleViewModel : ObservableObject
 {
     public const string AutosaveKey = "current_cart";
-    /// <summary>The kv key holding the client id of the last completed bill (Ctrl+P reprints it, also after a restart).</summary>
+    /// <summary>The kv key holding the last completed bill as "{client id}|{1 or 0}" (Ctrl+P reprints it, also after a
+    /// restart). The flag is 1 once that bill has printed successfully, so a later print is a "*** COPY ***". One value, so
+    /// the id and its flag are always written together.</summary>
     public const string LastReceiptKey = "last_receipt";
-    /// <summary>"1" once the last bill has printed successfully (a later print is then a "*** COPY ***"), otherwise "0".</summary>
+    /// <summary>The older, separate printed flag ("1"/"0"), read only when <see cref="LastReceiptKey"/> holds a bare id.</summary>
     public const string LastReceiptPrintedKey = "last_receipt_printed";
     public const int MaxHeld = 20;
     private const decimal MaxQty = 999m;
@@ -292,9 +294,10 @@ public sealed class SaleViewModel : ObservableObject
     public void ReprintLast()
     {
         Receipt? receipt;
+        bool printed;
         try
         {
-            var id = ctx.Kv.GetValue(LastReceiptKey);
+            (var id, printed) = ReadLastReceipt();
             receipt = string.IsNullOrEmpty(id) ? null : ctx.Receipts.Get(id);
         }
         catch (Exception ex)
@@ -305,7 +308,7 @@ public sealed class SaleViewModel : ObservableObject
         if (receipt is null) { Info("No receipt to reprint yet"); return; }
         try
         {
-            ctx.Output.Print(receipt, openDrawer: false, copy: LastReceiptPrinted());
+            ctx.Output.Print(receipt, openDrawer: false, copy: printed);
             Info($"Reprinted {receipt.ClientId}");
         }
         catch (Exception ex)
@@ -313,7 +316,7 @@ public sealed class SaleViewModel : ObservableObject
             Error($"Reprint of {receipt.ClientId} failed: {ex.Message}");
             return;
         }
-        MarkLastReceiptPrinted(true);
+        WriteLastReceipt(receipt.ClientId, printed: true);
     }
 
     /// <summary>Starts closing the shift (blind count). Refused while the bill has lines or bills are on hold, so no bill is
@@ -358,28 +361,36 @@ public sealed class SaleViewModel : ObservableObject
         RefreshHeldCount();
     }
 
-    /// <summary>Whether the last bill has already printed once (unknown counts as not printed: no COPY mark).</summary>
-    private bool LastReceiptPrinted()
+    /// <summary>The last bill's id and whether it has already printed once (throws if the kv store fails). A bare id is the
+    /// older two-key format: its flag is the separate <see cref="LastReceiptPrintedKey"/>, and unknown counts as not printed
+    /// (no COPY mark).</summary>
+    private (string? Id, bool Printed) ReadLastReceipt()
     {
+        var value = ctx.Kv.GetValue(LastReceiptKey);
+        if (string.IsNullOrEmpty(value)) return (null, false);
+        var bar = value.LastIndexOf('|');
+        if (bar >= 0) return (value[..bar], value[(bar + 1)..] == "1");
         try
         {
-            return ctx.Kv.GetValue(LastReceiptPrintedKey) == "1";
+            return (value, ctx.Kv.GetValue(LastReceiptPrintedKey) == "1");
         }
         catch (Exception)
         {
-            return false;
+            return (value, false);
         }
     }
 
-    private void MarkLastReceiptPrinted(bool printed)
+    /// <summary>Records the last bill and its printed flag in one write. A failure only means Ctrl+P misses this bill (or
+    /// marks a COPY differently), never the sale.</summary>
+    private void WriteLastReceipt(string id, bool printed)
     {
         try
         {
-            ctx.Kv.SetValue(LastReceiptPrintedKey, printed ? "1" : "0");
+            ctx.Kv.SetValue(LastReceiptKey, $"{id}|{(printed ? "1" : "0")}");
         }
         catch (Exception)
         {
-            // Only decides whether a later reprint carries the COPY mark.
+            // The bill is saved; only "reprint last" is affected.
         }
     }
 
@@ -389,16 +400,8 @@ public sealed class SaleViewModel : ObservableObject
     /// popup (when enabled); a barcode scanned while it is open closes it and goes on the next bill.</summary>
     public void SaleCompleted(Receipt receipt, string? printError)
     {
-        MarkLastReceiptPrinted(false);                // never let the previous bill's flag mark this one's first print as a copy
-        try
-        {
-            ctx.Kv.SetValue(LastReceiptKey, receipt.ClientId);
-        }
-        catch (Exception)
-        {
-            // The bill is saved; only Ctrl+P "reprint last" misses it.
-        }
-        if (printError is null) MarkLastReceiptPrinted(true);
+        // The id and its own flag in one write: the previous bill's flag can never mark this one's first print as a copy.
+        WriteLastReceipt(receipt.ClientId, printed: printError is null);
         Refresh();
         if (printError is null) Info($"Saved {receipt.ClientId}. Change {Format.Money(receipt.Change)}");
         else if (ctx.ShowReceiptPreview) Error($"Saved {receipt.ClientId}, but the printer failed ({printError}). Use Print again on the invoice, or note bill number {receipt.ClientId}.");
@@ -414,7 +417,7 @@ public sealed class SaleViewModel : ObservableObject
             {
                 ctx.Output.Print(receipt, openDrawer: false, copy: printed);
                 printed = true;
-                MarkLastReceiptPrinted(true);
+                WriteLastReceipt(receipt.ClientId, printed: true);
                 return null;
             }
             catch (Exception ex)

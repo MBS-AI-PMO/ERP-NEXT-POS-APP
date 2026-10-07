@@ -177,6 +177,38 @@ public sealed class CloseShiftTests : IDisposable
         Assert.Equal(1000m, vm.CountedCash);
     }
 
+    [Fact]
+    public void Confirming_with_no_cash_entered_is_refused_and_records_nothing()
+    {
+        var vm = OpenClose();
+        vm.CardTotal.Text = "84.25";                                             // the card total alone is not a cash count
+
+        vm.ConfirmCount();
+
+        Assert.True(vm.IsCounting);
+        Assert.Empty(vm.Rows);
+        Assert.True(vm.MessageIsError);
+        Assert.Equal(CloseShiftViewModel.NothingCountedMessage, vm.Message);
+        Assert.Null(f.Ctx.Kv.GetValue(CloseShiftViewModel.StateKey(ShiftId)));
+        Assert.DoesNotContain(f.Ctx.Approvals.Unsynced(), a => a.Action == ApprovalAction.ShiftCount);
+        Assert.True(vm.BackCommand.CanExecute(null));                           // nothing recorded: back still works
+    }
+
+    [Fact]
+    public void An_explicit_zero_is_a_count()
+    {
+        var total = OpenClose();
+        total.UseTotalInstead.Text = "0";
+        total.ConfirmCount();
+        Assert.True(total.IsResult);
+        Assert.Equal(M("-323.45"), total.CashDifference);
+
+        var notes = Reopen();
+        notes.Denominations[0].Count.Text = "0";
+        notes.ConfirmCount();
+        Assert.True(notes.IsResult);
+    }
+
     // ---- Result ----
 
     [Fact]
@@ -432,7 +464,9 @@ public sealed class CloseShiftTests : IDisposable
         vm.RecountCommand.Execute(null);
         vm.UseTotalInstead.Text = "323.45";
         vm.ConfirmCount();
-        Reopen().ConfirmCount();                                                 // nothing entered: counted 0
+        var again = Reopen();
+        again.UseTotalInstead.Text = "0";                                       // an empty drawer
+        again.ConfirmCount();
 
         var rows = f.Ctx.Approvals.Unsynced().Where(a => a.Action == ApprovalAction.ShiftCount).OrderBy(a => a.Reason).ToList();
         Assert.Equal(new[] { "Count 1: cash difference -10.00", "Count 2: cash difference 0.00", "Count 3: cash difference -323.45" },

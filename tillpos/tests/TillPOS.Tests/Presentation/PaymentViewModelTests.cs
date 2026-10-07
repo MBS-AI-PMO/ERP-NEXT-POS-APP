@@ -40,7 +40,7 @@ public sealed class PaymentViewModelTests : IDisposable
         Assert.Equal(receipt.ClientId, printed.ClientId);
         Assert.True(drawer);
         Assert.False(copy);
-        Assert.Equal(receipt.ClientId, f.Ctx.Kv.GetValue(SaleViewModel.LastReceiptKey));
+        Assert.Equal($"{receipt.ClientId}|1", f.Ctx.Kv.GetValue(SaleViewModel.LastReceiptKey));
         Assert.Same(sale, f.Navigator.Current);
         Assert.Empty(sale.Lines);
         Assert.Equal("[]", f.Ctx.Kv.GetValue(SaleViewModel.AutosaveKey));

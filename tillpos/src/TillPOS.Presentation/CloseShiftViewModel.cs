@@ -54,6 +54,7 @@ public sealed class CloseShiftViewModel : ObservableObject
     public const decimal VarianceLimit = 5.00m;
 
     public const string CountRecordedMessage = "The count is recorded — recount or close the shift";
+    public const string NothingCountedMessage = "Enter the counted cash (type 0 if the drawer is empty)";
 
     private readonly TillContext ctx;
     private readonly SessionState session;
@@ -104,6 +105,10 @@ public sealed class CloseShiftViewModel : ObservableObject
     public string CashTotal => Format.Money(CountedCash);
     public decimal CountedCard => CardTotal.Value ?? 0m;
 
+    /// <summary>Whether any cash was entered: a count in some note or coin box (0 counts), or the total (0 allowed). The card
+    /// total alone is not a cash count.</summary>
+    public bool CashEntered => UseTotalInstead.Value is not null || Denominations.Any(d => d.Count.Value is not null);
+
     public RelayCommand ConfirmCountCommand { get; }
     public RelayCommand BackCommand { get; }
 
@@ -133,6 +138,8 @@ public sealed class CloseShiftViewModel : ObservableObject
     public void ConfirmCount()
     {
         if (closed || busy || closing is not null) return;
+        // A blank count is a slip, not "the drawer is empty": refuse it before anything is worked out or recorded.
+        if (!CashEntered) { Error(NothingCountedMessage); return; }
         if (session.Shift is not { } opening) { Error("No open shift — log in again."); return; }
         ShiftClosing result;
         try

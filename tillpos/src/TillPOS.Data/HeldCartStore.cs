@@ -15,7 +15,8 @@ public sealed class HeldCartStore(TillDb db)
         return held;
     }
 
-    /// <summary>Stores a held bill as it is (same id, label and time).</summary>
+    /// <summary>Stores a held bill as it is (same id, label and time). Used by <see cref="Hold"/>, and kept public to put a
+    /// bill back if a future flow needs it; covered by tests.</summary>
     public void Put(HeldCart held)
     {
         using var c = db.Open();
