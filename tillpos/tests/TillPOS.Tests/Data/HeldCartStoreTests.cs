@@ -54,6 +54,25 @@ public sealed class HeldCartStoreTests : IDisposable
     }
 
     [Fact]
+    public void Put_returns_a_taken_bill_with_its_id_label_time_and_lines()
+    {
+        var cart = NewCart();
+        cart.AddBarcode("111");
+        cart.AddBarcode("2000089007400");
+        var held = store.Hold(cart, "Customer in blue", At);
+        var taken = store.Take(held.Id)!;
+
+        store.Put(taken);
+
+        var back = Assert.Single(store.List());
+        Assert.Equal(held.Id, back.Id);
+        Assert.Equal("Customer in blue", back.Label);
+        Assert.Equal(At, back.HeldAt);
+        Assert.Equal(held.Lines, back.Lines);
+        Assert.NotNull(store.Take(held.Id));
+    }
+
+    [Fact]
     public void Items_that_can_no_longer_be_sold_are_reported_on_recall()
     {
         var cart = NewCart();

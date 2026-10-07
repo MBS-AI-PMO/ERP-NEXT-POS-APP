@@ -1,6 +1,7 @@
 using TillPOS.Core.Catalog;
 using TillPOS.Core.Payments;
 using TillPOS.Core.Pricing;
+using TillPOS.Core.Sales;
 using TillPOS.Core.Security;
 using TillPOS.Presentation;
 using static TillPOS.Tests.TestUtil;
@@ -283,6 +284,30 @@ public sealed class PriceHoldRecallTests : IDisposable
     }
 
     [Fact]
+    public void A_recall_that_fails_part_way_puts_the_bill_back_on_hold_and_leaves_the_screen_empty()
+    {
+        // A stored bill whose second line is broken: Restore adds the milk, then throws on the null line.
+        var broken = new HeldCart("BROKEN", "09:00 · Simran · 2 items · 9.38", f.Clock.Now.AddHours(-1),
+            [new HeldLine("MILK", "PCS", 1m, "111", false), null!]);
+        f.Ctx.Held.Put(broken);
+        var sale = NewSale();
+        f.Dialogs.OnHeldBills = vm => vm.Bills[0].Id;
+
+        sale.Recall();
+
+        Assert.True(sale.MessageIsError);
+        Assert.Equal("Could not recall the bill — it is still on hold", sale.Message);
+        Assert.Empty(sale.Lines);
+        Assert.Empty(sale.Cart.Lines);
+        Assert.Equal("[]", f.Ctx.Kv.GetValue(SaleViewModel.AutosaveKey));
+        var back = Assert.Single(f.Ctx.Held.List());
+        Assert.Equal("BROKEN", back.Id);
+        Assert.Equal(broken.Label, back.Label);
+        Assert.Equal(broken.HeldAt, back.HeldAt);
+        Assert.Equal(1, sale.HeldCount);
+    }
+
+    [Fact]
     public async Task Deleting_a_held_bill_needs_a_supervisor_and_is_logged()
     {
         var sale = NewSale();
@@ -367,6 +392,72 @@ public sealed class PriceHoldRecallTests : IDisposable
         Assert.Equal(id, receipt.ClientId);
         Assert.False(drawer);
         Assert.True(copy);
+    }
+
+    [Fact]
+    public void After_a_failed_original_print_the_first_reprint_is_not_a_copy_and_the_next_one_is()
+    {
+        var sale = NewSale();
+        f.Output.Fail = true;
+        var id = CompleteCashSale(sale);
+        Assert.Empty(f.Output.Printed);
+        f.Output.Fail = false;
+
+        sale.ReprintLast();
+        NewSale().ReprintLast();                                        // also after a restart
+
+        Assert.Equal(2, f.Output.Printed.Count);
+        Assert.All(f.Output.Printed, p => Assert.Equal(id, p.Receipt.ClientId));
+        Assert.All(f.Output.Printed, p => Assert.False(p.OpenDrawer));
+        Assert.False(f.Output.Printed[0].Copy);
+        Assert.True(f.Output.Printed[1].Copy);
+    }
+
+    [Fact]
+    public void A_failed_reprint_does_not_make_the_next_one_a_copy()
+    {
+        var sale = NewSale();
+        f.Output.Fail = true;
+        CompleteCashSale(sale);
+        sale.ReprintLast();
+        f.Output.Fail = false;
+
+        sale.ReprintLast();
+
+        Assert.False(Assert.Single(f.Output.Printed).Copy);
+    }
+
+    [Fact]
+    public void Popup_print_again_after_a_failed_original_is_not_a_copy_until_it_has_printed()
+    {
+        var sale = NewSale();
+        f.Output.Fail = true;
+        CompleteCashSale(sale);
+        f.Output.Fail = false;
+        var printAgain = Assert.IsType<Func<string?>>(f.Dialogs.LastReprint);
+
+        Assert.Null(printAgain());
+        Assert.Null(printAgain());
+        sale.ReprintLast();
+
+        Assert.Equal(new[] { false, true, true }, f.Output.Printed.Select(p => p.Copy));
+        Assert.All(f.Output.Printed, p => Assert.False(p.OpenDrawer));
+    }
+
+    [Fact]
+    public void A_new_bill_does_not_inherit_the_previous_bills_printed_flag()
+    {
+        var sale = NewSale();
+        CompleteCashSale(sale);                                         // printed fine: flag "1"
+        f.Output.Fail = true;
+        sale.Scan("111");
+        var pay = new PaymentViewModel(f.Ctx, f.Session, sale, TenderKind.Card);
+        pay.CompleteCommand.Execute(null);                             // second bill's print fails
+        f.Output.Fail = false;
+
+        sale.ReprintLast();
+
+        Assert.False(f.Output.Printed[^1].Copy);
     }
 
     [Fact]

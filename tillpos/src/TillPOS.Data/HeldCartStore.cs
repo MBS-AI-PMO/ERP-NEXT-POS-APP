@@ -10,12 +10,18 @@ public sealed class HeldCartStore(TillDb db)
     {
         if (cart.Lines.Count == 0) throw new InvalidOperationException("There is nothing to hold.");
         var held = new HeldCart(Guid.NewGuid().ToString("N"), label, at, cart.Snapshot());
-        using var c = db.Open();
-        c.Exec(null, "INSERT INTO held_cart (id, label, held_at, json) VALUES (@id, @l, @at, @j)",
-            ("@id", held.Id), ("@l", label), ("@at", at.UtcDateTime.ToString("O", CultureInfo.InvariantCulture)),
-            ("@j", JsonSerializer.Serialize(held)));
+        Put(held);
         cart.Clear();
         return held;
+    }
+
+    /// <summary>Stores a held bill as it is (same id, label and time); used to put a taken bill back when its recall failed.</summary>
+    public void Put(HeldCart held)
+    {
+        using var c = db.Open();
+        c.Exec(null, "INSERT INTO held_cart (id, label, held_at, json) VALUES (@id, @l, @at, @j)",
+            ("@id", held.Id), ("@l", held.Label), ("@at", held.HeldAt.UtcDateTime.ToString("O", CultureInfo.InvariantCulture)),
+            ("@j", JsonSerializer.Serialize(held)));
     }
 
     public IReadOnlyList<HeldCart> List()

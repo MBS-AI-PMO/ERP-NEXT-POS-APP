@@ -20,6 +20,8 @@ public sealed class SaleViewModel : ObservableObject
     public const string AutosaveKey = "current_cart";
     /// <summary>The kv key holding the client id of the last completed bill (Ctrl+P reprints it, also after a restart).</summary>
     public const string LastReceiptKey = "last_receipt";
+    /// <summary>"1" once the last bill has printed successfully (a later print is then a "*** COPY ***"), otherwise "0".</summary>
+    public const string LastReceiptPrintedKey = "last_receipt_printed";
     public const int MaxHeld = 20;
     private const decimal MaxQty = 999m;
     private readonly TillContext ctx;
@@ -246,7 +248,16 @@ public sealed class SaleViewModel : ObservableObject
             return;
         }
         if (held is null) { Error("That bill was already recalled"); RefreshHeldCount(); return; }
-        var failed = Cart.Restore(held.Lines);
+        IReadOnlyList<(HeldLine Line, AddOutcome Outcome)> failed;
+        try
+        {
+            failed = Cart.Restore(held.Lines);
+        }
+        catch (Exception)
+        {
+            RecallFailed(held);
+            return;
+        }
         if (failed.Count > 0) Error($"{failed.Count.ToString(CultureInfo.InvariantCulture)} item(s) on the held bill can no longer be sold");
         else Info("Bill recalled");
         Changed();
@@ -270,12 +281,60 @@ public sealed class SaleViewModel : ObservableObject
         if (receipt is null) { Info("No receipt to reprint yet"); return; }
         try
         {
-            ctx.Output.Print(receipt, openDrawer: false, copy: true);
+            ctx.Output.Print(receipt, openDrawer: false, copy: LastReceiptPrinted());
             Info($"Reprinted {receipt.ClientId}");
         }
         catch (Exception ex)
         {
             Error($"Reprint of {receipt.ClientId} failed: {ex.Message}");
+            return;
+        }
+        MarkLastReceiptPrinted(true);
+    }
+
+    /// <summary>The recall could not restore the bill: it goes back on hold (same id, label and time) and the screen is left
+    /// empty. If even that fails, the restored lines stay on the bill (and in the autosave) so nothing is lost.</summary>
+    private void RecallFailed(HeldCart held)
+    {
+        try
+        {
+            ctx.Held.Put(held);
+        }
+        catch (Exception ex)
+        {
+            Changed();
+            Error($"Could not recall the whole bill ({ex.Message}) — check the lines on the screen against the customer's items.");
+            RefreshHeldCount();
+            return;
+        }
+        Cart.Clear();
+        Changed();
+        Error("Could not recall the bill — it is still on hold");
+        RefreshHeldCount();
+    }
+
+    /// <summary>Whether the last bill has already printed once (unknown counts as not printed: no COPY mark).</summary>
+    private bool LastReceiptPrinted()
+    {
+        try
+        {
+            return ctx.Kv.GetValue(LastReceiptPrintedKey) == "1";
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    private void MarkLastReceiptPrinted(bool printed)
+    {
+        try
+        {
+            ctx.Kv.SetValue(LastReceiptPrintedKey, printed ? "1" : "0");
+        }
+        catch (Exception)
+        {
+            // Only decides whether a later reprint carries the COPY mark.
         }
     }
 
@@ -285,6 +344,7 @@ public sealed class SaleViewModel : ObservableObject
     /// popup (when enabled); a barcode scanned while it is open closes it and goes on the next bill.</summary>
     public void SaleCompleted(Receipt receipt, string? printError)
     {
+        MarkLastReceiptPrinted(false);                // never let the previous bill's flag mark this one's first print as a copy
         try
         {
             ctx.Kv.SetValue(LastReceiptKey, receipt.ClientId);
@@ -293,6 +353,7 @@ public sealed class SaleViewModel : ObservableObject
         {
             // The bill is saved; only Ctrl+P "reprint last" misses it.
         }
+        if (printError is null) MarkLastReceiptPrinted(true);
         Refresh();
         if (printError is null) Info($"Saved {receipt.ClientId}. Change {Format.Money(receipt.Change)}");
         else if (ctx.ShowReceiptPreview) Error($"Saved {receipt.ClientId}, but the printer failed ({printError}). Use Print again on the invoice, or note bill number {receipt.ClientId}.");
@@ -300,11 +361,15 @@ public sealed class SaleViewModel : ObservableObject
         ctx.Navigator.Show(this);
         if (!ctx.ShowReceiptPreview) return;
 
+        // "Print again" is a COPY only once this bill has printed: the original, or an earlier Print again in this popup.
+        var printed = printError is null;
         var code = ctx.Dialogs.ShowReceipt(receipt, printError, () =>
         {
             try
             {
-                ctx.Output.Print(receipt, openDrawer: false, copy: true);
+                ctx.Output.Print(receipt, openDrawer: false, copy: printed);
+                printed = true;
+                MarkLastReceiptPrinted(true);
                 return null;
             }
             catch (Exception ex)
