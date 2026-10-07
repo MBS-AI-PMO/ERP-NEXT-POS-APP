@@ -59,6 +59,33 @@ const approvalDoctype = {
 if (await exists('DocType', 'TillPOS Approval')) console.log('ok   DocType TillPOS Approval exists');
 else { await call('POST', '/api/resource/DocType', approvalDoctype); console.log('made DocType TillPOS Approval'); }
 
+// POS Cashier: the till downloads this list (PIN at permission level 1 so ordinary users cannot read it).
+const cashierDoctype = {
+  doctype: 'DocType', name: 'POS Cashier', module: 'Selling', custom: 1, is_submittable: 0,
+  autoname: 'field:cashier_name', title_field: 'cashier_name', track_changes: 1,
+  description: 'Cashiers and supervisors who may log in to TillPOS tills',
+  fields: [
+    { fieldname: 'cashier_name', label: 'Cashier Name', fieldtype: 'Data', reqd: 1, unique: 1, in_list_view: 1 },
+    { fieldname: 'user', label: 'ERPNext User', fieldtype: 'Link', options: 'User', in_list_view: 1 },
+    { fieldname: 'pin', label: 'PIN', fieldtype: 'Data', permlevel: 1, description: '4-6 digits, unique across cashiers' },
+    { fieldname: 'is_supervisor', label: 'Is Supervisor', fieldtype: 'Check', in_list_view: 1 },
+    { fieldname: 'enabled', label: 'Enabled', fieldtype: 'Check', default: '1', in_list_view: 1 },
+  ],
+  permissions: [
+    { role: 'System Manager', read: 1, write: 1, create: 1, delete: 1, report: 1, export: 1 },
+    { role: 'System Manager', permlevel: 1, read: 1, write: 1 },
+  ],
+};
+if (await exists('DocType', 'POS Cashier')) console.log('ok   DocType POS Cashier exists');
+else { await call('POST', '/api/resource/DocType', cashierDoctype); console.log('made DocType POS Cashier'); }
+
+// Optional cashiers from the config: "Cashiers": [{ "cashier_name": "...", "pin": "1234", "is_supervisor": 0, "user": "..." }]
+for (const c of cfg.Cashiers ?? []) {
+  if (await exists('POS Cashier', c.cashier_name)) { console.log(`ok   POS Cashier ${c.cashier_name} exists`); continue; }
+  await call('POST', '/api/resource/POS Cashier', { doctype: 'POS Cashier', enabled: 1, ...c });
+  console.log(`made POS Cashier ${c.cashier_name}`);
+}
+
 // Report, read-only: things the admin still has to do by hand.
 const profiles = await call('GET', '/api/resource/POS Profile?fields=["name","disable_rounded_total","write_off_limit","write_off_account","account_for_change_amount","customer"]');
 console.log('POS Profiles:', JSON.stringify(profiles.data));
