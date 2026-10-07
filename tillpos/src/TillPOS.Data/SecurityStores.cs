@@ -79,6 +79,13 @@ public sealed class ApprovalStore(TillDb db)
             WHERE id = @id AND sync_status <> 'Synced'
             """, id, ("@e", error), ("@next", SqlExt.Instant(nextAttemptAt)));
 
+    /// <summary>Written just before the approval is sent (see <see cref="ReceiptStore.MarkInFlight"/>).</summary>
+    public void MarkInFlight(string id, DateTimeOffset until) =>
+        Update("""
+            UPDATE approval_log SET sync_status = 'Pending', last_error = @e, next_attempt_at = @u
+            WHERE id = @id AND sync_status IN ('Pending', 'Failed')
+            """, id, ("@e", ReceiptStore.InFlight), ("@u", SqlExt.Instant(until)));
+
     /// <summary>A failed approval goes back to the queue at once, its backoff reset.</summary>
     public void Retry(string id) =>
         Update("UPDATE approval_log SET sync_status = 'Pending', attempts = 0, next_attempt_at = NULL WHERE id = @id AND sync_status = 'Failed'", id);

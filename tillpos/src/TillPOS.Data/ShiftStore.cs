@@ -104,6 +104,16 @@ public sealed class ShiftStore(TillDb db)
             clientId, ("@e", error), ("@next", SqlExt.Instant(nextAttemptAt)));
     }
 
+    /// <summary>Written just before the document is sent (see <see cref="ReceiptStore.MarkInFlight"/>).</summary>
+    public void MarkInFlight(string clientId, ShiftDocument document, DateTimeOffset until)
+    {
+        var (status, _) = Columns(document);
+        Update($"""
+            UPDATE shift SET {status} = 'Pending', last_error = @e, next_attempt_at = @u
+            WHERE client_id = @id AND {status} IN ('Pending', 'Failed')
+            """, clientId, ("@e", ReceiptStore.InFlight), ("@u", SqlExt.Instant(until)));
+    }
+
     /// <summary>A failed shift document goes back to the queue at once, its backoff reset.</summary>
     public void Retry(string clientId) =>
         Update("""

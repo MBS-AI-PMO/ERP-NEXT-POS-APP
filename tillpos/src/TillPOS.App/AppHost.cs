@@ -42,6 +42,8 @@ public sealed class AppHost
         catalog = new SqliteCatalog(db);
         cashiers = new CashierStore(db);
         // Everything reads through a read-only view of the client: its writer side is only handed out in Live upload mode.
+        // 60 s per request: an upload whose answer does not come in time stays "in progress" for Uploader.InFlightHold (5 min),
+        // longer than gunicorn's 120 s worker timeout, before it is looked up again, so a slow insert is never sent twice.
         var client = ErpClient.Create(new ErpConnection(new Uri(settings.BaseUrl), settings.ApiKey, ApiSecret(settings, settingsPath)),
             TimeSpan.FromSeconds(60));
         erp = new ReadOnlyErpClient(client);

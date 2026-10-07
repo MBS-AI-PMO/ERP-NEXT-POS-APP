@@ -28,6 +28,9 @@ public sealed class Uploader
     public static readonly TimeSpan FirstBackoff = TimeSpan.FromSeconds(30);
     public static readonly TimeSpan MaxBackoff = TimeSpan.FromMinutes(5);
     public const int MaxErrorLength = 300;
+
+    /// <summary>How long a sent document is left alone when its answer is lost (see UploadAsync).</summary>
+    public static readonly TimeSpan InFlightHold = TimeSpan.FromMinutes(5);
     private const string InvoiceIdField = "posa_client_request_id";
     private const string OfflineIdField = "custom_offline_id";
 
@@ -113,8 +116,9 @@ public sealed class Uploader
             openingName = await UploadAsync(
                 new Doc(OpeningShiftPayload.Doctype, OfflineIdField, id, OpeningKey(id), $"Opening of shift {id}", true,
                     () => OpeningShiftPayload.Build(opening, profile.PosProfile, profile.Company, user)),
-                sync.Attempts, name => shifts.MarkSynced(id, ShiftDocument.Opening, name),
-                (error, next) => shifts.MarkFailed(id, ShiftDocument.Opening, error, next), run, ct);
+                new Marks(sync.Attempts, name => shifts.MarkSynced(id, ShiftDocument.Opening, name),
+                    (error, next) => shifts.MarkFailed(id, ShiftDocument.Opening, error, next),
+                    until => shifts.MarkInFlight(id, ShiftDocument.Opening, until)), run, ct);
             if (openingName is null) return;
         }
 
@@ -143,8 +147,9 @@ public sealed class Uploader
             new Doc(ClosingShiftPayload.Doctype, OfflineIdField, id, ClosingKey(id), $"Closing of shift {id}", true,
                 () => ClosingShiftPayload.Build(opening, closing, openingName, uploaded, profile.PosProfile, profile.Company, user,
                     profile.Customer)),
-            sync.Attempts, name => shifts.MarkSynced(id, ShiftDocument.Closing, name),
-            (error, next) => shifts.MarkFailed(id, ShiftDocument.Closing, error, next), run, ct);
+            new Marks(sync.Attempts, name => shifts.MarkSynced(id, ShiftDocument.Closing, name),
+                (error, next) => shifts.MarkFailed(id, ShiftDocument.Closing, error, next),
+                until => shifts.MarkInFlight(id, ShiftDocument.Closing, until)), run, ct);
     }
 
     /// <summary>Uploads one bill; returns its ERPNext name (DryRun: a stand-in), or null when it failed or waits.</summary>
@@ -170,8 +175,9 @@ public sealed class Uploader
         return await UploadAsync(
             new Doc(PosInvoicePayload.Doctype, InvoiceIdField, receipt.ClientId, InvoiceKey(receipt.ClientId), label, true, () => payload.Doc,
                 payload.Expected, profile.WriteOffLimit),
-            bill.Attempts, name => receipts.MarkSynced(receipt.ClientId, name),
-            (error, next) => receipts.MarkFailed(receipt.ClientId, error, next), run, ct);
+            new Marks(bill.Attempts, name => receipts.MarkSynced(receipt.ClientId, name),
+                (error, next) => receipts.MarkFailed(receipt.ClientId, error, next), until => receipts.MarkInFlight(receipt.ClientId, until)),
+            run, ct);
     }
 
     /// <summary>The ERPNext name of a sale on this till (DryRun: a stand-in when it would be uploaded in this run), or null.</summary>
@@ -213,7 +219,8 @@ public sealed class Uploader
             await UploadAsync(
                 new Doc(ApprovalPayload.Doctype, OfflineIdField, a.Id, $"APPROVAL-{a.Id}", label, false,
                     () => ApprovalPayload.Build(a, till, shiftName, invoiceName)),
-                entry.Attempts, name => approvals.MarkUploaded(a.Id, name), (error, next) => approvals.MarkFailed(a.Id, error, next), run, ct);
+                new Marks(entry.Attempts, name => approvals.MarkUploaded(a.Id, name), (error, next) => approvals.MarkFailed(a.Id, error, next),
+                    until => approvals.MarkInFlight(a.Id, until)), run, ct);
         }
     }
 
@@ -221,11 +228,17 @@ public sealed class Uploader
     private sealed record Doc(string Doctype, string IdField, string ClientId, string Key, string Label, bool Submittable,
         Func<Dictionary<string, object?>> Build, ExpectedTotals? Expected = null, decimal WriteOffLimit = 0m);
 
+    /// <summary>How a document's upload state is written: synced (with its ERPNext name), failed (error, next try) and in flight
+    /// (sent, answer pending, until).</summary>
+    private sealed record Marks(int Attempts, Action<string> Synced, Action<string, DateTimeOffset> Failed, Action<DateTimeOffset> InFlight);
+
     /// <summary>Lookup, then insert (Live) or preview (DryRun). Returns the ERPNext name (DryRun: the found name or a stand-in),
-    /// or null when the document failed. ERPNext's refusals are recorded on the document with a backoff; anything else
-    /// (network) propagates and stops the run.</summary>
-    private async Task<string?> UploadAsync(Doc doc, int attempts, Action<string> markSynced, Action<string, DateTimeOffset> markFailed,
-        Run run, CancellationToken ct)
+    /// or null when the document failed. Only ERPNext's definite refusals (<see cref="Classify"/>) are recorded on the document,
+    /// with a backoff; an unknown outcome (network, timeout, gateway, auth, rate limit) propagates and stops the run.
+    /// <para>Before the insert the document is marked in flight for <see cref="InFlightHold"/>: if the answer is lost, it is not
+    /// sent again before then, and the next try looks it up first. The hold (5 min) is longer than the client's 60 s timeout
+    /// and gunicorn's 120 s worker timeout, so a request ERPNext is still working on has finished before the lookup.</para></summary>
+    private async Task<string?> UploadAsync(Doc doc, Marks marks, Run run, CancellationToken ct)
     {
         if (Mode == UploadMode.DryRun && previewed.Contains(doc.Key)) return run.Plan(doc.Key, doc.ClientId);
         try
@@ -239,24 +252,55 @@ public sealed class Uploader
                 return run.Plan(doc.Key, doc.ClientId);
             }
 
-            if (found is null)
-            {
-                var saved = await writer.InsertAsync(doc.Doctype, doc.Build(), ct);
-                found = (saved.StrOrNull("name") ?? throw new UploadProblem($"ERPNext saved the {doc.Doctype} without returning its name."), saved);
-            }
-            var (name, erpDoc) = found.Value;
-            if (Mismatch(doc, name, erpDoc) is { } mismatch) throw new UploadProblem(mismatch);
-            markSynced(name);
+            var (name, erpDoc) = found ?? await InsertAsync(doc, marks, ct);
+            if (Mismatch(doc, name, erpDoc) is { } mismatch) throw new DocumentFailure(mismatch);
+            marks.Synced(name);
             run.Uploaded++;
             return name;
         }
-        catch (Exception ex) when (ex is ErpException or UploadProblem)
+        catch (Exception ex) when (ex is DocumentFailure || Classify(ex) == ErpOutcome.Refused)
         {
             var error = Short(ex.Message);
-            markFailed(error, now() + Backoff(attempts + 1));
+            marks.Failed(error, now() + Backoff(marks.Attempts + 1));
             run.Problems.Add($"{doc.Label}: {error}");
             return null;
         }
+    }
+
+    /// <summary>Marks the document in flight and inserts it. ERPNext saying it already has the document (a unique client id)
+    /// means an earlier insert went through: it is looked up and adopted.</summary>
+    private async Task<(string Name, JsonElement Doc)> InsertAsync(Doc doc, Marks marks, CancellationToken ct)
+    {
+        marks.InFlight(now() + InFlightHold);
+        JsonElement saved;
+        try
+        {
+            saved = await writer.InsertAsync(doc.Doctype, doc.Build(), ct);
+        }
+        catch (Exception ex) when (Classify(ex) == ErpOutcome.Duplicate)
+        {
+            return await LookupAsync(doc, ct)
+                ?? throw new DocumentFailure($"ERPNext reports this {doc.Doctype} as a duplicate, but none has this till's id: {Short(ex.Message)}");
+        }
+        // No name in the answer: the outcome is unknown, the in-flight marker stays and the next try looks it up.
+        return (saved.StrOrNull("name") ?? throw new InvalidDataException($"ERPNext answered the {doc.Doctype} insert without its name."), saved);
+    }
+
+    public enum ErpOutcome { Unknown, Refused, Duplicate }
+
+    private static readonly string[] DuplicateMarkers = ["DuplicateEntryError", "UniqueValidationError", "Duplicate entry", "already exists"];
+    private static readonly string[] RefusalTypes = ["ValidationError", "MandatoryError", "LinkValidationError", "PermissionError"];
+
+    /// <summary>What an error says about a document: Duplicate (ERPNext already has it), Refused (ERPNext checked it and said no:
+    /// the validation and permission errors, HTTP 417), or Unknown (network, timeout, gateway 502/503/504, 408, 429, 401, an
+    /// unreadable answer, a server error): nothing is known about the document, so it is left as it is.</summary>
+    public static ErpOutcome Classify(Exception ex)
+    {
+        if (ex is not ErpException erp) return ErpOutcome.Unknown;
+        var text = $"{erp.ExcType} {erp.Message}";
+        if (DuplicateMarkers.Any(m => text.Contains(m, StringComparison.OrdinalIgnoreCase))) return ErpOutcome.Duplicate;
+        if (erp.ExcType is { } type && RefusalTypes.Contains(type, StringComparer.Ordinal)) return ErpOutcome.Refused;
+        return erp.StatusCode == 417 ? ErpOutcome.Refused : ErpOutcome.Unknown;
     }
 
     /// <summary>The document with this client id in ERPNext, or null. A submittable document found only as a draft or
@@ -269,7 +313,7 @@ public sealed class Uploader
         foreach (var row in rows)
             if (!doc.Submittable || row.Int("docstatus") == 1)
                 return (row.Str("name"), row);
-        throw new UploadProblem(
+        throw new DocumentFailure(
             $"{doc.Doctype} {string.Join(", ", rows.Select(r => r.StrOrNull("name")))} has this till's id in ERPNext but is a draft or " +
             "cancelled. Check it in ERPNext.");
     }
@@ -317,5 +361,6 @@ public sealed class Uploader
         public string Plan(string key, string clientId) => planned[key] = $"(new: {clientId})";
     }
 
-    private sealed class UploadProblem(string message) : Exception(message);
+    /// <summary>A definite problem with one document (recorded on it as Failed).</summary>
+    private sealed class DocumentFailure(string message) : Exception(message);
 }

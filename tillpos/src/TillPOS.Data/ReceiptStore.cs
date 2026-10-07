@@ -107,6 +107,18 @@ public sealed class ReceiptStore(TillDb db) : IReceiptStore
             throw new KeyNotFoundException($"Receipt {clientId} not found.");
     }
 
+    /// <summary>Written just before the bill is sent: it stays Pending with "upload in progress" and is not tried again before
+    /// <paramref name="until"/>. If the answer never comes (timeout, dropped connection), the marker stays, and the next try
+    /// starts with the client-id lookup. A synced bill is left alone.</summary>
+    public void MarkInFlight(string clientId, DateTimeOffset until) =>
+        Update("""
+            UPDATE receipt SET sync_status = 'Pending', last_error = @e, next_attempt_at = @u
+            WHERE client_id = @id AND sync_status IN ('Pending', 'Failed')
+            """, clientId, true, ("@e", InFlight), ("@u", SqlExt.Instant(until)));
+
+    /// <summary>The last_error of a document whose upload was started but not answered.</summary>
+    public const string InFlight = "upload in progress";
+
     /// <summary>A failed bill goes back to the queue at once, its backoff reset.</summary>
     public void Retry(string clientId) =>
         Update("UPDATE receipt SET sync_status = 'Pending', attempts = 0, next_attempt_at = NULL WHERE client_id = @id AND sync_status = 'Failed'",

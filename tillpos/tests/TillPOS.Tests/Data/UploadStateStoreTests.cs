@@ -139,6 +139,30 @@ public sealed class UploadStateStoreTests : IDisposable
     }
 
     [Fact]
+    public void The_in_flight_marker_keeps_a_document_pending_and_leaves_synced_ones_alone()
+    {
+        Open("S1", 0);
+        Bill("B1", "S1");
+        approvals.Add(new ApprovalRecord("a1", ApprovalAction.LineVoid, "c", "s", "S1", null, null, 0m, null, At));
+        var until = At.AddMinutes(5);
+        receipts.MarkFailed("B1", "Item disabled", At);
+
+        receipts.MarkInFlight("B1", until);
+        shifts.MarkInFlight("S1", ShiftDocument.Opening, until);
+        approvals.MarkInFlight("a1", until);
+
+        Assert.Equal(new ReceiptSyncInfo(ReceiptSyncStatus.Pending, null, "upload in progress", 1, until), receipts.SyncInfo("B1"));
+        Assert.Equal(new ShiftSyncInfo(UploadStatus.Pending, null, UploadStatus.Pending, null, "upload in progress", 0, until), shifts.SyncInfo("S1"));
+        var a = Assert.Single(approvals.Outbox());
+        Assert.Equal((UploadStatus.Pending, "upload in progress", (DateTimeOffset?)until), (a.Status, a.LastError, a.NextAttemptAt));
+
+        receipts.MarkSynced("B1", "ACC-1");
+        receipts.MarkInFlight("B1", until);
+        Assert.Equal(ReceiptSyncStatus.Synced, receipts.SyncInfo("B1").Status);
+        Assert.Null(receipts.SyncInfo("B1").NextAttemptAt);
+    }
+
+    [Fact]
     public void Saving_a_bill_or_opening_and_closing_a_shift_signals_the_upload()
     {
         var signals = 0;

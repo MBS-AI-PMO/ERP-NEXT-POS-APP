@@ -150,10 +150,20 @@ public sealed class UploaderTests : IDisposable
         var first = await New().RunOnceAsync();
 
         Assert.Contains(first.Problems, p => p.Contains("connection reset"));
-        Assert.Equal(ReceiptSyncStatus.Pending, receipts.SyncInfo("TILL2-A").Status);
+        // The in-flight marker stays: Pending, no attempt counted, left alone for 5 minutes.
+        Assert.Equal(new ReceiptSyncInfo(ReceiptSyncStatus.Pending, null, "upload in progress", 0, clock.AddMinutes(5)),
+            receipts.SyncInfo("TILL2-A"));
         Assert.Single(InsertedInvoices);
 
         erp.LoseInsertAnswer = null;
+        var calls = erp.ListCalls.Count;
+        clock = clock.AddMinutes(4);
+        var early = await New().RunOnceAsync();
+        Assert.Equal(calls, erp.ListCalls.Count);   // not even looked up yet
+        Assert.Contains(early.Problems, p => p.Contains("upload in progress"));
+        Assert.Single(InsertedInvoices);
+
+        clock = clock.AddMinutes(1);
         var second = await New().RunOnceAsync();
 
         Assert.Single(InsertedInvoices); // adopted, not inserted again
@@ -331,7 +341,7 @@ public sealed class UploaderTests : IDisposable
         var body = JsonDocument.Parse("""{"exc_type":"ValidationError","_server_messages":"[\"{\\\"message\\\": \\\"Item <b>RICE5</b> is disabled\\\"}\"]"}""");
         erp.RejectInsert = (doctype, doc) => doctype != "POS Invoice" ? null
             : Str(doc, "posa_client_request_id") == "TILL2-A" ? ErpException.From(417, body.RootElement, "")
-            : new ErpException(500, new string('x', 400), null);
+            : new ErpException(417, new string('x', 400), null);
 
         var report = await New().RunOnceAsync();
 
