@@ -10,17 +10,19 @@ namespace TillPOS.App;
 /// to a file next to the database instead.</summary>
 public sealed class ReceiptOutput(TillSettings settings, CatalogStore store) : IReceiptOutput
 {
-    public void Print(Receipt receipt, bool openDrawer)
+    /// <summary>A copy written to a file goes next to the original as "{id}-COPY.txt", so the original file is kept.</summary>
+    public void Print(Receipt receipt, bool openDrawer, bool copy = false)
     {
         var header = Header();
         if (string.IsNullOrWhiteSpace(settings.PrinterName))
         {
             var folder = Path.Combine(Path.GetDirectoryName(settings.DbPath)!, "receipts");
             Directory.CreateDirectory(folder);
-            File.WriteAllLines(Path.Combine(folder, receipt.ClientId + ".txt"), ReceiptRenderer.TextLines(receipt, header, settings.PaperWidth));
+            File.WriteAllLines(Path.Combine(folder, receipt.ClientId + (copy ? "-COPY.txt" : ".txt")),
+                ReceiptRenderer.TextLines(receipt, header, settings.PaperWidth, copy));
             return;
         }
-        RawPrinter.Send(settings.PrinterName, ReceiptRenderer.EscPosBytes(receipt, header, settings.PaperWidth, openDrawer));
+        RawPrinter.Send(settings.PrinterName, ReceiptRenderer.EscPosBytes(receipt, header, settings.PaperWidth, openDrawer, copy));
     }
 
     /// <summary>The receipt header printed on every bill (also used by the on-screen invoice).</summary>

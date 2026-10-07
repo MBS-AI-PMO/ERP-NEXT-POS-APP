@@ -425,6 +425,36 @@ public class ReceiptRendererTests
         return count;
     }
 
+    [Theory]
+    [InlineData(PaperWidth.Mm80)]
+    [InlineData(PaperWidth.Mm58)]
+    public void Copy_mark_is_printed_only_on_a_copy_right_after_the_title_block(PaperWidth paper)
+    {
+        var width = (int)paper;
+        Assert.DoesNotContain(ReceiptRenderer.Layout(Sale(), Header, paper), l => l.Text.Contains("COPY"));
+        Assert.DoesNotContain(Text(Sale(), paper), l => l.Contains("COPY"));
+
+        var layout = ReceiptRenderer.Layout(Sale(), Header, paper, copy: true).ToList();
+        var mark = Assert.Single(layout, l => l.Text.Contains("*** COPY ***"));
+        Assert.Equal(LineStyle.Bold, mark.Style);
+        Assert.Equal(new string(' ', (width - "*** COPY ***".Length) / 2) + "*** COPY ***", mark.Text);
+        var index = layout.IndexOf(mark);
+        Assert.Equal(new string('=', width), layout[index - 1].Text);
+        Assert.Equal(LineStyle.Title, layout[index - 2].Style);
+        Assert.Contains(ReceiptRenderer.TextLines(Sale(), Header, paper, copy: true), l => l.Trim() == "*** COPY ***");
+    }
+
+    [Fact]
+    public void Escpos_copy_carries_the_mark_and_no_drawer_when_not_asked()
+    {
+        var mark = System.Text.Encoding.ASCII.GetBytes("*** COPY ***");
+        var copy = ReceiptRenderer.EscPosBytes(Sale(), Header, PaperWidth.Mm80, openDrawer: false, copy: true);
+
+        Assert.True(EscPosTests.Contains(copy, mark));
+        Assert.False(EscPosTests.Contains(ReceiptRenderer.EscPosBytes(Sale(), Header, PaperWidth.Mm80, openDrawer: false), mark));
+        Assert.False(EscPosTests.Contains(copy, [0x1B, 0x70, 0x00, 0x19, 0xFA]));
+    }
+
     private static int IndexOf(byte[] haystack, byte[] needle)
     {
         for (var i = 0; i <= haystack.Length - needle.Length; i++)

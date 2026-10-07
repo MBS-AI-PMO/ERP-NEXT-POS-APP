@@ -15,6 +15,14 @@ public sealed class FakeDialogs : IDialogs
     public int SetupRequests { get; private set; }
     public Queue<bool> SetupResults { get; } = new();
 
+    /// <summary>Plays the price-check dialog: gets the view model, returns the pick (default: closed without adding).</summary>
+    public Func<PriceCheckViewModel, PriceCheckPick?> OnPriceCheck { get; set; } = _ => null;
+    public int PriceCheckRequests { get; private set; }
+
+    /// <summary>Plays the held-bills dialog: gets the view model, returns the id to recall (default: closed).</summary>
+    public Func<HeldBillsViewModel, string?> OnHeldBills { get; set; } = _ => null;
+    public int HeldBillsRequests { get; private set; }
+
     public Task<string?> AskPinAsync(string title, string reason)
     {
         PinRequests++;
@@ -36,6 +44,18 @@ public sealed class FakeDialogs : IDialogs
         SetupRequests++;
         return SetupResults.Count > 0 && SetupResults.Dequeue();
     }
+
+    public PriceCheckPick? ShowPriceCheck(PriceCheckViewModel vm)
+    {
+        PriceCheckRequests++;
+        return OnPriceCheck(vm);
+    }
+
+    public string? ShowHeldBills(HeldBillsViewModel vm)
+    {
+        HeldBillsRequests++;
+        return OnHeldBills(vm);
+    }
 }
 
 public sealed class FakeNavigator : INavigator
@@ -51,14 +71,14 @@ public sealed class FakeClock(DateTimeOffset start) : IClock
 
 public sealed class FakeOutput : IReceiptOutput
 {
-    public List<(Receipt Receipt, bool OpenDrawer)> Printed { get; } = [];
+    public List<(Receipt Receipt, bool OpenDrawer, bool Copy)> Printed { get; } = [];
     public bool Fail { get; set; }
     public Action? OnPrint { get; set; }
 
-    public void Print(Receipt receipt, bool openDrawer)
+    public void Print(Receipt receipt, bool openDrawer, bool copy = false)
     {
         OnPrint?.Invoke();
         if (Fail) throw new InvalidOperationException("Printer offline");
-        Printed.Add((receipt, openDrawer));
+        Printed.Add((receipt, openDrawer, copy));
     }
 }

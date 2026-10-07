@@ -23,6 +23,13 @@ public interface IDialogs
     /// <summary>Shows the till setup (printer, paper, till number, invoice preview). Returns true when the settings were saved
     /// (the app then restarts to use them).</summary>
     bool ShowSetup();
+
+    /// <summary>Shows the price check (modal). Returns what "Add to bill" should add (<see cref="PriceCheckViewModel.AddToBill"/>),
+    /// or null when it was closed without adding.</summary>
+    PriceCheckPick? ShowPriceCheck(PriceCheckViewModel vm);
+
+    /// <summary>Shows the held bills (modal). Returns the id of the bill to recall, or null.</summary>
+    string? ShowHeldBills(HeldBillsViewModel vm);
 }
 
 public interface IClock
@@ -32,8 +39,9 @@ public interface IClock
 
 public interface IReceiptOutput
 {
-    /// <summary>Prints the receipt; throws if the printer fails (the bill is already saved).</summary>
-    void Print(Receipt receipt, bool openDrawer);
+    /// <summary>Prints the receipt; throws if the printer fails (the bill is already saved). <paramref name="copy"/> marks a
+    /// reprint ("*** COPY ***").</summary>
+    void Print(Receipt receipt, bool openDrawer, bool copy = false);
 }
 
 /// <summary>Everything the view models need from the rest of the till, assembled once by the app.</summary>
@@ -53,4 +61,5 @@ public sealed record TillContext(
     IReceiptOutput Output,
     INavigator Navigator,
     IDialogs Dialogs,
-    bool ShowReceiptPreview);
+    bool ShowReceiptPreview,
+    HeldCartStore Held);

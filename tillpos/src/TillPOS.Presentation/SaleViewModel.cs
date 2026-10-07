@@ -18,6 +18,9 @@ public sealed record SaleLine(Guid Id, int No, string Name, string? Barcode, str
 public sealed class SaleViewModel : ObservableObject
 {
     public const string AutosaveKey = "current_cart";
+    /// <summary>The kv key holding the client id of the last completed bill (Ctrl+P reprints it, also after a restart).</summary>
+    public const string LastReceiptKey = "last_receipt";
+    public const int MaxHeld = 20;
     private const decimal MaxQty = 999m;
     private readonly TillContext ctx;
     private readonly SessionState session;
@@ -33,6 +36,7 @@ public sealed class SaleViewModel : ObservableObject
     private string total = "0.00";
     private string message = "";
     private bool messageIsError;
+    private int heldCount;
 
     public SaleViewModel(TillContext ctx, SessionState session, SupervisorGate gate, Func<SaleViewModel, TenderKind, object> newPayment)
     {
@@ -54,9 +58,14 @@ public sealed class SaleViewModel : ObservableObject
         VoidBillCommand = new AsyncRelayCommand(VoidBillAsync);
         PayCashCommand = new RelayCommand(() => Pay(TenderKind.Cash));
         PayCardCommand = new RelayCommand(() => Pay(TenderKind.Card));
+        PriceCheckCommand = new RelayCommand(PriceCheck);
+        HoldCommand = new RelayCommand(Hold);
+        RecallCommand = new RelayCommand(Recall);
+        ReprintLastCommand = new RelayCommand(ReprintLast);
 
         RestoreAutosave();
         Refresh();
+        RefreshHeldCount();
     }
 
     public Cart Cart { get; }
@@ -71,6 +80,8 @@ public sealed class SaleViewModel : ObservableObject
     public string Total { get => total; private set => SetProperty(ref total, value); }
     public string Message { get => message; private set => SetProperty(ref message, value); }
     public bool MessageIsError { get => messageIsError; private set => SetProperty(ref messageIsError, value); }
+    /// <summary>Bills on hold (for the "Recall (n)" badge).</summary>
+    public int HeldCount { get => heldCount; private set => SetProperty(ref heldCount, value); }
 
     public string SearchText
     {
@@ -95,6 +106,10 @@ public sealed class SaleViewModel : ObservableObject
     public AsyncRelayCommand VoidBillCommand { get; }
     public RelayCommand PayCashCommand { get; }
     public RelayCommand PayCardCommand { get; }
+    public RelayCommand PriceCheckCommand { get; }
+    public RelayCommand HoldCommand { get; }
+    public RelayCommand RecallCommand { get; }
+    public RelayCommand ReprintLastCommand { get; }
 
     public void Scan(string code)
     {
@@ -173,16 +188,115 @@ public sealed class SaleViewModel : ObservableObject
         ctx.Navigator.Show(newPayment(this, kind));
     }
 
+    /// <summary>F4: shows the price check; its "Add to bill" adds the item through the normal scan / search path.</summary>
+    public void PriceCheck()
+    {
+        var pick = ctx.Dialogs.ShowPriceCheck(new PriceCheckViewModel(ctx));
+        if (pick is null) return;
+        if (pick.IsItemCode) AddFromSearch(pick.Code);
+        else Scan(pick.Code);
+    }
+
+    /// <summary>F5: parks the bill (at most <see cref="MaxHeld"/>) and starts an empty one.</summary>
+    public void Hold()
+    {
+        if (Cart.Lines.Count == 0) { Error("The bill is empty — nothing to hold."); return; }
+        try
+        {
+            if (ctx.Held.List().Count >= MaxHeld)
+            {
+                Error($"{MaxHeld} bills are already on hold — recall or delete one first");
+                return;
+            }
+            var now = ctx.Clock.Now;
+            var label = $"{now.ToString("HH:mm", CultureInfo.InvariantCulture)} · {session.Cashier?.Name ?? ""} · " +
+                $"{Cart.Lines.Count.ToString(CultureInfo.InvariantCulture)} items · {Format.Money(Cart.Totals().GrandTotal)}";
+            ctx.Held.Hold(Cart, label, now);
+        }
+        catch (Exception ex)
+        {
+            Error($"Could not hold the bill: {ex.Message}");
+            return;
+        }
+        Info("Bill put on hold");
+        Changed();                                    // the cart is empty now: saves "[]" as the autosave
+        RefreshHeldCount();
+    }
+
+    /// <summary>F7: recalls a held bill onto an empty bill (never onto, or merged with, the current one). Lines are re-priced.</summary>
+    public void Recall()
+    {
+        if (Cart.Lines.Count > 0) { Error("Finish or hold the current bill first"); return; }
+        RefreshHeldCount();
+        if (HeldCount == 0) { Info("No bills on hold"); return; }
+
+        var id = ctx.Dialogs.ShowHeldBills(new HeldBillsViewModel(ctx, session, gate));
+        RefreshHeldCount();                           // a held bill may have been deleted in the dialog
+        if (id is null) return;
+        if (Cart.Lines.Count > 0) { Error("Finish or hold the current bill first"); return; }
+
+        HeldCart? held;
+        try
+        {
+            held = ctx.Held.Take(id);
+        }
+        catch (Exception ex)
+        {
+            Error($"Could not recall the bill: {ex.Message}");
+            return;
+        }
+        if (held is null) { Error("That bill was already recalled"); RefreshHeldCount(); return; }
+        var failed = Cart.Restore(held.Lines);
+        if (failed.Count > 0) Error($"{failed.Count.ToString(CultureInfo.InvariantCulture)} item(s) on the held bill can no longer be sold");
+        else Info("Bill recalled");
+        Changed();
+        RefreshHeldCount();
+    }
+
+    /// <summary>Ctrl+P: prints the last completed bill again, marked "*** COPY ***". Never opens the drawer.</summary>
+    public void ReprintLast()
+    {
+        Receipt? receipt;
+        try
+        {
+            var id = ctx.Kv.GetValue(LastReceiptKey);
+            receipt = string.IsNullOrEmpty(id) ? null : ctx.Receipts.Get(id);
+        }
+        catch (Exception ex)
+        {
+            Error($"Could not load the last receipt: {ex.Message}");
+            return;
+        }
+        if (receipt is null) { Info("No receipt to reprint yet"); return; }
+        try
+        {
+            ctx.Output.Print(receipt, openDrawer: false, copy: true);
+            Info($"Reprinted {receipt.ClientId}");
+        }
+        catch (Exception ex)
+        {
+            Error($"Reprint of {receipt.ClientId} failed: {ex.Message}");
+        }
+    }
+
     public void ClearAutosave() => ctx.Kv.SetValue(AutosaveKey, "[]");
 
     /// <summary>Called by the payment screen after the bill was saved (the cart is already empty). Then shows the invoice
     /// popup (when enabled); a barcode scanned while it is open closes it and goes on the next bill.</summary>
     public void SaleCompleted(Receipt receipt, string? printError)
     {
+        try
+        {
+            ctx.Kv.SetValue(LastReceiptKey, receipt.ClientId);
+        }
+        catch (Exception)
+        {
+            // The bill is saved; only Ctrl+P "reprint last" misses it.
+        }
         Refresh();
         if (printError is null) Info($"Saved {receipt.ClientId}. Change {Format.Money(receipt.Change)}");
         else if (ctx.ShowReceiptPreview) Error($"Saved {receipt.ClientId}, but the printer failed ({printError}). Use Print again on the invoice, or note bill number {receipt.ClientId}.");
-        else Error($"Saved {receipt.ClientId}, but the printer failed ({printError}). Note bill number {receipt.ClientId} — reprint is not available yet.");
+        else Error($"Saved {receipt.ClientId}, but the printer failed ({printError}). Reprint it with Ctrl+P, or note bill number {receipt.ClientId}.");
         ctx.Navigator.Show(this);
         if (!ctx.ShowReceiptPreview) return;
 
@@ -190,7 +304,7 @@ public sealed class SaleViewModel : ObservableObject
         {
             try
             {
-                ctx.Output.Print(receipt, openDrawer: false);
+                ctx.Output.Print(receipt, openDrawer: false, copy: true);
                 return null;
             }
             catch (Exception ex)
@@ -267,6 +381,18 @@ public sealed class SaleViewModel : ObservableObject
         Discount = Format.Money(Cart.DiscountSaved());
         Vat = Format.Money(totals.TotalTaxes);
         Total = Format.Money(totals.GrandTotal);
+    }
+
+    private void RefreshHeldCount()
+    {
+        try
+        {
+            HeldCount = ctx.Held.List().Count;
+        }
+        catch (Exception)
+        {
+            // Keep the last count; the badge is only a hint.
+        }
     }
 
     private CartLine? Find(Guid id) => Cart.Lines.FirstOrDefault(l => l.Id == id);

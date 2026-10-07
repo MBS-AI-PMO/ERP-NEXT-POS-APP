@@ -52,7 +52,7 @@ public sealed class AppHost
             text => catalog.Search(text),
             new Authenticator(LoginCashiers(cashiers, settings)), new PinAttemptLimiter(() => DateTimeOffset.Now), new PinAttemptLimiter(() => DateTimeOffset.Now),
             new ShiftStore(db), new ReceiptStore(db), new ApprovalStore(db), store,
-            new SystemClock(), Output, Shell, dialogs, settings.ShowReceiptPreview);
+            new SystemClock(), Output, Shell, dialogs, settings.ShowReceiptPreview, new HeldCartStore(db));
     }
 
     public ShellViewModel Shell { get; } = new();

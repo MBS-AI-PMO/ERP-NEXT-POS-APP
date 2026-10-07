@@ -36,9 +36,11 @@ public sealed class PaymentViewModelTests : IDisposable
         Assert.Equal("p.simran@quickgroc.com", receipt.CashierUser);
         Assert.Equal("Simran", receipt.CashierName);
         Assert.Equal("TILL2-SHIFT-20261007080000", receipt.ShiftClientId);
-        var (printed, drawer) = Assert.Single(f.Output.Printed);
+        var (printed, drawer, copy) = Assert.Single(f.Output.Printed);
         Assert.Equal(receipt.ClientId, printed.ClientId);
         Assert.True(drawer);
+        Assert.False(copy);
+        Assert.Equal(receipt.ClientId, f.Ctx.Kv.GetValue(SaleViewModel.LastReceiptKey));
         Assert.Same(sale, f.Navigator.Current);
         Assert.Empty(sale.Lines);
         Assert.Equal("[]", f.Ctx.Kv.GetValue(SaleViewModel.AutosaveKey));
@@ -168,6 +170,8 @@ public sealed class PaymentViewModelTests : IDisposable
         Assert.Equal(2, f.Output.Printed.Count);
         Assert.True(f.Output.Printed[0].OpenDrawer);
         Assert.False(f.Output.Printed[1].OpenDrawer);
+        Assert.False(f.Output.Printed[0].Copy);
+        Assert.True(f.Output.Printed[1].Copy);
         Assert.Equal(f.Output.Printed[0].Receipt.ClientId, f.Output.Printed[1].Receipt.ClientId);
     }
 

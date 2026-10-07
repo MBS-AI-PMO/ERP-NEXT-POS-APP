@@ -25,8 +25,10 @@ public static class ReceiptRenderer
     private const string SampleTrn = "000000000000000";
     private const string SampleQrNote = "SAMPLE QR - FOR TESTING ONLY";
     private const string QrPlaceholder = "[QR code]";
+    private const string CopyMark = "*** COPY ***";
 
-    public static IReadOnlyList<PrintLine> Layout(Receipt r, ReceiptHeader h, PaperWidth paper)
+    /// <param name="copy">A reprint: a centred bold "*** COPY ***" line follows the title block.</param>
+    public static IReadOnlyList<PrintLine> Layout(Receipt r, ReceiptHeader h, PaperWidth paper, bool copy = false)
     {
         var w = (int)paper;
         var lines = new List<PrintLine>();
@@ -46,6 +48,7 @@ public static class ReceiptRenderer
         foreach (var part in Wrap(isReturn ? "CREDIT NOTE" : "TAX INVOICE", w / 2)) Add(part, LineStyle.Title);
         if (isReturn) Centered("Tax Credit Note");
         Rule('=');
+        if (copy) Centered(CopyMark, LineStyle.Bold);
 
         foreach (var text in Field("Invoice No", r.ClientId, w)) Add(text);
         if (r.ReturnAgainst is { } original) foreach (var text in Field("Return of", original, w)) Add(text);
@@ -107,18 +110,18 @@ public static class ReceiptRenderer
 
     /// <summary>Plain text (receipt files). Title lines, whose text is bare, are centred across the full paper width here;
     /// a text file cannot hold the QR image, so a QR line becomes a centred "[QR code]".</summary>
-    public static IReadOnlyList<string> TextLines(Receipt r, ReceiptHeader h, PaperWidth paper) =>
-        Layout(r, h, paper).Select(l => l.Style switch
+    public static IReadOnlyList<string> TextLines(Receipt r, ReceiptHeader h, PaperWidth paper, bool copy = false) =>
+        Layout(r, h, paper, copy).Select(l => l.Style switch
         {
             LineStyle.Title => Center(l.Text, (int)paper),
             LineStyle.Qr => Center(QrPlaceholder, (int)paper),
             _ => l.Text,
         }).ToList();
 
-    public static byte[] EscPosBytes(Receipt r, ReceiptHeader h, PaperWidth paper, bool openDrawer)
+    public static byte[] EscPosBytes(Receipt r, ReceiptHeader h, PaperWidth paper, bool openDrawer, bool copy = false)
     {
         var printer = new EscPos().Init().Style(LineStyle.Normal);
-        foreach (var line in Layout(r, h, paper))
+        foreach (var line in Layout(r, h, paper, copy))
         {
             if (line.Style == LineStyle.Qr) printer.Align(Alignment.Center).Qr(line.Text).Style(LineStyle.Normal);
             else if (line.Style == LineStyle.Normal) printer.Line(line.Text);
