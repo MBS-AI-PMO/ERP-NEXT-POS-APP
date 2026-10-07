@@ -8,6 +8,7 @@ using TillPOS.Core.Money;
 using TillPOS.Core.Payments;
 using TillPOS.Core.Sales;
 using TillPOS.Core.Security;
+using TillPOS.Data;
 
 namespace TillPOS.Presentation;
 
@@ -70,6 +71,7 @@ public sealed class SaleViewModel : ObservableObject
         HoldCommand = new RelayCommand(Hold);
         RecallCommand = new RelayCommand(Recall);
         ReprintLastCommand = new RelayCommand(ReprintLast);
+        ReturnCommand = new RelayCommand(Return);
         CloseShiftCommand = new RelayCommand(CloseShift);
         LogOutCommand = new RelayCommand(LogOut);
 
@@ -120,6 +122,7 @@ public sealed class SaleViewModel : ObservableObject
     public RelayCommand HoldCommand { get; }
     public RelayCommand RecallCommand { get; }
     public RelayCommand ReprintLastCommand { get; }
+    public RelayCommand ReturnCommand { get; }
     public RelayCommand CloseShiftCommand { get; }
     public RelayCommand LogOutCommand { get; }
 
@@ -316,7 +319,25 @@ public sealed class SaleViewModel : ObservableObject
             Error($"Reprint of {receipt.ClientId} failed: {ex.Message}");
             return;
         }
-        WriteLastReceipt(receipt.ClientId, printed: true);
+        WriteLastReceipt(ctx.Kv, receipt.ClientId, printed: true);
+    }
+
+    /// <summary>F6: the Returns screen, only on an empty bill. Esc there comes back to this bill screen; a finished refund comes
+    /// back with its message.</summary>
+    public void Return()
+    {
+        if (Cart.Lines.Count > 0) { Error("Finish, hold or void the current bill first"); return; }
+        ctx.Navigator.Show(new ReturnViewModel(ctx, session, gate, back: () => ctx.Navigator.Show(this), done: ReturnCompleted));
+    }
+
+    /// <summary>Called by the Returns screen after the credit note was saved, printed and its popup closed. A barcode scanned
+    /// to close the popup goes on the next bill.</summary>
+    public void ReturnCompleted(ReturnDone result)
+    {
+        ctx.Navigator.Show(this);
+        if (result.IsError) Error(result.Message);
+        else Info(result.Message);
+        if (result.ScannedCode is { } code) Scan(code);
     }
 
     /// <summary>Starts closing the shift (blind count). Refused while the bill has lines or bills are on hold, so no bill is
@@ -380,13 +401,13 @@ public sealed class SaleViewModel : ObservableObject
         }
     }
 
-    /// <summary>Records the last bill and its printed flag in one write. A failure only means Ctrl+P misses this bill (or
-    /// marks a COPY differently), never the sale.</summary>
-    private void WriteLastReceipt(string id, bool printed)
+    /// <summary>Records the last bill (a sale or a credit note) and its printed flag in one write. A failure only means Ctrl+P
+    /// misses this bill (or marks a COPY differently), never the sale.</summary>
+    internal static void WriteLastReceipt(CatalogStore kv, string id, bool printed)
     {
         try
         {
-            ctx.Kv.SetValue(LastReceiptKey, $"{id}|{(printed ? "1" : "0")}");
+            kv.SetValue(LastReceiptKey, $"{id}|{(printed ? "1" : "0")}");
         }
         catch (Exception)
         {
@@ -401,7 +422,7 @@ public sealed class SaleViewModel : ObservableObject
     public void SaleCompleted(Receipt receipt, string? printError)
     {
         // The id and its own flag in one write: the previous bill's flag can never mark this one's first print as a copy.
-        WriteLastReceipt(receipt.ClientId, printed: printError is null);
+        WriteLastReceipt(ctx.Kv, receipt.ClientId, printed: printError is null);
         Refresh();
         if (printError is null) Info($"Saved {receipt.ClientId}. Change {Format.Money(receipt.Change)}");
         else if (ctx.ShowReceiptPreview) Error($"Saved {receipt.ClientId}, but the printer failed ({printError}). Use Print again on the invoice, or note bill number {receipt.ClientId}.");
@@ -417,7 +438,7 @@ public sealed class SaleViewModel : ObservableObject
             {
                 ctx.Output.Print(receipt, openDrawer: false, copy: printed);
                 printed = true;
-                WriteLastReceipt(receipt.ClientId, printed: true);
+                WriteLastReceipt(ctx.Kv, receipt.ClientId, printed: true);
                 return null;
             }
             catch (Exception ex)
