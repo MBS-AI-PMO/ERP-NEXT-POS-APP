@@ -52,8 +52,10 @@ public sealed class LoginViewModel : ObservableObject
     {
         Pin = "";
         var gate = new SupervisorGate(ctx, new SessionState());
-        if (await gate.ApproveAsync(ApprovalAction.SettingsChange, "Change till settings") is null) return;
-        ctx.Dialogs.ShowSetup();
+        if (await gate.ApproveAsync(ApprovalAction.SettingsChange, "Change till settings") is not { } supervisor) return;
+        // The upload mode decides whether the till writes to ERPNext: its change is logged with the approving supervisor.
+        ctx.Dialogs.ShowSetup(change => ctx.Approvals.Add(new ApprovalRecord(Guid.NewGuid().ToString("N"), ApprovalAction.UploadModeChange,
+            "", supervisor, "", null, null, 0m, change, ctx.Clock.Now)));
     }
 
     private string OpenShiftInfo()

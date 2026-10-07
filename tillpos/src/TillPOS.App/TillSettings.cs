@@ -2,6 +2,7 @@ using System.Text;
 using TillPOS.Core.Money;
 using TillPOS.Core.Shifts;
 using TillPOS.Printing;
+using TillPOS.Sync.Upload;
 
 namespace TillPOS.App;
 
@@ -25,7 +26,9 @@ public sealed record LocalTestCashier(string Id, string Name, string Pin, bool I
 /// SetupDone is set by the setup screen; until then it is shown at start.
 /// SampleQr (testing): with no TRN, receipts carry a QR code with a zero TRN marked "SAMPLE QR - FOR TESTING ONLY".
 /// Counters are the counters (POS Profiles) a cashier can open a shift at; see <see cref="EffectiveCounters"/>. Without them,
-/// PosProfile / CashMode / CardMode are the only counter (settings from before counters keep working).</summary>
+/// PosProfile / CashMode / CardMode are the only counter (settings from before counters keep working).
+/// Upload is the upload mode (Off | DryRun | Live, written as text): only Live may write to ERPNext. It is Off unless a
+/// supervisor changes it on the settings screen (logged as an UploadModeChange approval).</summary>
 public sealed record TillSettings(
     string BaseUrl,
     string ApiKey,
@@ -49,7 +52,8 @@ public sealed record TillSettings(
     string? ApiSecret = null,
     bool SetupDone = false,
     bool SampleQr = false,
-    IReadOnlyList<CounterSettings>? Counters = null)
+    IReadOnlyList<CounterSettings>? Counters = null,
+    UploadMode Upload = UploadMode.Off)
 {
     /// <summary>The counters to offer at Open Shift, the default first: the configured Counters with a POS Profile (each profile
     /// once, trimmed; a blank label, cash or card mode falls back to the profile name, CashMode or CardMode), or, when there are
@@ -134,7 +138,8 @@ public sealed record TillSettings(
             .Append(", ShopPhone = ").Append(ShopPhone)
             .Append(", ShowReceiptPreview = ").Append(ShowReceiptPreview)
             .Append(", SetupDone = ").Append(SetupDone)
-            .Append(", SampleQr = ").Append(SampleQr);
+            .Append(", SampleQr = ").Append(SampleQr)
+            .Append(", Upload = ").Append(Upload);
         return true;
     }
 }

@@ -44,9 +44,13 @@ public sealed class FakeDialogs : IDialogs
         return ReceiptScans.Count > 0 ? ReceiptScans.Dequeue() : null;
     }
 
-    public bool ShowSetup()
+    /// <summary>The upload-mode change the next setup reports (null: none).</summary>
+    public string? SetupUploadChange { get; set; }
+
+    public bool ShowSetup(Action<string> uploadModeChanged)
     {
         SetupRequests++;
+        if (SetupUploadChange is { } change) uploadModeChanged(change);
         return SetupResults.Count > 0 && SetupResults.Dequeue();
     }
 

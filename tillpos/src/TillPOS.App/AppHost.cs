@@ -22,7 +22,7 @@ public sealed class AppHost
     private readonly CatalogStore store;
     private readonly SqliteCatalog catalog;
     private readonly CashierStore cashiers;
-    private readonly ErpClient erp;
+    private readonly IErpClient erp;
     private readonly SyncContext syncContext;
     private readonly TillContext ctx;
     private readonly CancellationTokenSource stop = new();
@@ -39,8 +39,11 @@ public sealed class AppHost
         store = new CatalogStore(db);
         catalog = new SqliteCatalog(db);
         cashiers = new CashierStore(db);
-        erp = ErpClient.Create(new ErpConnection(new Uri(settings.BaseUrl), settings.ApiKey, ApiSecret(settings, settingsPath)),
+        // Everything reads through a read-only view of the client: its writer side is only handed out in Live upload mode.
+        var client = ErpClient.Create(new ErpConnection(new Uri(settings.BaseUrl), settings.ApiKey, ApiSecret(settings, settingsPath)),
             TimeSpan.FromSeconds(60));
+        erp = new ReadOnlyErpClient(client);
+        Shell.Upload = settings.Upload;
         // The first counter is the default: its POS settings are also kept under the default key (receipt header, price list).
         var counters = settings.EffectiveCounters();
         syncContext = new SyncContext(erp, store, new KeysetPager(erp, new KvSyncStateStore(store)), counters[0].PosProfile)

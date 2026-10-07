@@ -84,6 +84,20 @@ public sealed class LoginViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task Changing_the_upload_mode_in_settings_is_logged_with_the_supervisor()
+    {
+        f.Dialogs.Pins.Enqueue("9999");
+        f.Dialogs.SetupUploadChange = "Upload mode Off → Live";
+
+        await Login().SettingsCommand.ExecuteAsync(null);
+
+        var change = Assert.Single(f.Ctx.Approvals.Unsynced(), a => a.Action == ApprovalAction.UploadModeChange);
+        Assert.Equal("sup", change.SupervisorId);
+        Assert.Equal("Upload mode Off → Live", change.Reason);
+        Assert.Single(f.Ctx.Approvals.Unsynced(), a => a.Action == ApprovalAction.SettingsChange);
+    }
+
+    [Fact]
     public async Task Settings_with_a_cashier_pin_does_not_open_setup()
     {
         f.Dialogs.Pins.Enqueue("1111");

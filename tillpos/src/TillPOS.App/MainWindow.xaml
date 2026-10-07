@@ -30,6 +30,34 @@
           </Border>
         </StackPanel>
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+          <!-- Upload mode: red "LIVE UPLOAD" while bills are written to ERPNext, amber "DRY RUN" while they are only previewed. -->
+          <Border CornerRadius="6" Padding="10,3" Margin="0,0,20,0" VerticalAlignment="Center">
+            <Border.Style>
+              <Style TargetType="Border">
+                <Setter Property="Visibility" Value="Collapsed" />
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding Upload}" Value="Live">
+                    <Setter Property="Visibility" Value="Visible" />
+                    <Setter Property="Background" Value="{StaticResource Danger}" />
+                  </DataTrigger>
+                  <DataTrigger Binding="{Binding Upload}" Value="DryRun">
+                    <Setter Property="Visibility" Value="Visible" />
+                    <Setter Property="Background" Value="{StaticResource Offline}" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </Border.Style>
+            <TextBlock Text="{Binding UploadBadge}" FontWeight="Bold" FontSize="14">
+              <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                  <Setter Property="Foreground" Value="White" />
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding Upload}" Value="DryRun"><Setter Property="Foreground" Value="{StaticResource Ink}" /></DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </TextBlock.Style>
+            </TextBlock>
+          </Border>
           <TextBlock Text="&#xE77B;" Style="{StaticResource Icon}" FontSize="16" Foreground="{StaticResource OnInkMuted}" Margin="0,0,8,0" />
           <TextBlock Foreground="White" VerticalAlignment="Center" Margin="0,0,20,0">
             <Run Text="Cashier " Foreground="{StaticResource OnInkMuted}" /><Run Text="{Binding Session.Cashier.Name, Mode=OneWay}" FontWeight="SemiBold" />

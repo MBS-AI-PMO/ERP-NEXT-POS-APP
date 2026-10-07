@@ -31,6 +31,19 @@
 
         <CheckBox x:Name="PreviewBox" Content="Show invoice on screen after each sale" VerticalContentAlignment="Center" Margin="0,0,0,16" />
 
+        <!-- Upload mode: only Live writes to ERPNext. Changing it is logged with the supervisor who opened Settings. -->
+        <StackPanel x:Name="UploadPanel" Margin="0,0,0,16">
+          <TextBlock Text="Upload to ERPNext" FontWeight="SemiBold" />
+          <StackPanel Orientation="Horizontal" Margin="0,6,0,4">
+            <RadioButton x:Name="UploadOff" Content="Off" GroupName="Upload" Margin="0,0,24,0" VerticalContentAlignment="Center" />
+            <RadioButton x:Name="UploadDryRun" Content="Dry run" GroupName="Upload" Margin="0,0,24,0" VerticalContentAlignment="Center" />
+            <RadioButton x:Name="UploadLive" Content="Live" GroupName="Upload" VerticalContentAlignment="Center"
+                         Foreground="{StaticResource Danger}" FontWeight="SemiBold" />
+          </StackPanel>
+          <TextBlock Foreground="{StaticResource Muted}" FontSize="13" TextWrapping="Wrap"
+                     Text="Off: bills stay on the till. Dry run: bills are checked and saved as files, nothing is sent. Live: bills, shifts and approvals are sent to ERPNext." />
+        </StackPanel>
+
         <Button x:Name="TestButton" Style="{StaticResource KeyButton}" Content="Test print" Width="160" HorizontalAlignment="Left"
                 Margin="0" Click="TestPrintClick" />
       </StackPanel>

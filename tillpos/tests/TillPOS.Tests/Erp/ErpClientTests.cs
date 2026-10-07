@@ -93,4 +93,50 @@ public class ErpClientTests
         Assert.Equal(502, ex.StatusCode);
         Assert.Contains("HTTP 502", ex.Message);
     }
+
+    [Fact]
+    public async Task Insert_posts_the_document_to_the_resource_and_returns_data()
+    {
+        var (client, handler) = Make(_ => StubHandler.Json("""{"data":{"name":"ACC-PSINV-1","grand_total":10.5}}"""));
+
+        var saved = await client.InsertAsync("POS Invoice", new Dictionary<string, object?> { ["customer"] = "Walk-in" });
+
+        Assert.Equal("ACC-PSINV-1", saved.GetProperty("name").GetString());
+        var (req, body) = handler.Requests.Single();
+        Assert.Equal(HttpMethod.Post, req.Method);
+        Assert.Equal("/api/resource/POS%20Invoice", req.RequestUri!.AbsolutePath);
+        using var sent = JsonDocument.Parse(body!);
+        Assert.Equal("Walk-in", sent.RootElement.GetProperty("customer").GetString());
+    }
+
+    [Fact]
+    public async Task Submit_reads_the_draft_and_posts_it_to_frappe_client_submit()
+    {
+        var (client, handler) = Make(req => req.Method == HttpMethod.Get
+            ? StubHandler.Json("""{"data":{"name":"POS-OPE-1","doctype":"POS Opening Shift","docstatus":0}}""")
+            : StubHandler.Json("""{"message":{"name":"POS-OPE-1","docstatus":1}}"""));
+
+        var result = await client.SubmitAsync("POS Opening Shift", "POS-OPE-1");
+
+        Assert.Equal(1, result.GetProperty("docstatus").GetInt32());
+        Assert.Equal(2, handler.Requests.Count);
+        Assert.Equal("/api/resource/POS%20Opening%20Shift/POS-OPE-1", handler.Requests[0].Request.RequestUri!.AbsolutePath);
+        var (post, body) = handler.Requests[1];
+        Assert.Equal("https://erp.test/api/method/frappe.client.submit", post.RequestUri!.ToString());
+        using var sent = JsonDocument.Parse(body!);
+        Assert.Equal("POS-OPE-1", sent.RootElement.GetProperty("doc").GetProperty("name").GetString());
+    }
+
+    [Fact]
+    public async Task Call_posts_the_arguments_and_returns_the_message()
+    {
+        var (client, handler) = Make(_ => StubHandler.Json("""{"message":{"ok":true}}"""));
+
+        var result = await client.CallAsync("posawesome.posawesome.api.ping", new Dictionary<string, object?> { ["x"] = 1 });
+
+        Assert.True(result.GetProperty("ok").GetBoolean());
+        var (req, body) = handler.Requests.Single();
+        Assert.Equal("https://erp.test/api/method/posawesome.posawesome.api.ping", req.RequestUri!.ToString());
+        Assert.Equal(1, JsonDocument.Parse(body!).RootElement.GetProperty("x").GetInt32());
+    }
 }

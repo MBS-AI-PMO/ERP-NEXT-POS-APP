@@ -1,5 +1,6 @@
 using TillPOS.App;
 using TillPOS.Core.Shifts;
+using TillPOS.Sync.Upload;
 
 namespace TillPOS.Tests.App;
 
@@ -21,11 +22,15 @@ public class TillSettingsTests
     }
 
     [Fact]
-    public void ToString_lists_the_sample_qr_setting_last()
+    public void ToString_lists_the_sample_qr_and_upload_settings_last()
     {
-        Assert.EndsWith(", SetupDone = False, SampleQr = True }", new TillSettings("https://erp.example", "k", SampleQr: true).ToString());
+        Assert.EndsWith(", SetupDone = False, SampleQr = True, Upload = Off }", new TillSettings("https://erp.example", "k", SampleQr: true).ToString());
+        Assert.EndsWith(", Upload = Live }", new TillSettings("https://erp.example", "k", Upload: UploadMode.Live).ToString());
         Assert.False(new TillSettings("https://erp.example", "k").SampleQr);
     }
+
+    [Fact]
+    public void Upload_is_off_by_default() => Assert.Equal(UploadMode.Off, new TillSettings("https://erp.example", "k").Upload);
 
     [Fact]
     public void Without_counters_the_single_profile_is_the_only_counter() =>

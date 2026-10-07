@@ -64,7 +64,7 @@ public sealed class WpfDialogs(
     }
 
     /// <summary>Starts from the file on disk (not the settings the till started with), so hand edits made since are kept.</summary>
-    public bool ShowSetup()
+    public bool ShowSetup(Action<string> uploadModeChanged)
     {
         TillSettings current;
         try
@@ -78,7 +78,18 @@ public sealed class WpfDialogs(
         }
 
         var dialog = new SetupDialog(current, firstRun: false) { Owner = owner, WindowStartupLocation = WindowStartupLocation.CenterOwner };
-        if (dialog.ShowDialog() != true) return false;
+        if (dialog.ShowDialog() != true || dialog.Result is not { } saved) return false;
+        if (saved.Upload != current.Upload)
+        {
+            try
+            {
+                uploadModeChanged($"Upload mode {current.Upload} → {saved.Upload}");
+            }
+            catch (Exception ex)
+            {
+                logError(ex); // the settings are saved; a failed log line must not stop the restart
+            }
+        }
         restart();
         return true;
     }

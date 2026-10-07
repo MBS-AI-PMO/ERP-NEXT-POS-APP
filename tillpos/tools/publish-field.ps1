@@ -118,6 +118,8 @@ $settings = [ordered]@{
     )
     SetupDone           = $false
     SampleQr            = $true
+    # Field-test packages never write to ERPNext: a supervisor can switch a till to DryRun or Live in Settings.
+    Upload              = "Off"
     # The counters a cashier can open a shift at (the first is the default). "Test Counter" rounds nothing (its POS Profile
     # disables the rounded total); "Al Ain Counter 1" rounds cash to 0.25. If the test API user cannot read a counter's
     # POS Profile, that counter shows as "Not available" on the Open Shift screen.

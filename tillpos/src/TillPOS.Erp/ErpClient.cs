@@ -4,8 +4,9 @@ using System.Text.Json;
 
 namespace TillPOS.Erp;
 
-/// <summary>Thin client for the Frappe REST API using token (API key/secret) auth.</summary>
-public sealed class ErpClient : IErpClient
+/// <summary>Thin client for the Frappe REST API using token (API key/secret) auth. The till only uses its writer side in Live
+/// upload mode; everything else gets it as a <see cref="ReadOnlyErpClient"/>.</summary>
+public sealed class ErpClient : IErpClient, IErpWriter
 {
     private static readonly JsonSerializerOptions JsonOptions = new();
     private readonly HttpClient http;
@@ -56,6 +57,20 @@ public sealed class ErpClient : IErpClient
     public async Task<JsonElement> InsertAsync(string doctype, object doc, CancellationToken ct = default) =>
         (await SendAsync(HttpMethod.Post, ResourcePath(doctype, null), doc, ct)).GetProperty("data").Clone();
 
+    /// <summary>frappe.client.submit needs the whole document (it rebuilds it from the dict), so the saved draft is read first.</summary>
+    public async Task<JsonElement> SubmitAsync(string doctype, string name, CancellationToken ct = default)
+    {
+        var doc = await GetDocAsync(doctype, name, ct);
+        return await CallAsync("frappe.client.submit", new Dictionary<string, object?> { ["doc"] = doc }, ct);
+    }
+
+    public async Task<JsonElement> CallAsync(string method, object args, CancellationToken ct = default)
+    {
+        var root = await SendAsync(HttpMethod.Post, $"api/method/{method}", args, ct);
+        return root.TryGetProperty("message", out var message) ? message.Clone() : root;
+    }
+
+    /// <summary>Deletes a document (tools only; not part of <see cref="IErpWriter"/>, the till never deletes).</summary>
     public async Task DeleteAsync(string doctype, string name, CancellationToken ct = default) =>
         await SendAsync(HttpMethod.Delete, ResourcePath(doctype, name), null, ct);
 

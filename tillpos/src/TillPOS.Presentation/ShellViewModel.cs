@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using TillPOS.Sync.Upload;
 
 namespace TillPOS.Presentation;
 
@@ -13,6 +14,7 @@ public sealed class ShellViewModel : ObservableObject, INavigator
     private int pendingUploads;
     private string clock = "";
     private string version = "";
+    private UploadMode upload;
 
     public ShellViewModel()
     {
@@ -45,6 +47,22 @@ public sealed class ShellViewModel : ObservableObject, INavigator
     public string Clock { get => clock; set => SetProperty(ref clock, value); }
     /// <summary>The build (e.g. "0.3.1-field"), shown on the login screen so field feedback can name it.</summary>
     public string Version { get => version; set => SetProperty(ref version, value); }
+
+    /// <summary>The till's upload mode (from the settings; changing it restarts the till).</summary>
+    public UploadMode Upload
+    {
+        get => upload;
+        set { if (SetProperty(ref upload, value)) OnPropertyChanged(nameof(UploadBadge)); }
+    }
+
+    /// <summary>The header badge: "LIVE UPLOAD" (red) when bills are written to ERPNext, "DRY RUN" (amber) when they are only
+    /// previewed, "" when upload is off.</summary>
+    public string UploadBadge => upload switch
+    {
+        UploadMode.Live => "LIVE UPLOAD",
+        UploadMode.DryRun => "DRY RUN",
+        _ => "",
+    };
 
     public void Show(object viewModel) => Current = viewModel;
 }

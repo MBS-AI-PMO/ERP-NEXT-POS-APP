@@ -1,5 +1,6 @@
 using System.Text.Json;
 using TillPOS.App;
+using TillPOS.Sync.Upload;
 
 namespace TillPOS.Tests.App;
 
@@ -230,5 +231,20 @@ public sealed class SettingsStoreTests : IDisposable
         Assert.Equal("Test Counter", Assert.Single(settings.EffectiveCounters()).PosProfile);
         SettingsStore.Save(settings, programData);
         Assert.False(HasProperty(programData, "Counters"));
+    }
+
+    [Fact]
+    public void Upload_mode_is_read_and_written_as_text_and_missing_means_off()
+    {
+        Write(programData, Json("\"ApiSecretProtected\": \"P(x)\""));
+        Assert.Equal(UploadMode.Off, SettingsStore.Load(programData).Upload);
+
+        Write(programData, Json("\"ApiSecretProtected\": \"P(x)\", \"Upload\": \"DryRun\""));
+        var settings = SettingsStore.Load(programData);
+        Assert.Equal(UploadMode.DryRun, settings.Upload);
+
+        SettingsStore.Save(settings with { Upload = UploadMode.Live }, programData);
+        Assert.Equal("Live", JsonDocument.Parse(File.ReadAllText(programData)).RootElement.GetProperty("Upload").GetString());
+        Assert.Equal(UploadMode.Live, SettingsStore.Load(programData).Upload);
     }
 }

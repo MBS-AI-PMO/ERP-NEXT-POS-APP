@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Media;
 using TillPOS.Core.Shifts;
 using TillPOS.Printing;
+using TillPOS.Sync.Upload;
 
 namespace TillPOS.App.Dialogs;
 
@@ -42,6 +43,10 @@ public partial class SetupDialog : Window
             .Where(c => c.PosProfile.Length > 0)
             .Select(c => new CounterRow { PosProfile = c.PosProfile, Label = c.Label, CashMode = c.CashMode, CardMode = c.CardMode }));
         CounterRows.ItemsSource = counters;
+        (settings.Upload switch { UploadMode.Live => UploadLive, UploadMode.DryRun => UploadDryRun, _ => UploadOff }).IsChecked = true;
+        // At the first start nobody has approved anything yet, so the upload mode is shown but can only be changed later
+        // (Settings on the login screen, behind the supervisor PIN).
+        UploadPanel.IsEnabled = !firstRun;
         if (problem is not null) ShowStatus($"Printers could not be listed: {problem}", ok: false);
     }
 
@@ -50,6 +55,11 @@ public partial class SetupDialog : Window
 
     private string SelectedPrinter => PrinterBox.SelectedIndex > 0 ? (string)PrinterBox.SelectedItem : "";
     private PaperWidth SelectedPaper => Paper58.IsChecked == true ? PaperWidth.Mm58 : PaperWidth.Mm80;
+    private UploadMode SelectedUpload =>
+        !UploadPanel.IsEnabled ? settings.Upload
+        : UploadLive.IsChecked == true ? UploadMode.Live
+        : UploadDryRun.IsChecked == true ? UploadMode.DryRun
+        : UploadMode.Off;
 
     private static List<string> InstalledPrinters(out string? defaultPrinter, out string? problem)
     {
@@ -130,6 +140,7 @@ public partial class SetupDialog : Window
             TillNumber = till,
             ShowReceiptPreview = PreviewBox.IsChecked == true,
             SetupDone = true,
+            Upload = SelectedUpload,
         }).WithCounters(rows);
         try
         {

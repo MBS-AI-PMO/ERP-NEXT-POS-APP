@@ -21,9 +21,10 @@ public interface IDialogs
     /// opening the drawer and returns an error message or null. Returns the barcode when a scan closed the popup, otherwise null.</summary>
     string? ShowReceipt(Receipt receipt, string? printError, Func<string?> reprint);
 
-    /// <summary>Shows the till setup (printer, paper, till number, invoice preview). Returns true when the settings were saved
-    /// (the app then restarts to use them).</summary>
-    bool ShowSetup();
+    /// <summary>Shows the till setup (printer, paper, till number, invoice preview, counters, upload mode). Returns true when the
+    /// settings were saved (the app then restarts to use them). When the upload mode was changed, <paramref name="uploadModeChanged"/>
+    /// is called with a description (e.g. "Upload mode Off → Live") before the restart, so it can be logged.</summary>
+    bool ShowSetup(Action<string> uploadModeChanged);
 
     /// <summary>Shows the price check (modal). Returns what "Add to bill" should add (<see cref="PriceCheckViewModel.AddToBill"/>),
     /// or null when it was closed without adding.</summary>

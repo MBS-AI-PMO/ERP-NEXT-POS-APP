@@ -3,8 +3,9 @@ using TillPOS.Erp;
 
 namespace TillPOS.Tests.Fakes;
 
-/// <summary>In-memory ERPNext: list queries filter/sort rows of a doctype; GetDoc returns Docs entries.</summary>
-public sealed class FakeErp : IErpClient
+/// <summary>In-memory ERPNext: list queries filter/sort rows of a doctype; GetDoc returns Docs entries. As a writer it records
+/// every insert, submit and call.</summary>
+public sealed class FakeErp : IErpClient, IErpWriter
 {
     private readonly Dictionary<string, List<Dictionary<string, object?>>> tables = [];
 
@@ -58,7 +59,21 @@ public sealed class FakeErp : IErpClient
         return Task.FromResult(e);
     }
 
-    public Task DeleteAsync(string doctype, string name, CancellationToken ct = default) => Task.CompletedTask;
+    public List<(string Doctype, string Name)> Submitted { get; } = [];
+
+    public Task<JsonElement> SubmitAsync(string doctype, string name, CancellationToken ct = default)
+    {
+        Submitted.Add((doctype, name));
+        return Task.FromResult(JsonSerializer.SerializeToElement(new Dictionary<string, object?> { ["name"] = name, ["docstatus"] = 1 }));
+    }
+
+    public List<(string Method, JsonElement Args)> Calls { get; } = [];
+
+    public Task<JsonElement> CallAsync(string method, object args, CancellationToken ct = default)
+    {
+        Calls.Add((method, JsonSerializer.SerializeToElement(args)));
+        return Task.FromResult(JsonSerializer.SerializeToElement<object?>(null));
+    }
 
     private List<object> Filtered(ListQuery q)
     {
