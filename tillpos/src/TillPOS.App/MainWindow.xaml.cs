@@ -7,8 +7,8 @@ using TillPOS.Presentation;
 
 namespace TillPOS.App;
 
-/// <summary>Hosts the screens. Watches all keyboard input for scanner bursts so a scan always reaches the sale screen,
-/// whatever has focus, and undoes what the scan typed into a focused text box.</summary>
+/// <summary>Hosts the screens. Watches all keyboard input for scanner bursts so a scan always reaches the sale (or returns)
+/// screen, whatever has focus, and undoes what the scan typed into a focused text box.</summary>
 public partial class MainWindow : Window
 {
     private readonly ScanBuffer scanBuffer = new(() => DateTimeOffset.Now);
@@ -51,8 +51,9 @@ public partial class MainWindow : Window
         if (code is null) return;
 
         // A scan never acts as typing: put the focused box back as it was before the burst and swallow its Enter.
-        // Only the sale screen uses it; elsewhere (payment, close shift) it is ignored, so a scan can never
-        // change a cash amount or count, or press "Complete".
+        // Only the sale and returns screens use it; elsewhere (payment, close shift) it is ignored, so a scan can never
+        // change a cash amount or count, or press "Complete". On returns it is a receipt number while finding the receipt,
+        // and an item while choosing or building the return list; it never confirms the refund.
         if (beforeBurst is { } saved && ReferenceEquals(Keyboard.FocusedElement, saved.Box))
         {
             saved.Box.Text = saved.Text;
@@ -61,6 +62,7 @@ public partial class MainWindow : Window
         beforeBurst = null;
         e.Handled = true;
         if (DataContext is ShellViewModel { Current: SaleViewModel sale }) sale.Scan(code);
+        else if (DataContext is ShellViewModel { Current: ReturnViewModel returns }) returns.Scan(code);
         // The login screen took the scan's digits as PIN digits; throw them away.
         else if (DataContext is ShellViewModel { Current: LoginViewModel login }) login.ClearCommand.Execute(null);
     }

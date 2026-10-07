@@ -5,6 +5,7 @@
     <KeyBinding Key="F3" Command="{Binding SetQtySelectedCommand}" />
     <KeyBinding Key="F4" Command="{Binding PriceCheckCommand}" />
     <KeyBinding Key="F5" Command="{Binding HoldCommand}" />
+    <KeyBinding Key="F6" Command="{Binding ReturnCommand}" />
     <KeyBinding Key="F7" Command="{Binding RecallCommand}" />
     <KeyBinding Key="F8" Command="{Binding VoidBillCommand}" />
     <KeyBinding Key="F11" Command="{Binding PayCardCommand}" />
@@ -120,7 +121,8 @@
               </Border>
             </StackPanel>
           </Button>
-          <Button Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2" Focusable="False" Style="{StaticResource DangerButton}" MinHeight="52" Height="52"
+          <Button Grid.Row="3" Grid.Column="0" Style="{StaticResource PadButton}" Content="Return (F6)" Command="{Binding ReturnCommand}" />
+          <Button Grid.Row="3" Grid.Column="1" Focusable="False" Style="{StaticResource DangerButton}" MinHeight="52" Height="52"
                   Content="Void bill (F8)" Command="{Binding VoidBillCommand}" />
         </Grid>
         <UniformGrid Columns="3" Margin="0,4,0,0">

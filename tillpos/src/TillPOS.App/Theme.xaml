@@ -12,6 +12,7 @@
 
   <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
   <local:CountToVisibilityConverter x:Key="CountToVisibility" />
+  <local:EqualConverter x:Key="Equal" />
 
   <Style TargetType="Button" x:Key="KeyButton">
     <Setter Property="MinHeight" Value="56" />

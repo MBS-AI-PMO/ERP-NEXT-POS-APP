@@ -13,6 +13,7 @@
     <DataTemplate DataType="{x:Type vm:SaleViewModel}"><views:SaleView /></DataTemplate>
     <DataTemplate DataType="{x:Type vm:PaymentViewModel}"><views:PaymentView /></DataTemplate>
     <DataTemplate DataType="{x:Type vm:CloseShiftViewModel}"><views:CloseShiftView /></DataTemplate>
+    <DataTemplate DataType="{x:Type vm:ReturnViewModel}"><views:ReturnView /></DataTemplate>
   </Window.Resources>
   <DockPanel>
     <Border DockPanel.Dock="Top" Background="{StaticResource Ink}" Height="56" Padding="20,0">
