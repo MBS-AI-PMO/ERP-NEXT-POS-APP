@@ -5,8 +5,9 @@ namespace TillPOS.Data;
 
 /// <summary>Upload state of a shift document or an approval (bills use <see cref="ReceiptSyncStatus"/>, same meaning):
 /// Pending = waiting for upload, Failed = ERPNext refused it (tried again after its backoff, or at once after a Retry),
-/// Synced = in ERPNext.</summary>
-public enum UploadStatus { Pending, Synced, Failed }
+/// Synced = in ERPNext, Excluded = taken before the till first went Live (test data): never uploaded unless a supervisor
+/// includes it.</summary>
+public enum UploadStatus { Pending, Synced, Failed, Excluded }
 
 /// <summary>The two ERPNext documents of a till shift.</summary>
 public enum ShiftDocument { Opening, Closing }

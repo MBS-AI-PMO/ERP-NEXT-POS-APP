@@ -1,6 +1,7 @@
 using TillPOS.Core.Sales;
 using TillPOS.Core.Shifts;
 using TillPOS.Presentation;
+using TillPOS.Sync.Upload;
 
 namespace TillPOS.Tests.Presentation;
 
@@ -45,13 +46,23 @@ public sealed class FakeDialogs : IDialogs
     }
 
     /// <summary>The upload-mode change the next setup reports (null: none).</summary>
-    public string? SetupUploadChange { get; set; }
+    public (UploadMode From, UploadMode To)? SetupUploadChange { get; set; }
 
-    public bool ShowSetup(Action<string> uploadModeChanged)
+    public async Task<bool> ShowSetupAsync(Func<UploadMode, UploadMode, Task> uploadModeChanged)
     {
         SetupRequests++;
-        if (SetupUploadChange is { } change) uploadModeChanged(change);
+        if (SetupUploadChange is { } change) await uploadModeChanged(change.From, change.To);
         return SetupResults.Count > 0 && SetupResults.Dequeue();
+    }
+
+    /// <summary>Answers to yes/no questions (none left: No); the questions asked.</summary>
+    public Queue<bool> ConfirmAnswers { get; } = new();
+    public List<string> Confirms { get; } = [];
+
+    public bool Confirm(string title, string message)
+    {
+        Confirms.Add(message);
+        return ConfirmAnswers.Count > 0 && ConfirmAnswers.Dequeue();
     }
 
     public PriceCheckPick? ShowPriceCheck(PriceCheckViewModel vm)

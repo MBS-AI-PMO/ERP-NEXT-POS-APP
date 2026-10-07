@@ -63,6 +63,9 @@ public sealed class AppHost
         uploader = new Uploader(erp, UploadPipeline.LiveWriter(settings.Upload, client), settings.Upload, shifts, receipts, approvals,
             profile => store.LoadPosSettings(string.IsNullOrWhiteSpace(profile) ? counters[0].PosProfile : profile),
             $"TILL{settings.TillNumber}", null, () => DateTimeOffset.Now, WritePreview);
+        // Live set by hand in settings.json (not through Settings): still never upload the history from before (no-op when the
+        // till already went Live once).
+        if (settings.Upload == UploadMode.Live) UploadHistory.SwitchToLive(shifts, store, DateTimeOffset.Now, includeHistory: false);
 
         Shell.TillName = $"Till {settings.TillNumber}";
         Output = new ReceiptOutput(settings, store);

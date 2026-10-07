@@ -6,7 +6,8 @@ using TillPOS.Core.Sales;
 
 namespace TillPOS.Data;
 
-public enum ReceiptSyncStatus { Pending, Synced, Failed }
+/// <summary>See <see cref="UploadStatus"/> (same meanings).</summary>
+public enum ReceiptSyncStatus { Pending, Synced, Failed, Excluded }
 
 /// <param name="NextAttemptAt">After a failure: the uploader leaves the bill alone until then (backoff); null = due now.</param>
 public sealed record ReceiptSyncInfo(ReceiptSyncStatus Status, string? ErpName, string? LastError, int Attempts, DateTimeOffset? NextAttemptAt = null);
@@ -98,7 +99,7 @@ public sealed class ReceiptStore(TillDb db) : IReceiptStore
     {
         var changed = Update("""
             UPDATE receipt SET sync_status = 'Failed', last_error = @e, attempts = attempts + 1, next_attempt_at = @next
-            WHERE client_id = @id AND sync_status <> 'Synced'
+            WHERE client_id = @id AND sync_status IN ('Pending', 'Failed')
             """,
             clientId, true, ("@e", error), ("@next", SqlExt.Instant(nextAttemptAt)));
         if (changed != 0) return;

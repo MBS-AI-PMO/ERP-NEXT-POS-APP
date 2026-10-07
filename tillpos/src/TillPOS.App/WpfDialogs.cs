@@ -3,6 +3,7 @@ using TillPOS.App.Dialogs;
 using TillPOS.Core.Sales;
 using TillPOS.Presentation;
 using TillPOS.Printing;
+using TillPOS.Sync.Upload;
 
 namespace TillPOS.App;
 
@@ -64,7 +65,7 @@ public sealed class WpfDialogs(
     }
 
     /// <summary>Starts from the file on disk (not the settings the till started with), so hand edits made since are kept.</summary>
-    public bool ShowSetup(Action<string> uploadModeChanged)
+    public async Task<bool> ShowSetupAsync(Func<UploadMode, UploadMode, Task> uploadModeChanged)
     {
         TillSettings current;
         try
@@ -83,7 +84,7 @@ public sealed class WpfDialogs(
         {
             try
             {
-                uploadModeChanged($"Upload mode {current.Upload} → {saved.Upload}");
+                await uploadModeChanged(current.Upload, saved.Upload);
             }
             catch (Exception ex)
             {
@@ -93,6 +94,9 @@ public sealed class WpfDialogs(
         restart();
         return true;
     }
+
+    public bool Confirm(string title, string message) =>
+        MessageBox.Show(Top(), message, title, MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) == MessageBoxResult.Yes;
 
     /// <summary>The window a prompt belongs on: the active one (e.g. the held-bills or price-check dialog, whose supervisor
     /// PIN or message must sit above it), else the main window.</summary>

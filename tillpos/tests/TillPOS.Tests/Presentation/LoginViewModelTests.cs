@@ -1,5 +1,9 @@
 using TillPOS.Core.Security;
+using TillPOS.Core.Sales;
+using TillPOS.Core.Shifts;
+using TillPOS.Data;
 using TillPOS.Presentation;
+using TillPOS.Sync.Upload;
 
 namespace TillPOS.Tests.Presentation;
 
@@ -87,7 +91,7 @@ public sealed class LoginViewModelTests : IDisposable
     public async Task Changing_the_upload_mode_in_settings_is_logged_with_the_supervisor()
     {
         f.Dialogs.Pins.Enqueue("9999");
-        f.Dialogs.SetupUploadChange = "Upload mode Off → Live";
+        f.Dialogs.SetupUploadChange = (UploadMode.Off, UploadMode.Live);
 
         await Login().SettingsCommand.ExecuteAsync(null);
 
@@ -95,6 +99,81 @@ public sealed class LoginViewModelTests : IDisposable
         Assert.Equal("sup", change.SupervisorId);
         Assert.Equal("Upload mode Off → Live", change.Reason);
         Assert.Single(f.Ctx.Approvals.Unsynced(), a => a.Action == ApprovalAction.SettingsChange);
+    }
+
+    /// <summary>A closed shift from two days ago with one bill, still to upload.</summary>
+    private void OldShift(string id, int daysAgo)
+    {
+        var opened = f.Clock.Now.AddDays(-daysAgo);
+        f.Ctx.Shifts.Open(new ShiftOpening(id, "simran", "Al Ain Counter 2", opened, [new ReceiptPayment("Cash Counter 2", 100m)]));
+        f.Ctx.Receipts.Save(new Receipt(id + "-BILL", ReceiptKind.Sale, null, id, "simran", opened.AddHours(1), [], 1m, 1m, 0m, 1m, false, 0m, 0m,
+            [], 0m, 0m, null));
+        f.Ctx.Shifts.Close(new ShiftClosing(id, opened.AddHours(2), [], 1, 0, 1m, 1m, 0m));
+    }
+
+    [Fact]
+    public async Task First_switch_to_live_leaves_earlier_shifts_out_unless_included()
+    {
+        OldShift("OLD1", 2);
+        OldShift("OLD2", 1);
+        f.Dialogs.Pins.Enqueue("9999");
+        f.Dialogs.SetupUploadChange = (UploadMode.DryRun, UploadMode.Live);
+        f.Dialogs.ConfirmAnswers.Enqueue(false);
+
+        await Login().SettingsCommand.ExecuteAsync(null);
+
+        Assert.Contains("2 earlier shift(s) will NOT be uploaded (test data). Include them?", Assert.Single(f.Dialogs.Confirms));
+        Assert.Equal(f.Clock.Now, UploadHistory.LiveSince(f.Ctx.Kv));
+        Assert.Equal(UploadStatus.Excluded, f.Ctx.Shifts.SyncInfo("OLD1")!.OpeningStatus);
+        Assert.Equal(ReceiptSyncStatus.Excluded, f.Ctx.Receipts.SyncInfo("OLD2-BILL").Status);
+        Assert.Empty(f.Ctx.Shifts.Unfinished());
+        Assert.DoesNotContain(f.Ctx.Approvals.Unsynced(), a => a.Action == ApprovalAction.UploadIncludeHistory);
+    }
+
+    [Fact]
+    public async Task Including_earlier_shifts_needs_a_supervisor_and_is_logged()
+    {
+        OldShift("OLD1", 2);
+        f.Dialogs.Pins.Enqueue("9999");
+        f.Dialogs.Pins.Enqueue("9999");
+        f.Dialogs.SetupUploadChange = (UploadMode.Off, UploadMode.Live);
+        f.Dialogs.ConfirmAnswers.Enqueue(true);
+
+        await Login().SettingsCommand.ExecuteAsync(null);
+
+        Assert.Equal(f.Clock.Now.AddDays(-2), UploadHistory.LiveSince(f.Ctx.Kv));
+        Assert.Equal(UploadStatus.Pending, f.Ctx.Shifts.SyncInfo("OLD1")!.OpeningStatus);
+        var include = Assert.Single(f.Ctx.Approvals.Unsynced(), a => a.Action == ApprovalAction.UploadIncludeHistory);
+        Assert.Equal("sup", include.SupervisorId);
+    }
+
+    [Fact]
+    public async Task Including_with_a_wrong_pin_still_leaves_earlier_shifts_out()
+    {
+        OldShift("OLD1", 2);
+        f.Dialogs.Pins.Enqueue("9999");
+        f.Dialogs.Pins.Enqueue("1111");
+        f.Dialogs.SetupUploadChange = (UploadMode.Off, UploadMode.Live);
+        f.Dialogs.ConfirmAnswers.Enqueue(true);
+
+        await Login().SettingsCommand.ExecuteAsync(null);
+
+        Assert.Equal(UploadStatus.Excluded, f.Ctx.Shifts.SyncInfo("OLD1")!.OpeningStatus);
+    }
+
+    [Fact]
+    public async Task Going_live_again_after_a_rollback_keeps_the_queue()
+    {
+        UploadHistory.SwitchToLive(f.Ctx.Shifts, f.Ctx.Kv, f.Clock.Now.AddDays(-5), includeHistory: false);
+        OldShift("QUEUED", 1);   // taken while Upload was Off after going Live
+        f.Dialogs.Pins.Enqueue("9999");
+        f.Dialogs.SetupUploadChange = (UploadMode.Off, UploadMode.Live);
+
+        await Login().SettingsCommand.ExecuteAsync(null);
+
+        Assert.Empty(f.Dialogs.Confirms);
+        Assert.Equal(UploadStatus.Pending, f.Ctx.Shifts.SyncInfo("QUEUED")!.OpeningStatus);
+        Assert.Equal(f.Clock.Now.AddDays(-5), UploadHistory.LiveSince(f.Ctx.Kv));
     }
 
     [Fact]

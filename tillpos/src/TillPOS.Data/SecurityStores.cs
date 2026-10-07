@@ -52,13 +52,13 @@ public sealed class ApprovalStore(TillDb db)
         tx.Commit();
     }
 
-    /// <summary>Approvals not in ERPNext yet (pending or failed), oldest first.</summary>
+    /// <summary>Approvals still to upload (pending or failed), oldest first.</summary>
     public IReadOnlyList<ApprovalOutboxEntry> Outbox()
     {
         using var c = db.Open();
         return c.Query("""
             SELECT json, sync_status, erp_name, last_error, attempts, next_attempt_at FROM approval_log
-            WHERE sync_status <> 'Synced' ORDER BY at, id
+            WHERE sync_status IN ('Pending', 'Failed') ORDER BY at, id
             """,
             r => new ApprovalOutboxEntry(JsonSerializer.Deserialize<ApprovalRecord>(r.GetString(0), Json)!, Enum.Parse<UploadStatus>(r.GetString(1)),
                 SqlExt.Str(r, 2), SqlExt.Str(r, 3), r.GetInt32(4), SqlExt.Instant(r, 5)));
@@ -76,8 +76,12 @@ public sealed class ApprovalStore(TillDb db)
     public void MarkFailed(string id, string error, DateTimeOffset? nextAttemptAt) =>
         Update("""
             UPDATE approval_log SET sync_status = 'Failed', last_error = @e, attempts = attempts + 1, next_attempt_at = @next
-            WHERE id = @id AND sync_status <> 'Synced'
+            WHERE id = @id AND sync_status IN ('Pending', 'Failed')
             """, id, ("@e", error), ("@next", SqlExt.Instant(nextAttemptAt)));
+
+    /// <summary>Puts an excluded approval back in the queue.</summary>
+    public void Include(string id) =>
+        Update("UPDATE approval_log SET sync_status = 'Pending', attempts = 0, next_attempt_at = NULL WHERE id = @id AND sync_status = 'Excluded'", id);
 
     /// <summary>Written just before the approval is sent (see <see cref="ReceiptStore.MarkInFlight"/>).</summary>
     public void MarkInFlight(string id, DateTimeOffset until) =>

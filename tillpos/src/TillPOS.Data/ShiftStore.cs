@@ -71,8 +71,8 @@ public sealed class ShiftStore(TillDb db)
         using var c = db.Open();
         return c.Query($"""
             SELECT opening_json, closing_json, {SyncColumns} FROM shift
-            WHERE opening_status <> 'Synced' OR (closed_at IS NOT NULL AND closing_status <> 'Synced')
-               OR EXISTS (SELECT 1 FROM receipt WHERE receipt.shift_client_id = shift.client_id AND receipt.sync_status <> 'Synced')
+            WHERE opening_status IN ('Pending', 'Failed') OR (closed_at IS NOT NULL AND closing_status IN ('Pending', 'Failed'))
+               OR EXISTS (SELECT 1 FROM receipt WHERE receipt.shift_client_id = shift.client_id AND receipt.sync_status IN ('Pending', 'Failed'))
             ORDER BY opened_at, client_id
             """,
             r => new ShiftOutboxEntry(JsonSerializer.Deserialize<ShiftOpening>(r.GetString(0))!,
@@ -99,7 +99,7 @@ public sealed class ShiftStore(TillDb db)
         var (status, _) = Columns(document);
         Update($"""
             UPDATE shift SET {status} = 'Failed', last_error = @e, attempts = attempts + 1, next_attempt_at = @next
-            WHERE client_id = @id AND {status} <> 'Synced'
+            WHERE client_id = @id AND {status} IN ('Pending', 'Failed')
             """,
             clientId, ("@e", error), ("@next", SqlExt.Instant(nextAttemptAt)));
     }
@@ -122,6 +122,100 @@ public sealed class ShiftStore(TillDb db)
                 attempts = 0, next_attempt_at = NULL
             WHERE client_id = @id
             """, clientId);
+
+    /// <summary>Excludes a shift from upload: its opening and closing, its bills and its approvals that are still to upload
+    /// become Excluded (uploaded or handled ones are left alone). Idempotent; also catches bills added since.</summary>
+    public void Exclude(string clientId)
+    {
+        using var c = db.Open();
+        using var tx = c.BeginTransaction();
+        ExcludeShift(c, tx, clientId);
+        tx.Commit();
+    }
+
+    /// <summary>The first switch to Live: every shift opened before <paramref name="since"/> with something still to upload is
+    /// excluded (with its bills and approvals), and so is every approval of before then that names no shift. Returns how many
+    /// shifts were excluded.</summary>
+    public int ExcludeOpenedBefore(DateTimeOffset since)
+    {
+        using var c = db.Open();
+        using var tx = c.BeginTransaction();
+        var at = SqlExt.Instant(since);
+        var ids = new List<string>();
+        using (var cmd = c.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = """
+                SELECT client_id FROM shift WHERE opened_at < @at AND (opening_status IN ('Pending', 'Failed')
+                    OR closing_status IN ('Pending', 'Failed')
+                    OR EXISTS (SELECT 1 FROM receipt WHERE receipt.shift_client_id = shift.client_id AND receipt.sync_status IN ('Pending', 'Failed')))
+                """;
+            cmd.Parameters.AddWithValue("@at", at);
+            using var r = cmd.ExecuteReader();
+            while (r.Read()) ids.Add(r.GetString(0));
+        }
+        foreach (var id in ids) ExcludeShift(c, tx, id);
+        c.Exec(tx, "UPDATE approval_log SET sync_status = 'Excluded' WHERE at < @at AND sync_status IN ('Pending', 'Failed')", ("@at", at));
+        tx.Commit();
+        return ids.Count;
+    }
+
+    /// <summary>Puts an excluded shift back in the queue: its excluded opening, closing, bills and approvals become Pending.</summary>
+    public void Include(string clientId)
+    {
+        using var c = db.Open();
+        using var tx = c.BeginTransaction();
+        IncludeWhere(c, tx, "WHERE client_id = @id", "WHERE shift_client_id = @id", "WHERE json_extract(json, '$.ShiftClientId') = @id",
+            ("@id", clientId));
+        tx.Commit();
+    }
+
+    /// <summary>Puts every excluded document (shifts, bills, approvals) back in the queue.</summary>
+    public void IncludeAll()
+    {
+        using var c = db.Open();
+        using var tx = c.BeginTransaction();
+        IncludeWhere(c, tx, "", "", "");
+        tx.Commit();
+    }
+
+    /// <summary>When the earliest shift on the till was opened, or null with no shifts.</summary>
+    public DateTimeOffset? EarliestOpening()
+    {
+        using var c = db.Open();
+        return c.Scalar(null, "SELECT MIN(opened_at) FROM shift") is string at
+            ? DateTimeOffset.Parse(at, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind)
+            : null;
+    }
+
+    private static void ExcludeShift(SqliteConnection c, SqliteTransaction tx, string id)
+    {
+        c.Exec(tx, """
+            UPDATE shift SET opening_status = CASE WHEN opening_status IN ('Pending', 'Failed') THEN 'Excluded' ELSE opening_status END,
+                closing_status = CASE WHEN closing_status IN ('Pending', 'Failed') THEN 'Excluded' ELSE closing_status END,
+                next_attempt_at = NULL
+            WHERE client_id = @id
+            """, ("@id", id));
+        c.Exec(tx, "UPDATE receipt SET sync_status = 'Excluded' WHERE shift_client_id = @id AND sync_status IN ('Pending', 'Failed')", ("@id", id));
+        c.Exec(tx, """
+            UPDATE approval_log SET sync_status = 'Excluded'
+            WHERE json_extract(json, '$.ShiftClientId') = @id AND sync_status IN ('Pending', 'Failed')
+            """, ("@id", id));
+    }
+
+    private static void IncludeWhere(SqliteConnection c, SqliteTransaction tx, string shiftWhere, string receiptWhere, string approvalWhere,
+        params (string Name, object? Value)[] ps)
+    {
+        c.Exec(tx, $"""
+            UPDATE shift SET opening_status = CASE opening_status WHEN 'Excluded' THEN 'Pending' ELSE opening_status END,
+                closing_status = CASE closing_status WHEN 'Excluded' THEN 'Pending' ELSE closing_status END
+            {shiftWhere}
+            """, ps);
+        c.Exec(tx, $"UPDATE receipt SET sync_status = 'Pending', attempts = 0, next_attempt_at = NULL {And(receiptWhere, "sync_status = 'Excluded'")}", ps);
+        c.Exec(tx, $"UPDATE approval_log SET sync_status = 'Pending', attempts = 0, next_attempt_at = NULL {And(approvalWhere, "sync_status = 'Excluded'")}", ps);
+    }
+
+    private static string And(string where, string condition) => where.Length == 0 ? $"WHERE {condition}" : $"{where} AND {condition}";
 
     /// <summary>Shift documents waiting for upload: openings, and closings of closed shifts.</summary>
     public int CountPending() => Count("Pending");

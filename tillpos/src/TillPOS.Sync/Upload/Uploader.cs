@@ -107,8 +107,15 @@ public sealed class Uploader
             return;
         }
 
-        // 1. POS Opening Shift.
+        // An excluded shift (from before the till went Live) is never uploaded; bills taken in it since are excluded too.
         var sync = entry.Sync;
+        if (sync.OpeningStatus == UploadStatus.Excluded)
+        {
+            if (Mode == UploadMode.Live) shifts.Exclude(id);
+            return;
+        }
+
+        // 1. POS Opening Shift.
         var openingName = sync.OpeningStatus == UploadStatus.Synced ? sync.ErpOpeningName : run.Planned(OpeningKey(id));
         if (openingName is null)
         {
@@ -127,6 +134,7 @@ public sealed class Uploader
         var waiting = 0;
         foreach (var (receipt, bill) in receipts.Outbox(id).Select(e => (e.Receipt, e.Sync)))
         {
+            if (bill.Status == ReceiptSyncStatus.Excluded) continue;
             var name = bill.Status == ReceiptSyncStatus.Synced ? bill.ErpName : run.Planned(InvoiceKey(receipt.ClientId));
             name ??= await InvoiceAsync(receipt, bill, profile, openingName, run, ct);
             if (name is null) waiting++;
@@ -206,6 +214,7 @@ public sealed class Uploader
             string? shiftName = null;
             if (!string.IsNullOrEmpty(a.ShiftClientId) && shifts.SyncInfo(a.ShiftClientId) is { } shift)
             {
+                if (shift.OpeningStatus == UploadStatus.Excluded) continue;
                 shiftName = shift.OpeningStatus == UploadStatus.Synced ? shift.ErpOpeningName : run.Planned(OpeningKey(a.ShiftClientId));
                 if (shiftName is null) continue;
             }

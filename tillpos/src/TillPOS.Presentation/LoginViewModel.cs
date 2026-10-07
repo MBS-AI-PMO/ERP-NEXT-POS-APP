@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using TillPOS.Core.Security;
 using TillPOS.Core.Shifts;
+using TillPOS.Sync.Upload;
 
 namespace TillPOS.Presentation;
 
@@ -53,9 +54,25 @@ public sealed class LoginViewModel : ObservableObject
         Pin = "";
         var gate = new SupervisorGate(ctx, new SessionState());
         if (await gate.ApproveAsync(ApprovalAction.SettingsChange, "Change till settings") is not { } supervisor) return;
-        // The upload mode decides whether the till writes to ERPNext: its change is logged with the approving supervisor.
-        ctx.Dialogs.ShowSetup(change => ctx.Approvals.Add(new ApprovalRecord(Guid.NewGuid().ToString("N"), ApprovalAction.UploadModeChange,
-            "", supervisor, "", null, null, 0m, change, ctx.Clock.Now)));
+        await ctx.Dialogs.ShowSetupAsync((from, to) => UploadModeChangedAsync(gate, supervisor, from, to));
+    }
+
+    /// <summary>The upload mode decides whether the till writes to ERPNext: its change is logged with the approving supervisor.
+    /// The first switch to Live leaves earlier shifts (test data) out of the upload unless a supervisor includes them (logged).</summary>
+    private async Task UploadModeChangedAsync(SupervisorGate gate, string supervisor, UploadMode from, UploadMode to)
+    {
+        var now = ctx.Clock.Now;
+        ctx.Approvals.Add(new ApprovalRecord(Guid.NewGuid().ToString("N"), ApprovalAction.UploadModeChange, "", supervisor, "", null, null, 0m,
+            $"Upload mode {from} → {to}", now));
+        if (to != UploadMode.Live) return;
+
+        var earlier = UploadHistory.EarlierShifts(ctx.Shifts, ctx.Kv, now);
+        var include = false;
+        if (earlier > 0 && ctx.Dialogs.Confirm("Earlier shifts",
+                $"{earlier.ToString(CultureInfo.InvariantCulture)} earlier shift(s) will NOT be uploaded (test data). Include them?"))
+            include = await gate.ApproveAsync(ApprovalAction.UploadIncludeHistory,
+                $"Upload {earlier.ToString(CultureInfo.InvariantCulture)} earlier shift(s) to ERPNext") is not null;
+        UploadHistory.SwitchToLive(ctx.Shifts, ctx.Kv, now, include);
     }
 
     private string OpenShiftInfo()

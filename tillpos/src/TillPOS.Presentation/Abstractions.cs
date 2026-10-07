@@ -3,6 +3,7 @@ using TillPOS.Core.Sales;
 using TillPOS.Core.Security;
 using TillPOS.Core.Shifts;
 using TillPOS.Data;
+using TillPOS.Sync.Upload;
 
 namespace TillPOS.Presentation;
 
@@ -23,8 +24,11 @@ public interface IDialogs
 
     /// <summary>Shows the till setup (printer, paper, till number, invoice preview, counters, upload mode). Returns true when the
     /// settings were saved (the app then restarts to use them). When the upload mode was changed, <paramref name="uploadModeChanged"/>
-    /// is called with a description (e.g. "Upload mode Off → Live") before the restart, so it can be logged.</summary>
-    bool ShowSetup(Action<string> uploadModeChanged);
+    /// (old mode, new mode) runs before the restart, so it can be logged and the switch to Live prepared.</summary>
+    Task<bool> ShowSetupAsync(Func<UploadMode, UploadMode, Task> uploadModeChanged);
+
+    /// <summary>A yes/no question (No is the default). Returns true for Yes.</summary>
+    bool Confirm(string title, string message);
 
     /// <summary>Shows the price check (modal). Returns what "Add to bill" should add (<see cref="PriceCheckViewModel.AddToBill"/>),
     /// or null when it was closed without adding.</summary>
