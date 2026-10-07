@@ -114,8 +114,8 @@ public static class OpeningShiftPayload
     };
 }
 
-/// <summary>The POS Awesome POS Closing Shift of a closed till shift: every uploaded invoice of the shift, the totals, each
-/// invoice payment (pos_payments), the VAT per tax account (taxes) and the blind-count reconciliation per payment mode (opening,
+/// <summary>The POS Awesome POS Closing Shift of a closed till shift: every uploaded invoice of the shift, the totals, no
+/// pos_payments (POS Awesome fills them from Payment Entries), the VAT per tax account (taxes) and the blind-count reconciliation per payment mode (opening,
 /// expected, counted, difference) from <see cref="ShiftClosing"/>. Submittable documents are built as drafts (docstatus 0):
 /// the uploader submits them after its checks.</summary>
 public static class ClosingShiftPayload
@@ -155,15 +155,9 @@ public static class ClosingShiftPayload
                 ["grand_total"] = i.Receipt.GrandTotal,
             })
             .ToList(),
-        ["pos_payments"] = invoices
-            .SelectMany(i => i.Receipt.Payments.Select(p => new Dictionary<string, object?>
-            {
-                ["mode_of_payment"] = p.ModeOfPayment,
-                ["paid_amount"] = p.Amount,
-                ["customer"] = customer,
-                ["posting_date"] = ErpFormat.Date(i.Receipt.CreatedAt),
-            }))
-            .ToList(),
+        // POS Awesome fills pos_payments from Payment Entries (credit sales paid later); the till's bills are paid at the counter,
+        // so it sends none. To be confirmed by the sandbox Live run.
+        ["pos_payments"] = new List<Dictionary<string, object?>>(),
         ["taxes"] = Taxes(taxTemplate, invoices.Sum(i => i.Receipt.TotalTaxes)),
         ["payment_reconciliation"] = closing.Modes
             .Select(m => new Dictionary<string, object?>

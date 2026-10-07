@@ -261,7 +261,7 @@ public partial class PayloadTests
     }
 
     [Fact]
-    public void Closing_shift_matches_the_golden_json_with_payments_and_taxes()
+    public void Closing_shift_matches_the_golden_json_with_taxes_and_no_pos_payments()
     {
         var cash = Sale("TILL2-1", [Line(1, "A", "A", 1m, M("2.590"), M("2.590"), M("2.590"))], M("2.590"), true, M("2.500"),
             [new ReceiptPayment("Cash Counter 1", 5m)], M("2.50"));
@@ -281,9 +281,7 @@ public partial class PayloadTests
             "user":"till2@shop.local","grand_total":23.590,"net_total":22.467,"total_quantity":3,
             "pos_transactions":[{"pos_invoice":"ACC-1","posting_date":"2026-10-06","customer":"Walk-in Customer","grand_total":2.590},
             {"pos_invoice":"ACC-2","posting_date":"2026-10-06","customer":"Walk-in Customer","grand_total":21.000}],
-            "pos_payments":[{"mode_of_payment":"Cash Counter 1","paid_amount":5,"customer":"Walk-in Customer","posting_date":"2026-10-06"},
-            {"mode_of_payment":"Credit Card","paid_amount":20,"customer":"Walk-in Customer","posting_date":"2026-10-06"},
-            {"mode_of_payment":"Cash Counter 1","paid_amount":1.00,"customer":"Walk-in Customer","posting_date":"2026-10-06"}],
+            "pos_payments":[],
             "taxes":[{"account_head":"VAT 5% - AAML","rate":5,"amount":1.123}],
             "payment_reconciliation":[{"mode_of_payment":"Cash Counter 1","opening_amount":200,"expected_amount":203.500,"closing_amount":203.500,"difference":0},
             {"mode_of_payment":"Credit Card","opening_amount":0,"expected_amount":20,"closing_amount":20,"difference":0}],
