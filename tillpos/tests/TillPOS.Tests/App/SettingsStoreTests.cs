@@ -291,4 +291,28 @@ public sealed class SettingsStoreTests : IDisposable
         Write(programData, OldTillJson.Replace("\"TillNumber\": 3", "\"TillNumber\": 3, \"Counters\": []"));
         Assert.Empty(Resolve()!.Counters!);
     }
+
+    [Theory]
+    [InlineData("\"Banana\"", UploadMode.Off)]
+    [InlineData("7", UploadMode.Off)]
+    [InlineData("\"2\"", UploadMode.Off)]
+    [InlineData("null", UploadMode.Off)]
+    [InlineData("\"dryrun\"", UploadMode.DryRun)]
+    [InlineData("\"Live\"", UploadMode.Live)]
+    [InlineData("1", UploadMode.DryRun)]
+    public void An_unknown_upload_mode_reads_as_off(string value, UploadMode expected)
+    {
+        Write(programData, Json($"\"ApiSecretProtected\": \"P(x)\", \"Upload\": {value}"));
+        Assert.Equal(expected, SettingsStore.Load(programData).Upload);
+    }
+
+    [Fact]
+    public void A_test_build_never_loads_as_live()
+    {
+        Write(programData, Json("\"ApiSecretProtected\": \"P(x)\", \"Upload\": \"Live\", \"SampleQr\": true"));
+        Assert.Equal(UploadMode.Off, SettingsStore.Load(programData).Upload);
+
+        Write(programData, Json("\"ApiSecretProtected\": \"P(x)\", \"Upload\": \"DryRun\", \"LocalTestCashiers\": [{\"Id\":\"c\",\"Name\":\"C\",\"Pin\":\"1234\",\"IsSupervisor\":false}]"));
+        Assert.Equal(UploadMode.DryRun, SettingsStore.Load(programData).Upload);
+    }
 }

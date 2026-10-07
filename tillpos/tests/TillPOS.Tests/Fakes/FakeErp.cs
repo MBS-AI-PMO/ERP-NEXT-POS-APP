@@ -93,10 +93,22 @@ public sealed class FakeErp : IErpClient, IErpWriter
 
     public List<(string Doctype, string Name)> Submitted { get; } = [];
 
+    /// <summary>Return an exception to refuse a submit (the draft stays a draft).</summary>
+    public Func<string, string, Exception?>? RejectSubmit { get; set; }
+
+    /// <summary>Fields ERPNext changes when it submits (e.g. outstanding_amount); also kept on the stored row.</summary>
+    public Func<string, string, Dictionary<string, object?>?>? OnSubmit { get; set; }
+
+    /// <summary>Submits a stored draft: its row gets docstatus 1 (plus the <see cref="OnSubmit"/> fields) and is the answer.</summary>
     public Task<JsonElement> SubmitAsync(string doctype, string name, CancellationToken ct = default)
     {
         Submitted.Add((doctype, name));
-        return Task.FromResult(JsonSerializer.SerializeToElement(new Dictionary<string, object?> { ["name"] = name, ["docstatus"] = 1 }));
+        if (RejectSubmit?.Invoke(doctype, name) is { } refused) throw refused;
+        var row = tables.GetValueOrDefault(doctype)?.FirstOrDefault(r => r.GetValueOrDefault("name")?.ToString() == name)
+            ?? throw new ErpException(404, $"{doctype} {name} not found", "DoesNotExistError");
+        row["docstatus"] = 1m;
+        foreach (var (key, value) in OnSubmit?.Invoke(doctype, name) ?? []) row[key] = value;
+        return Task.FromResult(JsonSerializer.SerializeToElement(row));
     }
 
     public List<(string Method, JsonElement Args)> Calls { get; } = [];

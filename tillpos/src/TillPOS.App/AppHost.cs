@@ -47,7 +47,7 @@ public sealed class AppHost
         var client = ErpClient.Create(new ErpConnection(new Uri(settings.BaseUrl), settings.ApiKey, ApiSecret(settings, settingsPath)),
             TimeSpan.FromSeconds(60));
         erp = new ReadOnlyErpClient(client);
-        Shell.Upload = settings.Upload;
+        Shell.Upload = settings.EffectiveUpload;
         // The first counter is the default: its POS settings are also kept under the default key (receipt header, price list).
         var counters = settings.EffectiveCounters();
         syncContext = new SyncContext(erp, store, new KeysetPager(erp, new KvSyncStateStore(store)), counters[0].PosProfile)
@@ -58,14 +58,20 @@ public sealed class AppHost
         var shifts = new ShiftStore(db);
         var receipts = new ReceiptStore(db);
         var approvals = new ApprovalStore(db);
-        // The write guard: the uploader gets the client as a writer only in Live mode (UploadPipeline.LiveWriter is null
-        // otherwise). Shifts saved before counters existed (blank counter) belong to the default counter.
-        uploader = new Uploader(erp, UploadPipeline.LiveWriter(settings.Upload, client), settings.Upload, shifts, receipts, approvals,
+        // The write guard: a writer over the client is built only in Live mode of a production build (UploadPipeline.LiveWriter
+        // is null otherwise). Shifts saved before counters existed (blank counter) belong to the default counter.
+        var testBuild = settings.IsTestBuild;
+        uploader = new Uploader(erp, UploadPipeline.LiveWriter(settings.EffectiveUpload, () => new ErpWriter(client), testBuild), settings.EffectiveUpload,
+            shifts, receipts, approvals,
             profile => store.LoadPosSettings(string.IsNullOrWhiteSpace(profile) ? counters[0].PosProfile : profile),
-            $"TILL{settings.TillNumber}", null, () => DateTimeOffset.Now, WritePreview);
+            $"TILL{settings.TillNumber}", null, () => DateTimeOffset.Now, WritePreview, testBuild)
+        {
+            TaxTemplates = catalog.FindSalesTaxTemplate,
+            LogError = logError,
+        };
         // Live set by hand in settings.json (not through Settings): still never upload the history from before (no-op when the
         // till already went Live once).
-        if (settings.Upload == UploadMode.Live) UploadHistory.SwitchToLive(shifts, store, DateTimeOffset.Now, includeHistory: false);
+        if (settings.EffectiveUpload == UploadMode.Live) UploadHistory.SwitchToLive(shifts, store, DateTimeOffset.Now, includeHistory: false);
 
         Shell.TillName = $"Till {settings.TillNumber}";
         Output = new ReceiptOutput(settings, store);

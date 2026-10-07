@@ -43,7 +43,13 @@ public partial class SetupDialog : Window
             .Where(c => c.PosProfile.Length > 0)
             .Select(c => new CounterRow { PosProfile = c.PosProfile, Label = c.Label, CashMode = c.CashMode, CardMode = c.CardMode }));
         CounterRows.ItemsSource = counters;
-        (settings.Upload switch { UploadMode.Live => UploadLive, UploadMode.DryRun => UploadDryRun, _ => UploadOff }).IsChecked = true;
+        (settings.EffectiveUpload switch { UploadMode.Live => UploadLive, UploadMode.DryRun => UploadDryRun, _ => UploadOff }).IsChecked = true;
+        // Field-test builds (local test cashiers or the sample QR) offer Off and Dry run only.
+        if (settings.IsTestBuild)
+        {
+            UploadLive.IsEnabled = false;
+            UploadLive.Content = "Live (not available in test builds)";
+        }
         // At the first start nobody has approved anything yet, so the upload mode is shown but can only be changed later
         // (Settings on the login screen, behind the supervisor PIN).
         UploadPanel.IsEnabled = !firstRun;
@@ -56,8 +62,8 @@ public partial class SetupDialog : Window
     private string SelectedPrinter => PrinterBox.SelectedIndex > 0 ? (string)PrinterBox.SelectedItem : "";
     private PaperWidth SelectedPaper => Paper58.IsChecked == true ? PaperWidth.Mm58 : PaperWidth.Mm80;
     private UploadMode SelectedUpload =>
-        !UploadPanel.IsEnabled ? settings.Upload
-        : UploadLive.IsChecked == true ? UploadMode.Live
+        !UploadPanel.IsEnabled ? settings.EffectiveUpload
+        : UploadLive.IsChecked == true && !settings.IsTestBuild ? UploadMode.Live
         : UploadDryRun.IsChecked == true ? UploadMode.DryRun
         : UploadMode.Off;
 

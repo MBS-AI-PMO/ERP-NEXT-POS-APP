@@ -66,7 +66,7 @@ public static class PosInvoicePayload
             doc["is_return"] = 1;
             if (!string.IsNullOrWhiteSpace(returnAgainstErpName)) doc["return_against"] = returnAgainstErpName;
         }
-        doc["docstatus"] = 1;
+        doc["docstatus"] = 0; // inserted as a draft, checked, then submitted (Uploader)
 
         var expected = new ExpectedTotals(r.GrandTotal, r.UsesErpRoundedTotal ? r.RoundedTotal : r.GrandTotal, r.UsesErpRoundedTotal);
         return new InvoicePayload(doc, expected);
@@ -110,12 +110,14 @@ public static class OpeningShiftPayload
             .Select(p => new Dictionary<string, object?> { ["mode_of_payment"] = p.ModeOfPayment, ["amount"] = p.Amount })
             .ToList(),
         ["custom_offline_id"] = opening.ClientId,
-        ["docstatus"] = 1,
+        ["docstatus"] = 0,
     };
 }
 
-/// <summary>The POS Awesome POS Closing Shift of a closed till shift: every uploaded invoice of the shift, the totals and
-/// the blind-count reconciliation per payment mode (opening, expected, counted, difference) from <see cref="ShiftClosing"/>.</summary>
+/// <summary>The POS Awesome POS Closing Shift of a closed till shift: every uploaded invoice of the shift, the totals, each
+/// invoice payment (pos_payments), the VAT per tax account (taxes) and the blind-count reconciliation per payment mode (opening,
+/// expected, counted, difference) from <see cref="ShiftClosing"/>. Submittable documents are built as drafts (docstatus 0):
+/// the uploader submits them after its checks.</summary>
 public static class ClosingShiftPayload
 {
     public const string Doctype = "POS Closing Shift";
@@ -127,9 +129,11 @@ public static class ClosingShiftPayload
     /// <param name="posProfile">The shift's POS Profile.</param>
     /// <param name="company">The profile's company.</param>
     /// <param name="erpUser">The till's ERPNext user.</param>
-    /// <param name="customer">The POS Profile's customer (each transaction row names it).</param>
+    /// <param name="customer">The POS Profile's customer (each transaction and payment row names it).</param>
+    /// <param name="taxTemplate">The profile's Sales Taxes and Charges Template: its account heads and rates for the taxes rows.</param>
     public static Dictionary<string, object?> Build(ShiftOpening opening, ShiftClosing closing, string openingErpName,
-        IReadOnlyList<(string ErpName, Receipt Receipt)> invoices, string posProfile, string company, string erpUser, string customer) => new()
+        IReadOnlyList<(string ErpName, Receipt Receipt)> invoices, string posProfile, string company, string erpUser, string customer,
+        SalesTaxTemplate? taxTemplate = null) => new()
     {
         ["doctype"] = Doctype,
         ["pos_opening_shift"] = openingErpName,
@@ -151,6 +155,16 @@ public static class ClosingShiftPayload
                 ["grand_total"] = i.Receipt.GrandTotal,
             })
             .ToList(),
+        ["pos_payments"] = invoices
+            .SelectMany(i => i.Receipt.Payments.Select(p => new Dictionary<string, object?>
+            {
+                ["mode_of_payment"] = p.ModeOfPayment,
+                ["paid_amount"] = p.Amount,
+                ["customer"] = customer,
+                ["posting_date"] = ErpFormat.Date(i.Receipt.CreatedAt),
+            }))
+            .ToList(),
+        ["taxes"] = Taxes(taxTemplate, invoices.Sum(i => i.Receipt.TotalTaxes)),
         ["payment_reconciliation"] = closing.Modes
             .Select(m => new Dictionary<string, object?>
             {
@@ -162,8 +176,25 @@ public static class ClosingShiftPayload
             })
             .ToList(),
         ["custom_offline_id"] = closing.ShiftClientId,
-        ["docstatus"] = 1,
+        ["docstatus"] = 0,
     };
+
+    /// <summary>The shift's VAT per tax account: the bills' total taxes on the template's one row, or shared by rate over several
+    /// rows (rounded to 3 decimals, the last row takes the remainder). No template, no rows.</summary>
+    private static List<Dictionary<string, object?>> Taxes(SalesTaxTemplate? template, decimal total)
+    {
+        var rows = template?.Rows.OrderBy(r => r.Idx).ToList() ?? [];
+        var rates = rows.Sum(r => r.Rate);
+        var result = new List<Dictionary<string, object?>>();
+        var left = total;
+        for (var i = 0; i < rows.Count; i++)
+        {
+            var amount = i == rows.Count - 1 ? left : rates == 0m ? 0m : Math.Round(total * rows[i].Rate / rates, 3, MidpointRounding.ToEven);
+            left -= amount;
+            result.Add(new Dictionary<string, object?> { ["account_head"] = rows[i].AccountHead, ["rate"] = rows[i].Rate, ["amount"] = amount });
+        }
+        return result;
+    }
 }
 
 /// <summary>A supervisor approval as a row of the custom DocType "TillPOS Approval" (admin setup, plan 2b Tasks 7 and 8; not

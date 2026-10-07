@@ -52,10 +52,12 @@ public sealed class Uploader
     /// <param name="till">This till's name, sent as custom_till (e.g. "TILL2").</param>
     /// <param name="erpUser">The till's ERPNext user for the shifts; null = ask ERPNext who the API key belongs to.</param>
     /// <param name="preview">DryRun: receives a file name (without extension) and the payload JSON.</param>
+    /// <param name="testBuild">A test build (local test cashiers or the sample QR): Live is refused.</param>
     public Uploader(IErpClient reader, IErpWriter? writer, UploadMode mode, ShiftStore shifts, ReceiptStore receipts, ApprovalStore approvals,
-        Func<string, PosSettings?> profileSettings, string till, string? erpUser, Func<DateTimeOffset> now, Action<string, string> preview)
+        Func<string, PosSettings?> profileSettings, string till, string? erpUser, Func<DateTimeOffset> now, Action<string, string> preview,
+        bool testBuild = false)
     {
-        this.writer = UploadPipeline.WriterFor(mode, writer);
+        this.writer = UploadPipeline.WriterFor(mode, writer, testBuild);
         this.reader = reader;
         Mode = mode;
         this.shifts = shifts;
@@ -69,6 +71,12 @@ public sealed class Uploader
     }
 
     public UploadMode Mode { get; }
+
+    /// <summary>The synced Sales Taxes and Charges Template by name (the Closing Shift's taxes); none by default.</summary>
+    public Func<string, SalesTaxTemplate?> TaxTemplates { get; init; } = _ => null;
+
+    /// <summary>Where unexpected exceptions go (errors.log); network errors and ERPNext's answers are not logged.</summary>
+    public Action<Exception> LogError { get; init; } = _ => { };
 
     /// <summary>The wait after the <paramref name="attempts"/>-th failure in a row: 30 s, 60 s, 120 s, 240 s, then 5 min.</summary>
     public static TimeSpan Backoff(int attempts) =>
@@ -92,6 +100,7 @@ public sealed class Uploader
         catch (Exception ex) when (!ct.IsCancellationRequested)
         {
             // Not an answer about one document (ERPNext unreachable, timeout, …): stop here, start over on the next run.
+            if (ex is not (ErpException or HttpRequestException or TaskCanceledException or TimeoutException or IOException)) LogError(ex);
             run.Problems.Add($"Upload stopped: {Short(ex.Message)}");
         }
         return Counts(run.Problems, run.Uploaded);
@@ -154,7 +163,7 @@ public sealed class Uploader
         await UploadAsync(
             new Doc(ClosingShiftPayload.Doctype, OfflineIdField, id, ClosingKey(id), $"Closing of shift {id}", true,
                 () => ClosingShiftPayload.Build(opening, closing, openingName, uploaded, profile.PosProfile, profile.Company, user,
-                    profile.Customer)),
+                    profile.Customer, profile.TaxesAndCharges is { Length: > 0 } taxes ? TaxTemplates(taxes) : null)),
             new Marks(sync.Attempts, name => shifts.MarkSynced(id, ShiftDocument.Closing, name),
                 (error, next) => shifts.MarkFailed(id, ShiftDocument.Closing, error, next),
                 until => shifts.MarkInFlight(id, ShiftDocument.Closing, until)), run, ct);
@@ -241,10 +250,17 @@ public sealed class Uploader
     /// (sent, answer pending, until).</summary>
     private sealed record Marks(int Attempts, Action<string> Synced, Action<string, DateTimeOffset> Failed, Action<DateTimeOffset> InFlight);
 
-    /// <summary>Lookup, then insert (Live) or preview (DryRun). Returns the ERPNext name (DryRun: the found name or a stand-in),
-    /// or null when the document failed. Only ERPNext's definite refusals (<see cref="Classify"/>) are recorded on the document,
-    /// with a backoff; an unknown outcome (network, timeout, gateway, auth, rate limit) propagates and stops the run.
-    /// <para>Before the insert the document is marked in flight for <see cref="InFlightHold"/>: if the answer is lost, it is not
+    /// <summary>A document found in (or just written to) ERPNext: its name, its fields and its docstatus (0 draft, 1 submitted).</summary>
+    private sealed record Found(string Name, JsonElement Doc, int DocStatus);
+
+    /// <summary>Lookup, then insert as a draft, check, and submit (Live) or preview (DryRun). Returns the ERPNext name (DryRun:
+    /// the found name or a stand-in), or null when the document failed. Only ERPNext's definite refusals (<see cref="Classify"/>)
+    /// and the till's own checks are recorded on the document, with a backoff; an unknown outcome (network, timeout, gateway,
+    /// auth, rate limit) propagates and stops the run.
+    /// <para>Submittable documents go in as a draft (docstatus 0); an invoice's totals are compared with the till's before it is
+    /// submitted, so a wrong price never becomes a submitted document. A draft of this till's own client id found by the lookup
+    /// is checked and submitted the same way.</para>
+    /// <para>Before each write the document is marked in flight for <see cref="InFlightHold"/>: if the answer is lost, it is not
     /// sent again before then, and the next try looks it up first. The hold (5 min) is longer than the client's 60 s timeout
     /// and gunicorn's 120 s worker timeout, so a request ERPNext is still working on has finished before the lookup.</para></summary>
     private async Task<string?> UploadAsync(Doc doc, Marks marks, Run run, CancellationToken ct)
@@ -255,17 +271,24 @@ public sealed class Uploader
             var found = await LookupAsync(doc, ct);
             if (Mode == UploadMode.DryRun)
             {
-                if (found is { } existing) return existing.Name;
+                if (found is not null) return found.Name;
                 preview(doc.Key, ErpFormat.Json(doc.Build(), indented: true));
                 previewed.Add(doc.Key);
                 return run.Plan(doc.Key, doc.ClientId);
             }
 
-            var (name, erpDoc) = found ?? await InsertAsync(doc, marks, ct);
-            if (Mismatch(doc, name, erpDoc) is { } mismatch) throw new DocumentFailure(mismatch);
-            marks.Synced(name);
+            found ??= await InsertDraftAsync(doc, marks, ct);
+            var draft = doc.Submittable && found.DocStatus == 0;
+            if (Mismatch(doc, found) is { } mismatch)
+                throw new DocumentFailure(draft ? $"Draft {found.Name} created in ERPNext but totals differ — check and submit or delete it. {mismatch}" : mismatch);
+            if (draft)
+            {
+                found = await SubmitAsync(doc, found, marks, ct);
+                if (Mismatch(doc, found) is { } afterSubmit) throw new DocumentFailure(afterSubmit);
+            }
+            marks.Synced(found.Name);
             run.Uploaded++;
-            return name;
+            return found.Name;
         }
         catch (Exception ex) when (ex is DocumentFailure || Classify(ex) == ErpOutcome.Refused)
         {
@@ -276,15 +299,17 @@ public sealed class Uploader
         }
     }
 
-    /// <summary>Marks the document in flight and inserts it. ERPNext saying it already has the document (a unique client id)
-    /// means an earlier insert went through: it is looked up and adopted.</summary>
-    private async Task<(string Name, JsonElement Doc)> InsertAsync(Doc doc, Marks marks, CancellationToken ct)
+    /// <summary>Marks the document in flight and inserts it (a submittable one as a draft). ERPNext saying it already has the
+    /// document (a unique client id) means an earlier insert went through: it is looked up and adopted.</summary>
+    private async Task<Found> InsertDraftAsync(Doc doc, Marks marks, CancellationToken ct)
     {
+        var body = doc.Build();
+        if (doc.Submittable) body["docstatus"] = 0;
         marks.InFlight(now() + InFlightHold);
         JsonElement saved;
         try
         {
-            saved = await writer.InsertAsync(doc.Doctype, doc.Build(), ct);
+            saved = await writer.InsertAsync(doc.Doctype, body, ct);
         }
         catch (Exception ex) when (Classify(ex) == ErpOutcome.Duplicate)
         {
@@ -292,7 +317,23 @@ public sealed class Uploader
                 ?? throw new DocumentFailure($"ERPNext reports this {doc.Doctype} as a duplicate, but none has this till's id: {Short(ex.Message)}");
         }
         // No name in the answer: the outcome is unknown, the in-flight marker stays and the next try looks it up.
-        return (saved.StrOrNull("name") ?? throw new InvalidDataException($"ERPNext answered the {doc.Doctype} insert without its name."), saved);
+        var name = saved.StrOrNull("name") ?? throw new InvalidDataException($"ERPNext answered the {doc.Doctype} insert without its name.");
+        return new Found(name, saved, saved.Int("docstatus"));
+    }
+
+    /// <summary>Submits a checked draft. A refusal leaves the draft in ERPNext (the next try finds it and submits it again).</summary>
+    private async Task<Found> SubmitAsync(Doc doc, Found draft, Marks marks, CancellationToken ct)
+    {
+        marks.InFlight(now() + InFlightHold);
+        try
+        {
+            var submitted = await writer.SubmitAsync(doc.Doctype, draft.Name, ct);
+            return new Found(draft.Name, submitted, 1);
+        }
+        catch (Exception ex) when (Classify(ex) == ErpOutcome.Refused)
+        {
+            throw new DocumentFailure($"Draft {draft.Name} is in ERPNext but could not be submitted: {Short(ex.Message)}");
+        }
     }
 
     public enum ErpOutcome { Unknown, Refused, Duplicate }
@@ -312,33 +353,47 @@ public sealed class Uploader
         return erp.StatusCode == 417 ? ErpOutcome.Refused : ErpOutcome.Unknown;
     }
 
-    /// <summary>The document with this client id in ERPNext, or null. A submittable document found only as a draft or
-    /// cancelled is a failure to check by hand: it is never adopted and never inserted again.</summary>
-    private async Task<(string Name, JsonElement Doc)?> LookupAsync(Doc doc, CancellationToken ct)
+    private static readonly string[] InvoiceFields =
+        ["name", "docstatus", "grand_total", "rounded_total", "paid_amount", "change_amount", "outstanding_amount"];
+
+    /// <summary>The document with this client id in ERPNext (submitted first, else this till's own draft), or null. One found
+    /// only cancelled is a failure to check by hand: it is never adopted and never inserted again.</summary>
+    private async Task<Found?> LookupAsync(Doc doc, CancellationToken ct)
     {
-        IReadOnlyList<string> fields = doc.Expected is null ? ["name", "docstatus"] : ["name", "docstatus", "grand_total", "rounded_total"];
+        IReadOnlyList<string> fields = doc.Expected is null ? ["name", "docstatus"] : InvoiceFields;
         var rows = await reader.GetListAsync(new ListQuery(doc.Doctype, fields, [[doc.IdField, "=", doc.ClientId]], "creation asc", 0, 10), ct);
         if (rows.Count == 0) return null;
-        foreach (var row in rows)
-            if (!doc.Submittable || row.Int("docstatus") == 1)
-                return (row.Str("name"), row);
+        if (!doc.Submittable) return new Found(rows[0].Str("name"), rows[0], 0);
+        foreach (var status in new[] { 1, 0 })
+            foreach (var row in rows)
+                if (row.Int("docstatus") == status)
+                    return new Found(row.Str("name"), row, status);
         throw new DocumentFailure(
-            $"{doc.Doctype} {string.Join(", ", rows.Select(r => r.StrOrNull("name")))} has this till's id in ERPNext but is a draft or " +
-            "cancelled. Check it in ERPNext.");
+            $"{doc.Doctype} {string.Join(", ", rows.Select(r => r.StrOrNull("name")))} has this till's id but is cancelled in ERPNext. Check it there.");
     }
 
-    /// <summary>Why ERPNext's totals are not what the till charged (beyond the write-off limit), or null.</summary>
-    private static string? Mismatch(Doc doc, string name, JsonElement erp)
+    /// <summary>Why ERPNext's invoice is not what the till charged, or null: grand and rounded total, and what was paid (paid −
+    /// change) against the amount due, each within the write-off limit; once submitted, nothing may be outstanding.</summary>
+    private static string? Mismatch(Doc doc, Found found)
     {
         if (doc.Expected is not { } till) return null;
+        var erp = found.Doc;
         var grand = erp.Dec("grand_total");
         var rounded = erp.Dec("rounded_total");
-        var difference = Math.Abs(grand - till.GrandTotal);
-        if (till.UsesRoundedTotal) difference = Math.Max(difference, Math.Abs(rounded - till.RoundedTotal));
-        if (difference <= doc.WriteOffLimit) return null;
+        var limit = doc.WriteOffLimit;
+        var problems = new List<string>();
+        if (Math.Abs(grand - till.GrandTotal) > limit || (till.UsesRoundedTotal && Math.Abs(rounded - till.RoundedTotal) > limit))
+            problems.Add(string.Create(CultureInfo.InvariantCulture,
+                $"ERPNext's total is {grand} (rounded {rounded}), but the till charged {till.GrandTotal} (rounded {till.RoundedTotal})"));
+        var due = rounded != 0m ? rounded : grand;
+        var paid = erp.Dec("paid_amount") - erp.Dec("change_amount");
+        if (Math.Abs(paid - due) > limit)
+            problems.Add(string.Create(CultureInfo.InvariantCulture, $"paid {paid} (after change) against {due} due"));
+        if (found.DocStatus == 1 && erp.Dec("outstanding_amount") != 0m)
+            problems.Add(string.Create(CultureInfo.InvariantCulture, $"{erp.Dec("outstanding_amount")} is outstanding after submit"));
+        if (problems.Count == 0) return null;
         return string.Create(CultureInfo.InvariantCulture,
-            $"{name} is in ERPNext with total {grand} (rounded {rounded}), but the till charged {till.GrandTotal} (rounded {till.RoundedTotal}): " +
-            $"the difference is over the write-off limit {doc.WriteOffLimit}. Check the invoice in ERPNext.");
+            $"{found.Name}: {string.Join("; ", problems)}: over the write-off limit {limit}. Check the invoice in ERPNext.");
     }
 
     /// <summary>False (and noted) while a failed document waits for its backoff.</summary>

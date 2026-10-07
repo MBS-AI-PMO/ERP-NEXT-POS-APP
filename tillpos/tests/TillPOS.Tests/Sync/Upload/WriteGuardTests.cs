@@ -24,6 +24,9 @@ public class WriteGuardTests
         var names = typeof(IErpClient).GetMethods().Select(m => m.Name).ToList();
         Assert.DoesNotContain(names, n => n.Contains("Insert") || n.Contains("Submit") || n.Contains("Delete") || n.Contains("Call"));
         Assert.False(typeof(IErpWriter).IsAssignableFrom(typeof(ReadOnlyErpClient)));
+        Assert.False(typeof(IErpWriter).IsAssignableFrom(typeof(ErpClient)));
+        Assert.DoesNotContain(typeof(ErpClient).GetMethods(), m => m.Name is "InsertAsync" or "SubmitAsync" or "CallAsync" or "DeleteAsync");
+        Assert.DoesNotContain(typeof(ErpWriter).GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance), _ => true);
     }
 
     [Fact]
@@ -40,7 +43,7 @@ public class WriteGuardTests
     {
         var client = new FakeErp();
 
-        Assert.Null(UploadPipeline.LiveWriter(mode, client));
+        Assert.Null(UploadPipeline.LiveWriter(mode, () => throw new InvalidOperationException("must not be built")));
         Assert.Same(NoWriteErpWriter.Instance, UploadPipeline.WriterFor(mode, null));
         Assert.Throws<ArgumentException>(() => UploadPipeline.WriterFor(mode, client));
     }
@@ -50,8 +53,18 @@ public class WriteGuardTests
     {
         var client = new FakeErp();
 
-        Assert.Same(client, UploadPipeline.LiveWriter(UploadMode.Live, client));
+        Assert.Same(client, UploadPipeline.LiveWriter(UploadMode.Live, () => client));
         Assert.Same(client, UploadPipeline.WriterFor(UploadMode.Live, client));
         Assert.Throws<ArgumentNullException>(() => UploadPipeline.WriterFor(UploadMode.Live, null));
+    }
+
+    [Fact]
+    public void A_test_build_never_gets_a_live_writer()
+    {
+        var client = new FakeErp();
+
+        Assert.Null(UploadPipeline.LiveWriter(UploadMode.Live, () => client, testBuild: true));
+        Assert.Throws<InvalidOperationException>(() => UploadPipeline.WriterFor(UploadMode.Live, client, testBuild: true));
+        Assert.Same(NoWriteErpWriter.Instance, UploadPipeline.WriterFor(UploadMode.DryRun, null, testBuild: true));
     }
 }

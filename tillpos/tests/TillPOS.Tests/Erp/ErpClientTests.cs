@@ -99,7 +99,7 @@ public class ErpClientTests
     {
         var (client, handler) = Make(_ => StubHandler.Json("""{"data":{"name":"ACC-PSINV-1","grand_total":10.5}}"""));
 
-        var saved = await client.InsertAsync("POS Invoice", new Dictionary<string, object?> { ["customer"] = "Walk-in" });
+        var saved = await new ErpWriter(client).InsertAsync("POS Invoice", new Dictionary<string, object?> { ["customer"] = "Walk-in" });
 
         Assert.Equal("ACC-PSINV-1", saved.GetProperty("name").GetString());
         var (req, body) = handler.Requests.Single();
@@ -116,7 +116,7 @@ public class ErpClientTests
             ? StubHandler.Json("""{"data":{"name":"POS-OPE-1","doctype":"POS Opening Shift","docstatus":0}}""")
             : StubHandler.Json("""{"message":{"name":"POS-OPE-1","docstatus":1}}"""));
 
-        var result = await client.SubmitAsync("POS Opening Shift", "POS-OPE-1");
+        var result = await new ErpWriter(client).SubmitAsync("POS Opening Shift", "POS-OPE-1");
 
         Assert.Equal(1, result.GetProperty("docstatus").GetInt32());
         Assert.Equal(2, handler.Requests.Count);
@@ -132,7 +132,7 @@ public class ErpClientTests
     {
         var (client, handler) = Make(_ => StubHandler.Json("""{"message":{"ok":true}}"""));
 
-        var result = await client.CallAsync("posawesome.posawesome.api.ping", new Dictionary<string, object?> { ["x"] = 1 });
+        var result = await new ErpWriter(client).CallAsync("posawesome.posawesome.api.ping", new Dictionary<string, object?> { ["x"] = 1 });
 
         Assert.True(result.GetProperty("ok").GetBoolean());
         var (req, body) = handler.Requests.Single();

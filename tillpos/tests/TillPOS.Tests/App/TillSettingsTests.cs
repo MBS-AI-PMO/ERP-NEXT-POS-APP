@@ -30,6 +30,26 @@ public class TillSettingsTests
     }
 
     [Fact]
+    public void Test_builds_are_recognised_and_never_live()
+    {
+        var production = new TillSettings("https://erp.example", "k", Upload: UploadMode.Live);
+        Assert.False(production.IsTestBuild);
+        Assert.Equal(UploadMode.Live, production.EffectiveUpload);
+
+        foreach (var test in new[]
+        {
+            production with { SampleQr = true },
+            production with { LocalTestCashiers = [new LocalTestCashier("c", "C", "1234", false)] },
+        })
+        {
+            Assert.True(test.IsTestBuild);
+            Assert.Equal(UploadMode.Off, test.EffectiveUpload);
+            Assert.Equal(UploadMode.DryRun, (test with { Upload = UploadMode.DryRun }).EffectiveUpload);
+        }
+        Assert.False((production with { LocalTestCashiers = [] }).IsTestBuild);
+    }
+
+    [Fact]
     public void Upload_is_off_by_default() => Assert.Equal(UploadMode.Off, new TillSettings("https://erp.example", "k").Upload);
 
     [Fact]

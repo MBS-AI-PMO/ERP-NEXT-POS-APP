@@ -112,6 +112,12 @@ public sealed record TillSettings(
     private static string OrDefault(string? value, string? fallback) =>
         !string.IsNullOrWhiteSpace(value) ? value.Trim() : (fallback ?? "").Trim();
 
+    /// <summary>A field-test build: it has local test cashiers or prints the sample QR. Test builds never upload Live.</summary>
+    public bool IsTestBuild => (LocalTestCashiers?.Count ?? 0) > 0 || SampleQr;
+
+    /// <summary>The upload mode in force: Live is only possible in a production build (a test build runs Off instead).</summary>
+    public UploadMode EffectiveUpload => IsTestBuild && Upload == UploadMode.Live ? UploadMode.Off : Upload;
+
     /// <summary>"***" for a value that is set, so ToString (logs, exception text) never shows the key, the secrets or PINs.</summary>
     internal static string Mask(string? value) => string.IsNullOrEmpty(value) ? "" : "***";
 

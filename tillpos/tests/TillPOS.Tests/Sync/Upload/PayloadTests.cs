@@ -53,7 +53,7 @@ public partial class PayloadTests
             "rate":3.50,"barcode":"2000089007400","warehouse":"Stores - AAML","posa_row_id":"1"}],
             "payments":[{"mode_of_payment":"Cash Counter 1","amount":5}],"change_amount":2.50,
             "posa_pos_opening_shift":"POS-OPE-2026-00042","posa_cashier":"cashier1@shop.local",
-            "posa_client_request_id":"TILL2-20261006153005-000001","custom_till":"TILL2","docstatus":1}
+            "posa_client_request_id":"TILL2-20261006153005-000001","custom_till":"TILL2","docstatus":0}
             """;
         Assert.Equal(golden.ReplaceLineEndings("").Replace("\n", ""), ErpFormat.Json(payload.Doc));
         Assert.Equal(new ExpectedTotals(M("2.590"), M("2.500"), true), payload.Expected);
@@ -162,7 +162,7 @@ public partial class PayloadTests
         Assert.Equal(-1m, Assert.Single(Rows(payload.Doc, "items"))["qty"]);
         Assert.Equal(M("-10.500"), Assert.Single(Rows(payload.Doc, "payments"))["amount"]);
         Assert.Equal(new ExpectedTotals(M("-10.500"), M("-10.500"), true), payload.Expected);
-        Assert.Equal(1, payload.Doc["docstatus"]);
+        Assert.Equal(0, payload.Doc["docstatus"]);
     }
 
     [Fact]
@@ -193,7 +193,7 @@ public partial class PayloadTests
         const string golden = """
             {"doctype":"POS Opening Shift","period_start_date":"2026-10-06 08:00:00","posting_date":"2026-10-06","company":"Al Ain Market",
             "pos_profile":"Al Ain Counter 1","user":"till2@shop.local","balance_details":[{"mode_of_payment":"Cash Counter 1","amount":200}],
-            "custom_offline_id":"TILL2-SHIFT-20261006080000","docstatus":1}
+            "custom_offline_id":"TILL2-SHIFT-20261006080000","docstatus":0}
             """;
         Assert.Equal(golden.ReplaceLineEndings("").Replace("\n", ""), ErpFormat.Json(doc));
     }
@@ -234,7 +234,7 @@ public partial class PayloadTests
         Assert.Equal(closing.NetTotal, doc["net_total"]);
         Assert.Equal(M("2.000"), doc["total_quantity"]);          // 0.740 + 2 − 0.740
         Assert.Equal("TILL2-SHIFT-20261006080000", doc["custom_offline_id"]);
-        Assert.Equal(1, doc["docstatus"]);
+        Assert.Equal(0, doc["docstatus"]);
 
         var tx = Rows(doc, "pos_transactions");
         Assert.Equal(new[] { "ACC-PSINV-1", "ACC-PSINV-2", "ACC-PSINV-3" }, tx.Select(t => (string)t["pos_invoice"]!));
@@ -258,6 +258,54 @@ public partial class PayloadTests
             Assert.Equal(closing.Modes[i].Counted, rec[i]["closing_amount"]);
             Assert.Equal(closing.Modes[i].Difference, rec[i]["difference"]);
         }
+    }
+
+    [Fact]
+    public void Closing_shift_matches_the_golden_json_with_payments_and_taxes()
+    {
+        var cash = Sale("TILL2-1", [Line(1, "A", "A", 1m, M("2.590"), M("2.590"), M("2.590"))], M("2.590"), true, M("2.500"),
+            [new ReceiptPayment("Cash Counter 1", 5m)], M("2.50"));
+        var split = Sale("TILL2-2", [Line(1, "B", "B", 2m, M("10.500"), M("10.500"), M("21.000"))], M("21.000"), false, 0m,
+            [new ReceiptPayment("Credit Card", 20m), new ReceiptPayment("Cash Counter 1", M("1.00"))], 0m, At.AddMinutes(10));
+        var closing = new ShiftClosing(Opening.ClientId, new DateTimeOffset(2026, 10, 6, 22, 0, 0, Uae),
+            [new ShiftModeSummary("Cash Counter 1", 200m, M("203.500"), M("203.500"), 0m), new ShiftModeSummary("Credit Card", 0m, 20m, 20m, 0m)],
+            2, 0, M("23.590"), M("22.467"), M("1.123"));
+        var vat = new SalesTaxTemplate("UAE VAT 5% - AAML", [new TaxRow(1, "VAT 5% - AAML", "VAT 5%", 5m, true)], null);
+
+        var doc = ClosingShiftPayload.Build(Opening, closing, "POS-OPE-1", [("ACC-1", cash), ("ACC-2", split)], "Al Ain Counter 1",
+            "Al Ain Market", "till2@shop.local", "Walk-in Customer", vat);
+
+        const string golden = """
+            {"doctype":"POS Closing Shift","pos_opening_shift":"POS-OPE-1","period_start_date":"2026-10-06 08:00:00",
+            "period_end_date":"2026-10-06 22:00:00","posting_date":"2026-10-06","company":"Al Ain Market","pos_profile":"Al Ain Counter 1",
+            "user":"till2@shop.local","grand_total":23.590,"net_total":22.467,"total_quantity":3,
+            "pos_transactions":[{"pos_invoice":"ACC-1","posting_date":"2026-10-06","customer":"Walk-in Customer","grand_total":2.590},
+            {"pos_invoice":"ACC-2","posting_date":"2026-10-06","customer":"Walk-in Customer","grand_total":21.000}],
+            "pos_payments":[{"mode_of_payment":"Cash Counter 1","paid_amount":5,"customer":"Walk-in Customer","posting_date":"2026-10-06"},
+            {"mode_of_payment":"Credit Card","paid_amount":20,"customer":"Walk-in Customer","posting_date":"2026-10-06"},
+            {"mode_of_payment":"Cash Counter 1","paid_amount":1.00,"customer":"Walk-in Customer","posting_date":"2026-10-06"}],
+            "taxes":[{"account_head":"VAT 5% - AAML","rate":5,"amount":1.123}],
+            "payment_reconciliation":[{"mode_of_payment":"Cash Counter 1","opening_amount":200,"expected_amount":203.500,"closing_amount":203.500,"difference":0},
+            {"mode_of_payment":"Credit Card","opening_amount":0,"expected_amount":20,"closing_amount":20,"difference":0}],
+            "custom_offline_id":"TILL2-SHIFT-20261006080000","docstatus":0}
+            """;
+        Assert.Equal(golden.ReplaceLineEndings("").Replace("\n", ""), ErpFormat.Json(doc));
+    }
+
+    [Fact]
+    public void Closing_taxes_share_the_vat_over_several_template_rows_by_rate()
+    {
+        var r = Sale("TILL2-1", [Line(1, "A", "A", 1m, 10m, 10m, 10m)], 10m, true, 10m, [new ReceiptPayment("Cash Counter 1", 10m)], 0m);
+        var closing = ShiftCalculator.Close(Opening, [r], new Dictionary<string, decimal>(), new TenderModes("Cash Counter 1", "Credit Card"), At,
+            new MoneySettings(3));
+        var template = new SalesTaxTemplate("Two", [new TaxRow(2, "Tax B", "B", 1m, true), new TaxRow(1, "Tax A", "A", 2m, true)], null);
+
+        var taxes = Rows(ClosingShiftPayload.Build(Opening, closing, "O", [("N", r)], "P", "C", "u", "W", template), "taxes");
+
+        Assert.Equal(["Tax A", "Tax B"], taxes.Select(t => (string)t["account_head"]!));
+        Assert.Equal(r.TotalTaxes, taxes.Sum(t => (decimal)t["amount"]!));
+        Assert.Equal(Math.Round(r.TotalTaxes * 2 / 3, 3), taxes[0]["amount"]);
+        Assert.Empty(Rows(ClosingShiftPayload.Build(Opening, closing, "O", [("N", r)], "P", "C", "u", "W"), "taxes"));
     }
 
     [Fact]

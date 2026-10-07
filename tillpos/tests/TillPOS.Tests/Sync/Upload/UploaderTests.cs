@@ -34,16 +34,7 @@ public sealed class UploaderTests : IDisposable
         receipts = new ReceiptStore(temp.Db);
         approvals = new ApprovalStore(temp.Db);
         // ERPNext computes the invoice totals: here the till's own, plus erpDifference.
-        erp.OnInsert = (doctype, doc) =>
-        {
-            if (doctype != "POS Invoice") return null;
-            var r = receipts.Get(doc.GetProperty("posa_client_request_id").GetString()!)!;
-            return new Dictionary<string, object?>
-            {
-                ["grand_total"] = r.GrandTotal + erpDifference,
-                ["rounded_total"] = r.UsesErpRoundedTotal ? r.RoundedTotal + erpDifference : 0m,
-            };
-        };
+        UploadTestData.ErpComputesTheTillsTotals(erp, receipts, () => erpDifference);
     }
 
     public void Dispose() => temp.Dispose();
@@ -182,6 +173,7 @@ public sealed class UploaderTests : IDisposable
         erp.AddRow("POS Invoice", new()
         {
             ["name"] = "ACC-PSINV-9", ["docstatus"] = 1, ["posa_client_request_id"] = "TILL2-A", ["grand_total"] = M("10.500"), ["rounded_total"] = 0m,
+            ["paid_amount"] = M("10.500"), ["change_amount"] = 0m, ["outstanding_amount"] = 0m,
         });
 
         var report = await New().RunOnceAsync();
@@ -193,7 +185,7 @@ public sealed class UploaderTests : IDisposable
     }
 
     [Fact]
-    public async Task A_cancelled_or_draft_copy_in_erpnext_is_a_failure_not_a_second_insert()
+    public async Task A_cancelled_copy_in_erpnext_is_a_failure_not_a_second_insert()
     {
         OpenShift();
         Sale("TILL2-A", 1);
@@ -205,7 +197,7 @@ public sealed class UploaderTests : IDisposable
         var info = receipts.SyncInfo("TILL2-A");
         Assert.Equal(ReceiptSyncStatus.Failed, info.Status);
         Assert.Contains("ACC-PSINV-9", info.LastError);
-        Assert.Contains("draft or cancelled", info.LastError);
+        Assert.Contains("cancelled", info.LastError);
         Assert.Equal(1, report.Failed);
     }
 

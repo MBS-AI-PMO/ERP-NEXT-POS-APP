@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using TillPOS.Sync.Upload;
 using TillPOS.Core.Shifts;
 
 namespace TillPOS.App;
@@ -14,8 +15,23 @@ public static partial class SettingsStore
     private static readonly JsonSerializerOptions ReadOptions = new()
     {
         PropertyNameCaseInsensitive = true,
-        Converters = { new JsonStringEnumConverter() },
+        Converters = { new TolerantUploadModeConverter(), new JsonStringEnumConverter() },
     };
+
+    /// <summary>Reads the upload mode leniently: an unknown name or number is Off (never a reason to refuse the settings, and
+    /// never a way to end up Live).</summary>
+    private sealed class TolerantUploadModeConverter : JsonConverter<UploadMode>
+    {
+        public override UploadMode Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) => reader.TokenType switch
+        {
+            JsonTokenType.String when Enum.TryParse<UploadMode>(reader.GetString(), ignoreCase: true, out var mode)
+                && Enum.IsDefined(mode) && !int.TryParse(reader.GetString(), out _) => mode,
+            JsonTokenType.Number when reader.TryGetInt32(out var n) && Enum.IsDefined((UploadMode)n) => (UploadMode)n,
+            _ => UploadMode.Off,
+        };
+
+        public override void Write(Utf8JsonWriter writer, UploadMode value, JsonSerializerOptions options) => writer.WriteStringValue(value.ToString());
+    }
 
     private static readonly JsonSerializerOptions WriteOptions = new()
     {
@@ -103,6 +119,8 @@ public static partial class SettingsStore
             CardMode = s.CardMode ?? "",
             PrinterName = s.PrinterName ?? "",
             DbPath = s.DbPath ?? "",
+            // A test build (local test cashiers or the sample QR) never runs Live.
+            Upload = s.EffectiveUpload,
         };
     }
 

@@ -21,7 +21,9 @@ var db = new TillDb(config.DbPath);
 db.Migrate();
 var store = new CatalogStore(db);
 var catalog = new SqliteCatalog(db);
-var erp = ErpClient.Create(new ErpConnection(new Uri(config.BaseUrl), config.ApiKey, config.ApiSecret), TimeSpan.FromSeconds(60));
+var client = ErpClient.Create(new ErpConnection(new Uri(config.BaseUrl), config.ApiKey, config.ApiSecret), TimeSpan.FromSeconds(60));
+// Every command reads through a read-only view; only "parity" (with AllowWrites, test sites only) gets a writer.
+IErpClient erp = new ReadOnlyErpClient(client);
 
 switch (args[0])
 {
@@ -62,6 +64,7 @@ switch (args[0])
             Console.Error.WriteLine("parity creates and deletes a DRAFT POS Invoice. Set \"AllowWrites\": true ONLY for a TEST site.");
             return 2;
         }
+        var writer = new ErpWriter(client);
         var now = DateTime.Now;
         var doc = new Dictionary<string, object?>
         {
@@ -99,7 +102,7 @@ switch (args[0])
             },
         };
 
-        var created = await erp.InsertAsync("POS Invoice", doc);
+        var created = await writer.InsertAsync("POS Invoice", doc);
         var name = created.Str("name");
         try
         {
@@ -116,7 +119,7 @@ switch (args[0])
         }
         finally
         {
-            await erp.DeleteAsync("POS Invoice", name);
+            await writer.DeleteAsync("POS Invoice", name);
             Console.WriteLine($"draft {name} deleted");
         }
     }
