@@ -393,6 +393,59 @@ public sealed class ReturnViewModelTests : IDisposable
     }
 
     [Fact]
+    public void A_return_without_receipt_finds_items_by_search_and_adds_one()
+    {
+        var vm = OpenReturns();
+        vm.NoReceiptCommand.Execute(null);
+
+        vm.SearchText = "c";                                        // one letter: no search yet
+        Assert.Empty(vm.SearchResults);
+        vm.SearchText = "cucu";
+        Assert.Equal("000089", Assert.Single(vm.SearchResults).ItemCode);
+
+        vm.AddFromSearchCommand.Execute("000089");
+
+        var line = Assert.Single(vm.CartLines);
+        Assert.Equal("CUCUMBER/KIYAR", line.Name);
+        Assert.Equal("", vm.SearchText);
+        Assert.Empty(vm.SearchResults);
+        Assert.False(vm.MessageIsError);
+        Assert.Equal("Needs supervisor: return without receipt", vm.NeedsText);
+        Assert.NotEqual("", vm.RefundDueText);
+    }
+
+    [Fact]
+    public void Adding_an_unknown_item_from_search_gives_a_message()
+    {
+        var vm = OpenReturns();
+        vm.NoReceiptCommand.Execute(null);
+
+        vm.AddFromSearchCommand.Execute("NOPE");
+
+        Assert.Empty(vm.CartLines);
+        Assert.True(vm.MessageIsError);
+        Assert.Equal("Unknown item NOPE", vm.Message);
+    }
+
+    [Fact]
+    public void Search_adds_nothing_outside_the_without_receipt_stage_and_is_cleared_on_back()
+    {
+        var receipt = Sell(0, "111");
+        var vm = Opened(receipt);
+        vm.AddFromSearchCommand.Execute("000089");
+        Assert.Single(vm.Lines);
+        Assert.Equal("", vm.Lines[0].ReturnQty.Text);
+
+        vm.BackCommand.Execute(null);
+        vm.NoReceiptCommand.Execute(null);
+        vm.SearchText = "cucu";
+        Assert.Single(vm.SearchResults);
+        vm.BackCommand.Execute(null);
+        Assert.Equal("", vm.SearchText);
+        Assert.Empty(vm.SearchResults);
+    }
+
+    [Fact]
     public void A_return_without_receipt_needs_items()
     {
         var vm = OpenReturns();

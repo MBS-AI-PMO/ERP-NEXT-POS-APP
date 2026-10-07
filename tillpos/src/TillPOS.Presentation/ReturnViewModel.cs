@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using TillPOS.Core.Catalog;
 using TillPOS.Core.Payments;
 using TillPOS.Core.Sales;
 using TillPOS.Core.Security;
@@ -111,6 +112,7 @@ public sealed class ReturnViewModel : ObservableObject
     private ReturnPreview? preview;
     private string findText = "";
     private string scanText = "";
+    private string searchText = "";
     private string? reason;
     private string message = "";
     private bool messageIsError;
@@ -137,6 +139,7 @@ public sealed class ReturnViewModel : ObservableObject
         ReturnAllCommand = new RelayCommand(ReturnAll);
         SetReasonCommand = new RelayCommand<string>(r => { if (r is not null && Reasons.Contains(r)) Reason = r; });
         ScanEnteredCommand = new RelayCommand(() => { var code = ScanText.Trim(); ScanText = ""; if (code.Length > 0) Scan(code); });
+        AddFromSearchCommand = new RelayCommand<string>(code => { if (code is not null) AddFromSearch(code); });
         DecrementCartLineCommand = new RelayCommand<Guid>(DecrementCartLine);
         RemoveCartLineCommand = new RelayCommand<Guid>(RemoveCartLine);
         ConfirmCommand = new AsyncRelayCommand(ConfirmAsync, () => !completed && !busy);
@@ -185,6 +188,28 @@ public sealed class ReturnViewModel : ObservableObject
     public string ScanText { get => scanText; set => SetProperty(ref scanText, value); }
     public ObservableCollection<SaleLine> CartLines { get; } = [];
     public RelayCommand ScanEnteredCommand { get; }
+    /// <summary>Items matching <see cref="SearchText"/> (two letters or more), for an item without a readable barcode.</summary>
+    public ObservableCollection<Item> SearchResults { get; } = [];
+    public RelayCommand<string> AddFromSearchCommand { get; }
+
+    public string SearchText
+    {
+        get => searchText;
+        set
+        {
+            if (!SetProperty(ref searchText, value)) return;
+            SearchResults.Clear();
+            if (value.Trim().Length < 2) return;
+            try
+            {
+                foreach (var item in ctx.Search(value.Trim())) SearchResults.Add(item);
+            }
+            catch (Exception ex)
+            {
+                Error($"Could not search the items: {ex.Message}");
+            }
+        }
+    }
     public RelayCommand<Guid> DecrementCartLineCommand { get; }
     public RelayCommand<Guid> RemoveCartLineCommand { get; }
 
@@ -436,6 +461,7 @@ public sealed class ReturnViewModel : ObservableObject
         CartLines.Clear();
         Reason = null;
         FindText = "";
+        SearchText = "";
         Stage = ReturnStage.NoReceipt;
         OnPropertyChanged(nameof(Original));
         OnPropertyChanged(nameof(OriginalText));
@@ -443,13 +469,26 @@ public sealed class ReturnViewModel : ObservableObject
         Info("Scan the items being returned. A return without a receipt needs a supervisor.");
     }
 
+    /// <summary>Adds a searched item to the return list (without receipt only) and clears the search.</summary>
+    public void AddFromSearch(string itemCode)
+    {
+        if (stage != ReturnStage.NoReceipt || busy || completed || returnCart is not { } cart) return;
+        SearchText = "";
+        AddToCart(itemCode, () => cart.AddItem(itemCode));
+    }
+
     private void ScanIntoCart(string code)
     {
         if (returnCart is not { } cart) return;
+        AddToCart(code, () => cart.AddBarcode(code));
+    }
+
+    private void AddToCart(string code, Func<AddResult> add)
+    {
         AddResult result;
         try
         {
-            result = cart.AddBarcode(code);
+            result = add();
         }
         catch (Exception ex)
         {
@@ -462,6 +501,7 @@ public sealed class ReturnViewModel : ObservableObject
         {
             case AddOutcome.Added: Info($"Returning {result.Line!.Item.ItemName}"); break;
             case AddOutcome.UnknownBarcode: Error($"Unknown barcode {code}"); break;
+            case AddOutcome.UnknownItem: Error($"Unknown item {code}"); break;
             case AddOutcome.InvalidScaleLabel: Error("Scale label could not be read — scan it again."); break;
             case AddOutcome.ItemNotSellable: Error("This item cannot be sold, so it cannot be returned here."); break;
             case AddOutcome.NoPrice: Error("No price for this item — call a supervisor."); break;
@@ -579,6 +619,7 @@ public sealed class ReturnViewModel : ObservableObject
         returnCart = null;
         Lines.Clear();
         CartLines.Clear();
+        SearchText = "";
         Reason = null;
         Stage = ReturnStage.Find;
         OnPropertyChanged(nameof(Original));
