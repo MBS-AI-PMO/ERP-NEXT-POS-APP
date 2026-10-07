@@ -58,11 +58,73 @@ public sealed class UnknownOutcomeTests : IDisposable
         var report = await New().RunOnceAsync();
 
         Assert.Equal(1, InvoiceInserts);   // B was not tried: the run stopped
-        Assert.Equal(new ReceiptSyncInfo(ReceiptSyncStatus.Pending, null, "upload in progress", 0, clock.Add(Uploader.InFlightHold)),
+        Assert.Equal(new ReceiptSyncInfo(ReceiptSyncStatus.Pending, null, "upload in progress; no answer: Gateway Time-out", 0,
+            clock.Add(Uploader.InFlightHold), UnknownAttempts: 1),
             receipts.SyncInfo("TILL2-A"));
         Assert.Equal(ReceiptSyncStatus.Pending, receipts.SyncInfo("TILL2-B").Status);
         Assert.Equal(0, report.Failed);
         Assert.Contains(report.Problems, p => p.Message.StartsWith("Upload stopped", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Three_unknown_outcomes_in_a_row_end_in_a_visible_failure_when_erpnext_does_not_have_it()
+    {
+        Sale("TILL2-A", 1);
+        erp.RejectInsert = (doctype, _) => doctype == "POS Invoice" ? new ErpException(500, "Internal Server Error", null) : null;
+
+        for (var i = 1; i <= Uploader.UnknownLimit; i++)
+        {
+            await New().RunOnceAsync();
+            Assert.Equal((ReceiptSyncStatus.Pending, i), (receipts.SyncInfo("TILL2-A").Status, receipts.SyncInfo("TILL2-A").UnknownAttempts));
+            clock = clock.Add(Uploader.InFlightHold);
+        }
+        var report = await New().RunOnceAsync();
+
+        Assert.Equal(Uploader.UnknownLimit, InvoiceInserts);   // the fourth try only looked it up
+        var info = receipts.SyncInfo("TILL2-A");
+        Assert.Equal(ReceiptSyncStatus.Failed, info.Status);
+        Assert.Equal("ERPNext did not answer 3 times and does not have this document. Last answer: upload in progress; no answer: Internal Server Error",
+            info.LastError);
+        Assert.Equal(0, info.UnknownAttempts);
+        Assert.Equal(1, report.Failed);
+        Assert.Contains(receipts.Problems(), p => p.Id == "TILL2-A" && p.Status == UploadStatus.Failed);
+    }
+
+    [Fact]
+    public async Task Three_unknown_outcomes_end_in_adoption_when_erpnext_has_it_after_all()
+    {
+        Sale("TILL2-A", 1);
+        erp.LoseInsertAnswer = (doctype, _) => doctype == "POS Invoice" ? new ErpException(504, "Gateway Time-out", null) : null;
+        await New().RunOnceAsync();   // saved in ERPNext, answer lost
+        receipts.MarkUnknown("TILL2-A", "upload in progress; no answer: Gateway Time-out");
+        receipts.MarkUnknown("TILL2-A", "upload in progress; no answer: Gateway Time-out");
+        erp.LoseInsertAnswer = null;
+        clock = clock.Add(Uploader.InFlightHold);
+
+        await New().RunOnceAsync();
+
+        Assert.Equal(1, InvoiceInserts);
+        Assert.Equal(ReceiptSyncStatus.Synced, receipts.SyncInfo("TILL2-A").Status);
+    }
+
+    [Fact]
+    public async Task A_draft_whose_submit_never_answers_ends_in_a_visible_failure()
+    {
+        Sale("TILL2-A", 1);
+        erp.RejectSubmit = (doctype, _) => doctype == "POS Invoice" ? new ErpException(502, "Bad Gateway", null) : null;
+
+        for (var i = 0; i <= Uploader.UnknownLimit; i++)
+        {
+            await New().RunOnceAsync();
+            clock = clock.Add(Uploader.InFlightHold);
+        }
+        await New().RunOnceAsync();
+
+        Assert.Equal(1, InvoiceInserts);
+        Assert.Equal(Uploader.UnknownLimit + 1, erp.Submitted.Count(s => s.Doctype == "POS Invoice"));
+        var info = receipts.SyncInfo("TILL2-A");
+        Assert.Equal(ReceiptSyncStatus.Failed, info.Status);
+        Assert.StartsWith("Draft POS-Invoice-00002 is in ERPNext, but writing it got no answer 4 times.", info.LastError);
     }
 
     [Fact]
@@ -73,7 +135,7 @@ public sealed class UnknownOutcomeTests : IDisposable
 
         await New().RunOnceAsync();
 
-        Assert.Equal("upload in progress", receipts.SyncInfo("TILL2-A").LastError);
+        Assert.Equal("upload in progress; no answer: The request timed out.", receipts.SyncInfo("TILL2-A").LastError);
         clock = clock.Add(Uploader.InFlightHold);
         erp.LoseInsertAnswer = null;
         await New().RunOnceAsync();
@@ -90,7 +152,7 @@ public sealed class UnknownOutcomeTests : IDisposable
         var report = await New().RunOnceAsync();
 
         Assert.Equal(ReceiptSyncStatus.Pending, receipts.SyncInfo("TILL2-A").Status);
-        Assert.Equal("upload in progress", receipts.SyncInfo("TILL2-A").LastError);
+        Assert.Equal("upload in progress; no answer: ERPNext answered the POS Invoice insert without its name.", receipts.SyncInfo("TILL2-A").LastError);
         Assert.Equal(0, report.Failed);
     }
 

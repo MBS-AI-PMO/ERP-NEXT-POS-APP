@@ -21,7 +21,8 @@ public sealed record ShiftSyncInfo(
     string? ErpClosingName,
     string? LastError,
     int Attempts,
-    DateTimeOffset? NextAttemptAt);
+    DateTimeOffset? NextAttemptAt,
+    int UnknownAttempts = 0);
 
 /// <summary>A shift that still has something to upload.</summary>
 public sealed record ShiftOutboxEntry(ShiftOpening Opening, ShiftClosing? Closing, ShiftSyncInfo Sync);
@@ -41,4 +42,5 @@ public sealed record ApprovalOutboxEntry(
     string? ErpName,
     string? LastError,
     int Attempts,
-    DateTimeOffset? NextAttemptAt);
+    DateTimeOffset? NextAttemptAt,
+    int UnknownAttempts = 0);

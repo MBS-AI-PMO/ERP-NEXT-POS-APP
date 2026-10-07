@@ -142,7 +142,7 @@ public sealed class UploaderTests : IDisposable
 
         Assert.Contains(first.Problems, p => p.Message.Contains("connection reset"));
         // The in-flight marker stays: Pending, no attempt counted, left alone for 5 minutes.
-        Assert.Equal(new ReceiptSyncInfo(ReceiptSyncStatus.Pending, null, "upload in progress", 0, clock.AddMinutes(5)),
+        Assert.Equal(new ReceiptSyncInfo(ReceiptSyncStatus.Pending, null, "upload in progress; no answer: connection reset", 0, clock.AddMinutes(5), 1),
             receipts.SyncInfo("TILL2-A"));
         Assert.Single(InsertedInvoices);
 

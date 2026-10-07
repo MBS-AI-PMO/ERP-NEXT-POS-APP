@@ -63,7 +63,8 @@ public sealed class ShiftStore(TillDb db)
         return rows.Count == 0 ? null : rows[0];
     }
 
-    private const string SyncColumns = "opening_status, erp_opening, closing_status, erp_closing, last_error, attempts, next_attempt_at";
+    private const string SyncColumns =
+        "opening_status, erp_opening, closing_status, erp_closing, last_error, attempts, next_attempt_at, unknown_attempts";
 
     /// <summary>Shifts with a document still to upload (the opening, a bill, or the closing of a closed shift), oldest first.</summary>
     public IReadOnlyList<ShiftOutboxEntry> Unfinished()
@@ -89,7 +90,7 @@ public sealed class ShiftStore(TillDb db)
     public void MarkSynced(string clientId, ShiftDocument document, string erpName)
     {
         var (status, name) = Columns(document);
-        Update($"UPDATE shift SET {status} = 'Synced', {name} = @n, last_error = NULL, attempts = 0, next_attempt_at = NULL WHERE client_id = @id",
+        Update($"UPDATE shift SET {status} = 'Synced', {name} = @n, last_error = NULL, attempts = 0, next_attempt_at = NULL, unknown_attempts = 0 WHERE client_id = @id",
             clientId, ("@n", erpName));
     }
 
@@ -98,7 +99,7 @@ public sealed class ShiftStore(TillDb db)
     {
         var (status, _) = Columns(document);
         Update($"""
-            UPDATE shift SET {status} = 'Failed', last_error = @e, attempts = attempts + 1, next_attempt_at = @next
+            UPDATE shift SET {status} = 'Failed', last_error = @e, attempts = attempts + 1, next_attempt_at = @next, unknown_attempts = 0
             WHERE client_id = @id AND {status} IN ('Pending', 'Failed')
             """,
             clientId, ("@e", error), ("@next", SqlExt.Instant(nextAttemptAt)));
@@ -113,6 +114,16 @@ public sealed class ShiftStore(TillDb db)
             UPDATE shift SET {status} = 'Pending', last_error = @e, next_attempt_at = @u
             WHERE client_id = @id AND {status} IN ('Pending', 'Failed')
             """, clientId, ("@e", ReceiptStore.InFlight), ("@u", SqlExt.Instant(until))) > 0;
+    }
+
+    /// <summary>A write of the document got no answer (see <see cref="ReceiptStore.MarkUnknown"/>).</summary>
+    public void MarkUnknown(string clientId, ShiftDocument document, string error)
+    {
+        var (status, _) = Columns(document);
+        Update($"""
+            UPDATE shift SET unknown_attempts = unknown_attempts + 1, last_error = @e
+            WHERE client_id = @id AND {status} IN ('Pending', 'Failed')
+            """, clientId, ("@e", error));
     }
 
     /// <summary>Failed, excluded and handled openings and closings, oldest shift first (the Upload problems screen).</summary>
@@ -145,7 +156,7 @@ public sealed class ShiftStore(TillDb db)
     {
         var (status, _) = Columns(document);
         Update($"""
-            UPDATE shift SET {status} = 'Handled', last_error = @n, next_attempt_at = NULL
+            UPDATE shift SET {status} = 'Handled', last_error = @n, next_attempt_at = NULL, unknown_attempts = 0
             WHERE client_id = @id AND {status} IN ('Failed', 'Excluded')
             """, clientId, ("@n", note));
     }
@@ -155,7 +166,7 @@ public sealed class ShiftStore(TillDb db)
     {
         var (status, _) = Columns(document);
         Update($"""
-            UPDATE shift SET {status} = 'Pending', last_error = NULL, attempts = 0, next_attempt_at = NULL
+            UPDATE shift SET {status} = 'Pending', last_error = NULL, attempts = 0, next_attempt_at = NULL, unknown_attempts = 0
             WHERE client_id = @id AND {status} = 'Handled'
             """, clientId);
     }
@@ -165,7 +176,7 @@ public sealed class ShiftStore(TillDb db)
         Update("""
             UPDATE shift SET opening_status = CASE opening_status WHEN 'Failed' THEN 'Pending' ELSE opening_status END,
                 closing_status = CASE closing_status WHEN 'Failed' THEN 'Pending' ELSE closing_status END,
-                attempts = 0, next_attempt_at = NULL
+                attempts = 0, next_attempt_at = NULL, unknown_attempts = 0
             WHERE client_id = @id
             """, clientId);
 
@@ -229,7 +240,7 @@ public sealed class ShiftStore(TillDb db)
         c.Exec(tx, """
             UPDATE shift SET opening_status = CASE WHEN opening_status IN ('Pending', 'Failed') THEN 'Excluded' ELSE opening_status END,
                 closing_status = CASE WHEN closing_status IN ('Pending', 'Failed') THEN 'Excluded' ELSE closing_status END,
-                next_attempt_at = NULL
+                next_attempt_at = NULL, unknown_attempts = 0
             WHERE client_id = @id
             """, ("@id", id));
         c.Exec(tx, """
@@ -250,8 +261,8 @@ public sealed class ShiftStore(TillDb db)
                 closing_status = CASE closing_status WHEN 'Excluded' THEN 'Pending' ELSE closing_status END
             {shiftWhere}
             """, ps);
-        c.Exec(tx, $"UPDATE receipt SET sync_status = 'Pending', attempts = 0, next_attempt_at = NULL {And(receiptWhere, "sync_status = 'Excluded'")}", ps);
-        c.Exec(tx, $"UPDATE approval_log SET sync_status = 'Pending', attempts = 0, next_attempt_at = NULL {And(approvalWhere, "sync_status = 'Excluded'")}", ps);
+        c.Exec(tx, $"UPDATE receipt SET sync_status = 'Pending', attempts = 0, next_attempt_at = NULL, unknown_attempts = 0 {And(receiptWhere, "sync_status = 'Excluded'")}", ps);
+        c.Exec(tx, $"UPDATE approval_log SET sync_status = 'Pending', attempts = 0, next_attempt_at = NULL, unknown_attempts = 0 {And(approvalWhere, "sync_status = 'Excluded'")}", ps);
     }
 
     private static string And(string where, string condition) => where.Length == 0 ? $"WHERE {condition}" : $"{where} AND {condition}";
@@ -275,7 +286,7 @@ public sealed class ShiftStore(TillDb db)
 
     private static ShiftSyncInfo ReadSync(SqliteDataReader r, int i) =>
         new(Enum.Parse<UploadStatus>(r.GetString(i)), SqlExt.Str(r, i + 1), Enum.Parse<UploadStatus>(r.GetString(i + 2)), SqlExt.Str(r, i + 3),
-            SqlExt.Str(r, i + 4), r.GetInt32(i + 5), SqlExt.Instant(r, i + 6));
+            SqlExt.Str(r, i + 4), r.GetInt32(i + 5), SqlExt.Instant(r, i + 6), r.GetInt32(i + 7));
 
     private int Update(string sql, string clientId, params (string Name, object? Value)[] extra)
     {

@@ -103,5 +103,11 @@ internal static class Migrations
         CREATE INDEX ix_remote_receipt_return_against ON remote_receipt(return_against COLLATE NOCASE);
         CREATE INDEX ix_remote_receipt_posting ON remote_receipt(posting);
         """,
+        // Plan 2b fix wave 2: unknown outcomes in a row per document (no answer to a write); after 3 the uploader escalates.
+        """
+        ALTER TABLE receipt ADD COLUMN unknown_attempts INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE shift ADD COLUMN unknown_attempts INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE approval_log ADD COLUMN unknown_attempts INTEGER NOT NULL DEFAULT 0;
+        """,
     ];
 }

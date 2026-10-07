@@ -10,7 +10,9 @@ namespace TillPOS.Data;
 public enum ReceiptSyncStatus { Pending, Synced, Failed, Excluded, Handled }
 
 /// <param name="NextAttemptAt">After a failure: the uploader leaves the bill alone until then (backoff); null = due now.</param>
-public sealed record ReceiptSyncInfo(ReceiptSyncStatus Status, string? ErpName, string? LastError, int Attempts, DateTimeOffset? NextAttemptAt = null);
+/// <param name="UnknownAttempts">Writes in a row that got no answer (the uploader escalates after 3).</param>
+public sealed record ReceiptSyncInfo(ReceiptSyncStatus Status, string? ErpName, string? LastError, int Attempts, DateTimeOffset? NextAttemptAt = null,
+    int UnknownAttempts = 0);
 
 /// <summary>A bill with its upload state.</summary>
 public sealed record ReceiptOutboxEntry(Receipt Receipt, ReceiptSyncInfo Sync);
@@ -80,7 +82,7 @@ public sealed class ReceiptStore(TillDb db) : IReceiptStore
     {
         using var c = db.Open();
         return c.Query("""
-            SELECT json, sync_status, erp_name, last_error, attempts, next_attempt_at FROM receipt
+            SELECT json, sync_status, erp_name, last_error, attempts, next_attempt_at, unknown_attempts FROM receipt
             WHERE shift_client_id = @s ORDER BY created_at, client_id
             """,
             r => new ReceiptOutboxEntry(Deserialize(r.GetString(0)), ReadSync(r, 1)), ("@s", shiftClientId));
@@ -88,7 +90,7 @@ public sealed class ReceiptStore(TillDb db) : IReceiptStore
 
     public void MarkSynced(string clientId, string erpName) =>
         Update("""
-            UPDATE receipt SET sync_status = 'Synced', erp_name = @n, last_error = NULL, attempts = attempts + 1, next_attempt_at = NULL
+            UPDATE receipt SET sync_status = 'Synced', erp_name = @n, last_error = NULL, attempts = attempts + 1, next_attempt_at = NULL, unknown_attempts = 0
             WHERE client_id = @id
             """,
             clientId, false, ("@n", erpName));
@@ -98,7 +100,7 @@ public sealed class ReceiptStore(TillDb db) : IReceiptStore
     public void MarkFailed(string clientId, string error, DateTimeOffset? nextAttemptAt = null)
     {
         var changed = Update("""
-            UPDATE receipt SET sync_status = 'Failed', last_error = @e, attempts = attempts + 1, next_attempt_at = @next
+            UPDATE receipt SET sync_status = 'Failed', last_error = @e, attempts = attempts + 1, next_attempt_at = @next, unknown_attempts = 0
             WHERE client_id = @id AND sync_status IN ('Pending', 'Failed')
             """,
             clientId, true, ("@e", error), ("@next", SqlExt.Instant(nextAttemptAt)));
@@ -117,6 +119,14 @@ public sealed class ReceiptStore(TillDb db) : IReceiptStore
             UPDATE receipt SET sync_status = 'Pending', last_error = @e, next_attempt_at = @u
             WHERE client_id = @id AND sync_status IN ('Pending', 'Failed')
             """, clientId, true, ("@e", InFlight), ("@u", SqlExt.Instant(until))) > 0;
+
+    /// <summary>A write got no answer (timeout, gateway, server error): one more unknown outcome in a row, and what came back
+    /// instead of an answer. The bill stays Pending under its in-flight marker.</summary>
+    public void MarkUnknown(string clientId, string error) =>
+        Update("""
+            UPDATE receipt SET unknown_attempts = unknown_attempts + 1, last_error = @e
+            WHERE client_id = @id AND sync_status IN ('Pending', 'Failed')
+            """, clientId, true, ("@e", error));
 
     /// <summary>The last_error of a document whose upload was started but not answered.</summary>
     public const string InFlight = "upload in progress";
@@ -137,32 +147,33 @@ public sealed class ReceiptStore(TillDb db) : IReceiptStore
     /// <paramref name="note"/> ("Handled by …: reason reference") is kept as its last error.</summary>
     public void MarkHandled(string clientId, string note) =>
         Update("""
-            UPDATE receipt SET sync_status = 'Handled', last_error = @n, next_attempt_at = NULL
+            UPDATE receipt SET sync_status = 'Handled', last_error = @n, next_attempt_at = NULL, unknown_attempts = 0
             WHERE client_id = @id AND sync_status IN ('Failed', 'Excluded')
             """, clientId, true, ("@n", note));
 
     /// <summary>Takes a handled bill back into the queue (Pending, backoff reset).</summary>
     public void Unhandle(string clientId) =>
         Update("""
-            UPDATE receipt SET sync_status = 'Pending', last_error = NULL, attempts = 0, next_attempt_at = NULL
+            UPDATE receipt SET sync_status = 'Pending', last_error = NULL, attempts = 0, next_attempt_at = NULL, unknown_attempts = 0
             WHERE client_id = @id AND sync_status = 'Handled'
             """, clientId, true);
 
     /// <summary>A failed bill goes back to the queue at once, its backoff reset.</summary>
     public void Retry(string clientId) =>
-        Update("UPDATE receipt SET sync_status = 'Pending', attempts = 0, next_attempt_at = NULL WHERE client_id = @id AND sync_status = 'Failed'",
+        Update("UPDATE receipt SET sync_status = 'Pending', attempts = 0, next_attempt_at = NULL, unknown_attempts = 0 WHERE client_id = @id AND sync_status = 'Failed'",
             clientId, true);
 
     public ReceiptSyncInfo SyncInfo(string clientId)
     {
         using var c = db.Open();
-        return c.Query("SELECT sync_status, erp_name, last_error, attempts, next_attempt_at FROM receipt WHERE client_id = @id",
+        return c.Query("SELECT sync_status, erp_name, last_error, attempts, next_attempt_at, unknown_attempts FROM receipt WHERE client_id = @id",
                 r => ReadSync(r, 0), ("@id", clientId))
             .FirstOrDefault() ?? throw new KeyNotFoundException($"Receipt {clientId} not found.");
     }
 
     private static ReceiptSyncInfo ReadSync(SqliteDataReader r, int i) =>
-        new(Enum.Parse<ReceiptSyncStatus>(r.GetString(i)), SqlExt.Str(r, i + 1), SqlExt.Str(r, i + 2), r.GetInt32(i + 3), SqlExt.Instant(r, i + 4));
+        new(Enum.Parse<ReceiptSyncStatus>(r.GetString(i)), SqlExt.Str(r, i + 1), SqlExt.Str(r, i + 2), r.GetInt32(i + 3), SqlExt.Instant(r, i + 4),
+            r.GetInt32(i + 5));
 
     private int Count(string status)
     {

@@ -155,7 +155,8 @@ public sealed class Uploader
                     Check: (checks, body, ct) => checks.ShiftAsync(body, "balance_details", ct)),
                 new Marks(sync.Attempts, name => shifts.MarkSynced(id, ShiftDocument.Opening, name),
                     (error, next) => shifts.MarkFailed(id, ShiftDocument.Opening, error, next),
-                    until => shifts.MarkInFlight(id, ShiftDocument.Opening, until)), run, ct);
+                    until => shifts.MarkInFlight(id, ShiftDocument.Opening, until), sync.UnknownAttempts, sync.LastError,
+                    error => shifts.MarkUnknown(id, ShiftDocument.Opening, error)), run, ct);
             if (openingName is null) return;
         }
 
@@ -188,7 +189,8 @@ public sealed class Uploader
                 Check: (checks, body, ct) => checks.ShiftAsync(body, "payment_reconciliation", ct)),
             new Marks(sync.Attempts, name => shifts.MarkSynced(id, ShiftDocument.Closing, name),
                 (error, next) => shifts.MarkFailed(id, ShiftDocument.Closing, error, next),
-                until => shifts.MarkInFlight(id, ShiftDocument.Closing, until)), run, ct);
+                until => shifts.MarkInFlight(id, ShiftDocument.Closing, until), sync.UnknownAttempts, sync.LastError,
+                error => shifts.MarkUnknown(id, ShiftDocument.Closing, error)), run, ct);
     }
 
     /// <summary>Uploads one bill; returns its ERPNext name (DryRun: a stand-in), or null when it failed or waits.</summary>
@@ -215,7 +217,8 @@ public sealed class Uploader
             new Doc(PosInvoicePayload.Doctype, InvoiceIdField, receipt.ClientId, InvoiceKey(receipt.ClientId), label, true, () => payload.Doc,
                 payload.Expected, profile.WriteOffLimit, (checks, body, ct) => checks.InvoiceAsync(receipt, body, ct)),
             new Marks(bill.Attempts, name => receipts.MarkSynced(receipt.ClientId, name),
-                (error, next) => receipts.MarkFailed(receipt.ClientId, error, next), until => receipts.MarkInFlight(receipt.ClientId, until)),
+                (error, next) => receipts.MarkFailed(receipt.ClientId, error, next), until => receipts.MarkInFlight(receipt.ClientId, until),
+                bill.UnknownAttempts, bill.LastError, error => receipts.MarkUnknown(receipt.ClientId, error)),
             run, ct);
     }
 
@@ -262,7 +265,8 @@ public sealed class Uploader
                 new Doc(ApprovalPayload.Doctype, OfflineIdField, a.Id, $"APPROVAL-{a.Id}", label, false,
                     () => ApprovalPayload.Build(a, till, shiftName, invoiceName)),
                 new Marks(entry.Attempts, name => approvals.MarkUploaded(a.Id, name), (error, next) => approvals.MarkFailed(a.Id, error, next),
-                    until => approvals.MarkInFlight(a.Id, until)), run, ct);
+                    until => approvals.MarkInFlight(a.Id, until), entry.UnknownAttempts, entry.LastError,
+                    error => approvals.MarkUnknown(a.Id, error)), run, ct);
         }
     }
 
@@ -271,9 +275,15 @@ public sealed class Uploader
         Func<Dictionary<string, object?>> Build, ExpectedTotals? Expected = null, decimal WriteOffLimit = 0m,
         Func<DryRunChecks, Dictionary<string, object?>, CancellationToken, Task<List<PayloadIssue>>>? Check = null);
 
-    /// <summary>How a document's upload state is written: synced (with its ERPNext name), failed (error, next try) and in flight
-    /// (sent, answer pending, until).</summary>
-    private sealed record Marks(int Attempts, Action<string> Synced, Action<string, DateTimeOffset> Failed, Func<DateTimeOffset, bool> InFlight);
+    /// <summary>How a document's upload state is written: synced (with its ERPNext name), failed (error, next try), in flight
+    /// (sent, answer pending, until; false when the document is no longer Pending or Failed) and an unknown outcome (no answer to
+    /// a write: counted, with what came back). UnknownAttempts and LastError are the document's state when the run read it.</summary>
+    private sealed record Marks(int Attempts, Action<string> Synced, Action<string, DateTimeOffset> Failed, Func<DateTimeOffset, bool> InFlight,
+        int UnknownAttempts, string? LastError, Action<string> Unknown);
+
+    /// <summary>After this many writes in a row without an answer, the next try settles it: in ERPNext (adopted), or a failure the
+    /// supervisor sees in Upload problems.</summary>
+    public const int UnknownLimit = 3;
 
     /// <summary>A document found in (or just written to) ERPNext: its name, its fields and its docstatus (0 draft, 1 submitted).</summary>
     private sealed record Found(string Name, JsonElement Doc, int DocStatus);
@@ -293,7 +303,15 @@ public sealed class Uploader
         if (Mode == UploadMode.DryRun) return await PreviewAsync(doc, run, ct);
         try
         {
-            var found = await LookupAsync(doc, ct) ?? await InsertDraftAsync(doc, marks, ct);
+            var found = await LookupAsync(doc, ct);
+            // Unknown outcomes escalate: not in ERPNext after the limit, or a found draft still unanswered after one more submit.
+            if (found is null && marks.UnknownAttempts >= UnknownLimit)
+                throw new DocumentFailure(
+                    $"ERPNext did not answer {UnknownLimit} times and does not have this document. Last answer: {marks.LastError}");
+            if (found is { DocStatus: 0 } && marks.UnknownAttempts > UnknownLimit)
+                throw new DocumentFailure(
+                    $"Draft {found.Name} is in ERPNext, but writing it got no answer {marks.UnknownAttempts} times. Last answer: {marks.LastError}");
+            found ??= await InsertDraftAsync(doc, marks, ct);
             var draft = doc.Submittable && found.DocStatus == 0;
             if (Mismatch(doc, found) is { } mismatch)
                 throw new DocumentFailure(draft ? $"Draft {found.Name} created in ERPNext but totals differ — check and submit or delete it. {mismatch}" : mismatch);
@@ -387,8 +405,18 @@ public sealed class Uploader
             return await LookupAsync(doc, ct)
                 ?? throw new DocumentFailure($"ERPNext reports this {doc.Doctype} as a duplicate, but none has this till's id: {Short(ex.Message)}");
         }
+        catch (Exception ex) when (Classify(ex) == ErpOutcome.Unknown && !ct.IsCancellationRequested)
+        {
+            marks.Unknown(UnknownText(ex.Message));
+            throw;
+        }
         // No name in the answer: the outcome is unknown, the in-flight marker stays and the next try looks it up.
-        var name = saved.StrOrNull("name") ?? throw new InvalidDataException($"ERPNext answered the {doc.Doctype} insert without its name.");
+        if (saved.StrOrNull("name") is not { } name)
+        {
+            var noName = $"ERPNext answered the {doc.Doctype} insert without its name.";
+            marks.Unknown(UnknownText(noName));
+            throw new InvalidDataException(noName);
+        }
         return new Found(name, saved, saved.Int("docstatus"));
     }
 
@@ -404,6 +432,11 @@ public sealed class Uploader
         catch (Exception ex) when (Classify(ex) == ErpOutcome.Refused)
         {
             throw new DocumentFailure($"Draft {draft.Name} is in ERPNext but could not be submitted: {Short(ex.Message)}");
+        }
+        catch (Exception ex) when (Classify(ex) == ErpOutcome.Unknown && !ct.IsCancellationRequested)
+        {
+            marks.Unknown(UnknownText(ex.Message));
+            throw;
         }
     }
 
@@ -475,6 +508,9 @@ public sealed class Uploader
         run.Add(docId, $"{label}: {lastError ?? "failed"} (next try {next.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture)})");
         return false;
     }
+
+    /// <summary>The last_error of a document whose write got no answer: still in progress, with what came back instead.</summary>
+    private static string UnknownText(string message) => Short($"{ReceiptStore.InFlight}; no answer: {message}");
 
     private static string Short(string message)
     {
