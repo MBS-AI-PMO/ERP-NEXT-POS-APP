@@ -208,3 +208,28 @@ Run the single exe against live ERPNext, read-only, with a scratch settings path
 - blind count: a 5.01 difference needs the supervisor; then close, and check the report file.
 
 Record the results here, then build the 0.3.4 test exe.
+
+---
+
+## Acceptance (2026-10-07, controller, live ERPNext read-only)
+
+| Check | Result |
+|---|---|
+| Price check: scale label `2000089007400` shows "CUCUMBER/KIYAR, 3.50 per Kg, 0.740 Kg × 3.50 = 2.59"; the bill is unchanged | ✅ |
+| Hold ×3 (button and F5), with label "16:47 · Test Cashier · 2 items · 14.019" | ✅ |
+| Recall onto a non-empty bill is refused ("Finish or hold the current bill first") | ✅ |
+| Close shift is refused with items on the bill, and with held bills ("3 bill(s) are on hold …") | ✅ |
+| Recall restores the bill | ✅ |
+| Delete held bill: the cashier PIN is refused ("That is not a supervisor PIN."), the supervisor deletes (×2) | ✅ |
+| F8 void with the supervisor PIN → "Bill voided." | ✅ |
+| Ctrl+P → `…-COPY.txt` with `*** COPY ***`; the original file is kept | ✅ |
+| Log out keeps the shift; the supervisor logs in onto the same shift | ✅ |
+| Blind count: no expected amount is visible before confirming | ✅ |
+| Counted 198.00 vs expected 203.25 → −5.25, supervisor needed, no Back button | ✅ |
+| An exact recount (0.00) still needs the supervisor; the PIN reason shows "(first count -5.25)" | ✅ |
+| Close with the supervisor → Z report file with mode rows, "First count difference: -5.25", "Variance approved by: supervisor1" | ✅ |
+| After the final fix wave (0.3.4 exe, fresh PC): keyboard digits land in the open-shift cash box and in the close-shift AED 500 box, and Enter moves to the next box | ✅ |
+
+Live acceptance found one bug: keyboard focus was not set on the shift screens. It was fixed in ee3a43d6.
+
+Not run here: a real thermal printer (Z report and COPY on paper) and a real scanner in the new dialogs.
