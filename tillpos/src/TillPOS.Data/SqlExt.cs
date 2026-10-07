@@ -32,6 +32,9 @@ internal static class SqlExt
     public static DateOnly? Date(SqliteDataReader r, int i) =>
         r.IsDBNull(i) ? null : DateOnly.ParseExact(r.GetString(i), "yyyy-MM-dd", CultureInfo.InvariantCulture);
     public static string? Str(SqliteDataReader r, int i) => r.IsDBNull(i) ? null : r.GetString(i);
+    public static string? Instant(DateTimeOffset? at) => at?.UtcDateTime.ToString("O", CultureInfo.InvariantCulture);
+    public static DateTimeOffset? Instant(SqliteDataReader r, int i) =>
+        r.IsDBNull(i) ? null : DateTimeOffset.Parse(r.GetString(i), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
 
     private static SqliteCommand Cmd(SqliteConnection c, SqliteTransaction? tx, string sql, (string Name, object? Value)[] ps)
     {

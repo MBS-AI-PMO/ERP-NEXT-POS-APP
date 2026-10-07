@@ -10,6 +10,7 @@ using TillPOS.Erp;
 using TillPOS.Presentation;
 using TillPOS.Sync;
 using TillPOS.Sync.Feeds;
+using TillPOS.Sync.Upload;
 
 namespace TillPOS.App;
 
@@ -25,6 +26,7 @@ public sealed class AppHost
     private readonly IErpClient erp;
     private readonly SyncContext syncContext;
     private readonly TillContext ctx;
+    private readonly Uploader uploader;
     private readonly CancellationTokenSource stop = new();
 
     /// <param name="settingsPath">The settings file the till was started from (named in setup error messages).</param>
@@ -51,6 +53,15 @@ public sealed class AppHost
             Profiles = counters.Select(c => c.PosProfile).ToList(),
         };
 
+        var shifts = new ShiftStore(db);
+        var receipts = new ReceiptStore(db);
+        var approvals = new ApprovalStore(db);
+        // The write guard: the uploader gets the client as a writer only in Live mode (UploadPipeline.LiveWriter is null
+        // otherwise). Shifts saved before counters existed (blank counter) belong to the default counter.
+        uploader = new Uploader(erp, UploadPipeline.LiveWriter(settings.Upload, client), settings.Upload, shifts, receipts, approvals,
+            profile => store.LoadPosSettings(string.IsNullOrWhiteSpace(profile) ? counters[0].PosProfile : profile),
+            $"TILL{settings.TillNumber}", null, () => DateTimeOffset.Now, WritePreview);
+
         Shell.TillName = $"Till {settings.TillNumber}";
         Output = new ReceiptOutput(settings, store);
         ctx = new TillContext(
@@ -60,7 +71,7 @@ public sealed class AppHost
                 catalog.FindSalesTaxTemplate, settings.Precision, settings.Rounding, () => DateOnly.FromDateTime(DateTime.Now)),
             text => catalog.Search(text),
             new Authenticator(LoginCashiers(cashiers, settings)), new PinAttemptLimiter(() => DateTimeOffset.Now), new PinAttemptLimiter(() => DateTimeOffset.Now),
-            new ShiftStore(db), new ReceiptStore(db), new ApprovalStore(db), store,
+            shifts, receipts, approvals, store,
             new SystemClock(), Output, Shell, dialogs, settings.ShowReceiptPreview, new HeldCartStore(db));
     }
 
@@ -76,7 +87,10 @@ public sealed class AppHost
         Shell.ShopName = store.LoadPosSettings()!.CompanyName;
         Shell.Show(NewLogin());
 
-        var sync = new SyncService(NewPuller, erp, ctx.Receipts, Shell, dispatcher, TimeSpan.FromSeconds(settings.SyncIntervalSeconds), logError);
+        var sync = new SyncService(NewPuller, erp, uploader, Shell, dispatcher, TimeSpan.FromSeconds(settings.SyncIntervalSeconds), logError);
+        // A sale, a return, or a shift opened or closed is uploaded within about 10 s.
+        ctx.Receipts.Saved += sync.RequestUploadNow;
+        ctx.Shifts.Changed += sync.RequestUploadNow;
         _ = Task.Run(() => sync.RunAsync(stop.Token)).ContinueWith(t => logError(t.Exception!), TaskContinuationOptions.OnlyOnFaulted);
     }
 
@@ -125,6 +139,15 @@ public sealed class AppHost
         {
             timer.Stop();
         }
+    }
+
+    /// <summary>DryRun: each payload is written to the outbox-preview folder next to the database ({name}.json), for
+    /// inspection before going Live.</summary>
+    private void WritePreview(string name, string json)
+    {
+        var folder = Path.Combine(Path.GetDirectoryName(settings.DbPath)!, "outbox-preview");
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, name + ".json"), json);
     }
 
     public object NewLogin() => new LoginViewModel(ctx, Shell.Session, NewSale);

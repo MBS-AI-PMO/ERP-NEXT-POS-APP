@@ -15,6 +15,8 @@ public sealed class ShellViewModel : ObservableObject, INavigator
     private string clock = "";
     private string version = "";
     private UploadMode upload;
+    private int failedUploads;
+    private IReadOnlyList<string> uploadProblems = [];
 
     public ShellViewModel()
     {
@@ -43,7 +45,21 @@ public sealed class ShellViewModel : ObservableObject, INavigator
 
     public string SyncStatus { get => syncStatus; set => SetProperty(ref syncStatus, value); }
     public bool Online { get => online; set => SetProperty(ref online, value); }
+    /// <summary>Documents waiting for upload (bills, shift documents, approvals): the header's "N waiting".</summary>
     public int PendingUploads { get => pendingUploads; set => SetProperty(ref pendingUploads, value); }
+
+    /// <summary>Documents ERPNext refused (retried after their backoff): the header's "M failed".</summary>
+    public int FailedUploads { get => failedUploads; set => SetProperty(ref failedUploads, value); }
+
+    /// <summary>What the last upload run reported (failures and what is waiting, and why).</summary>
+    public IReadOnlyList<string> UploadProblems
+    {
+        get => uploadProblems;
+        set { if (SetProperty(ref uploadProblems, value)) OnPropertyChanged(nameof(UploadProblemsText)); }
+    }
+
+    /// <summary>The problems one per line (the header counts' tooltip), or null when there are none.</summary>
+    public string? UploadProblemsText => uploadProblems.Count == 0 ? null : string.Join(Environment.NewLine, uploadProblems);
     public string Clock { get => clock; set => SetProperty(ref clock, value); }
     /// <summary>The build (e.g. "0.3.1-field"), shown on the login screen so field feedback can name it.</summary>
     public string Version { get => version; set => SetProperty(ref version, value); }

@@ -75,8 +75,9 @@
                 </TextBlock.Style>
               </TextBlock>
               <TextBlock Text="{Binding SyncStatus}" Foreground="White" VerticalAlignment="Center" />
-              <TextBlock Foreground="{StaticResource OnInkMuted}" Margin="8,0,0,0" VerticalAlignment="Center">
-                <Run Text="· " /><Run Text="{Binding PendingUploads, Mode=OneWay}" /><Run Text=" waiting" />
+              <!-- "N waiting · M failed"; the tooltip lists what the last upload run reported. -->
+              <TextBlock Foreground="{StaticResource OnInkMuted}" Margin="8,0,0,0" VerticalAlignment="Center" ToolTip="{Binding UploadProblemsText}">
+                <Run Text="· " /><Run Text="{Binding PendingUploads, Mode=OneWay}" /><Run Text=" waiting · " /><Run Text="{Binding FailedUploads, Mode=OneWay}" /><Run Text=" failed" />
               </TextBlock>
             </StackPanel>
           </Border>

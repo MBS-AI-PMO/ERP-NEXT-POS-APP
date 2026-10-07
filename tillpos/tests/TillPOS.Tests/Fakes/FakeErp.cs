@@ -50,14 +50,46 @@ public sealed class FakeErp : IErpClient, IErpWriter
     public Task<ServerInfo> PingAsync(CancellationToken ct = default) =>
         Task.FromResult(new ServerInfo("till1@shop.local", DateTimeOffset.UtcNow));
 
+    /// <summary>Every insert attempt, refused ones included.</summary>
     public List<(string Doctype, JsonElement Doc)> Inserted { get; } = [];
 
+    /// <summary>Fields ERPNext adds to an inserted document (e.g. grand_total); they are in the answer and on its stored row.</summary>
+    public Func<string, JsonElement, Dictionary<string, object?>?>? OnInsert { get; set; }
+
+    /// <summary>Return an exception to refuse an insert: nothing is saved.</summary>
+    public Func<string, JsonElement, Exception?>? RejectInsert { get; set; }
+
+    /// <summary>Return an exception to lose an insert's answer: the document IS saved (and found by later lookups), like a
+    /// connection dropped after ERPNext committed.</summary>
+    public Func<string, JsonElement, Exception?>? LoseInsertAnswer { get; set; }
+
+    private int inserts;
+
+    /// <summary>Saves the document as a row of its doctype (top-level fields, a generated name, docstatus from the document)
+    /// and answers with the whole document plus the name and the <see cref="OnInsert"/> fields.</summary>
     public Task<JsonElement> InsertAsync(string doctype, object doc, CancellationToken ct = default)
     {
         var e = JsonSerializer.SerializeToElement(doc);
         Inserted.Add((doctype, e));
-        return Task.FromResult(e);
+        if (RejectInsert?.Invoke(doctype, e) is { } refused) throw refused;
+
+        var answer = e.EnumerateObject().ToDictionary(p => p.Name, p => (object?)p.Value);
+        answer["name"] = $"{doctype.Replace(" ", "-", StringComparison.Ordinal)}-{++inserts:00000}";
+        foreach (var (key, value) in OnInsert?.Invoke(doctype, e) ?? []) answer[key] = value;
+        AddRow(doctype, answer.Where(p => p.Value is not JsonElement { ValueKind: JsonValueKind.Array })
+            .ToDictionary(p => p.Key, p => p.Value is JsonElement v ? Scalar(v) : p.Value));
+
+        if (LoseInsertAnswer?.Invoke(doctype, e) is { } lost) throw lost;
+        return Task.FromResult(JsonSerializer.SerializeToElement(answer));
     }
+
+    private static object? Scalar(JsonElement v) => v.ValueKind switch
+    {
+        JsonValueKind.String => v.GetString(),
+        JsonValueKind.Number => v.GetDecimal(),
+        JsonValueKind.Null => null,
+        _ => v.ToString(),
+    };
 
     public List<(string Doctype, string Name)> Submitted { get; } = [];
 

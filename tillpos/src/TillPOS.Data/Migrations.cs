@@ -68,5 +68,20 @@ internal static class Migrations
         CREATE TABLE cashier (id TEXT PRIMARY KEY, json TEXT NOT NULL);
         CREATE TABLE approval_log (id TEXT PRIMARY KEY, at TEXT NOT NULL, json TEXT NOT NULL, synced INTEGER NOT NULL DEFAULT 0);
         """,
+        // Plan 2b upload state. A shift uploads two documents (opening, closing), each with its own status; their ERPNext
+        // names go in the existing erp_opening / erp_closing columns. next_attempt_at (UTC, ISO 8601) is the per-document backoff.
+        """
+        ALTER TABLE receipt ADD COLUMN next_attempt_at TEXT;
+        ALTER TABLE shift ADD COLUMN opening_status TEXT NOT NULL DEFAULT 'Pending';
+        ALTER TABLE shift ADD COLUMN closing_status TEXT NOT NULL DEFAULT 'Pending';
+        ALTER TABLE shift ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE shift ADD COLUMN next_attempt_at TEXT;
+        ALTER TABLE approval_log ADD COLUMN erp_name TEXT;
+        ALTER TABLE approval_log ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'Pending';
+        ALTER TABLE approval_log ADD COLUMN last_error TEXT;
+        ALTER TABLE approval_log ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE approval_log ADD COLUMN next_attempt_at TEXT;
+        UPDATE approval_log SET sync_status = 'Synced' WHERE synced = 1;
+        """,
     ];
 }
