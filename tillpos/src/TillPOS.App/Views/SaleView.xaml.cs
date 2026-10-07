@@ -9,7 +9,7 @@ public partial class SaleView : UserControl
     public SaleView()
     {
         InitializeComponent();
-        Loaded += (_, _) => ScanBox.Focus();
+        Loaded += (_, _) => Keyboarding.FocusWhenReady(this, () => ScanBox);
         PreviewKeyDown += (_, e) =>
         {
             if (e.Key == Key.Delete && DeleteTargetsLines())

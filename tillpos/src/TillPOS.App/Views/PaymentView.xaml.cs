@@ -13,7 +13,7 @@ public partial class PaymentView : UserControl
     public PaymentView()
     {
         InitializeComponent();
-        Loaded += (_, _) => CashBox.Focus();
+        Loaded += (_, _) => Keyboarding.FocusWhenReady(this, () => CashBox);
         DataContextChanged += (_, e) =>
         {
             if (e.OldValue is PaymentViewModel old) old.PropertyChanged -= OnViewModelChanged;

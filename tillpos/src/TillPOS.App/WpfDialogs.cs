@@ -6,7 +6,7 @@ using TillPOS.Printing;
 
 namespace TillPOS.App;
 
-/// <param name="owner">The main window the dialogs are centred on.</param>
+/// <param name="owner">The main window the dialogs are centred on (PIN, number and message prompts go on the active window).</param>
 /// <param name="receiptLayout">The header and paper width the receipts are printed with (for the invoice popup).</param>
 /// <param name="hasPrinter">False when receipts are saved as files (no printer configured), for the popup's wording.</param>
 /// <param name="restart">Restarts the app, after setup saved new settings (the till is built from them at start).</param>
@@ -17,17 +17,17 @@ public sealed class WpfDialogs(
 {
     public Task<string?> AskPinAsync(string title, string reason)
     {
-        var dialog = new PinDialog(title, reason) { Owner = owner };
+        var dialog = new PinDialog(title, reason) { Owner = Top() };
         return Task.FromResult(dialog.ShowDialog() == true ? dialog.Pin : null);
     }
 
     public Task<decimal?> AskNumberAsync(string title, string prompt)
     {
-        var dialog = new NumberDialog(title, prompt) { Owner = owner };
+        var dialog = new NumberDialog(title, prompt) { Owner = Top() };
         return Task.FromResult(dialog.ShowDialog() == true ? dialog.Value : null);
     }
 
-    public void Info(string message) => MessageBox.Show(owner, message, "TillPOS");
+    public void Info(string message) => MessageBox.Show(Top(), message, "TillPOS");
 
     /// <summary>The bill is already saved when this runs, so a problem showing it (e.g. POS settings missing) is logged and
     /// the popup skipped; it never fails the sale.</summary>
@@ -81,4 +81,9 @@ public sealed class WpfDialogs(
         restart();
         return true;
     }
+
+    /// <summary>The window a prompt belongs on: the active one (e.g. the held-bills or price-check dialog, whose supervisor
+    /// PIN or message must sit above it), else the main window.</summary>
+    private Window Top() =>
+        Application.Current?.Windows.OfType<Window>().FirstOrDefault(w => w.IsActive) ?? owner;
 }

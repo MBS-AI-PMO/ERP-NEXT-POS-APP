@@ -2,7 +2,6 @@ using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Threading;
 using TillPOS.Presentation;
 
 namespace TillPOS.App.Views;
@@ -32,14 +31,11 @@ public partial class CloseShiftView : UserControl
         if (e.PropertyName == nameof(CloseShiftViewModel.IsCounting)) FocusStage();
     }
 
-    /// <summary>After layout (a collapsed panel cannot take focus): the first count box while counting, otherwise the view
-    /// itself, so the keyboard is never left on a hidden box.</summary>
+    /// <summary>After layout (a collapsed panel cannot take focus): the AED 500 box while counting (on arrival and after a
+    /// recount), otherwise the view itself, so the keyboard is never left on a hidden box.</summary>
     private void FocusStage() =>
-        Dispatcher.InvokeAsync(() =>
-        {
-            if (DataContext is CloseShiftViewModel { IsCounting: true }) CountStage.MoveFocus(new TraversalRequest(FocusNavigationDirection.First));
-            else Focus();
-        }, DispatcherPriority.Input);
+        Keyboarding.FocusWhenReady(this, () =>
+            DataContext is CloseShiftViewModel { IsCounting: true } ? Keyboarding.FirstTextBox(CountStage) : this);
 
     private void CountStageKeyDown(object sender, KeyEventArgs e)
     {

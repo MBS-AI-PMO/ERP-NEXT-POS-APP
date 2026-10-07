@@ -47,6 +47,7 @@
         </StackPanel>
       </DockPanel>
     </Border>
-    <ContentControl Content="{Binding Current}" Margin="16" />
+    <!-- Not a tab stop: the keyboard belongs to the boxes of the screen shown, never to this host. -->
+    <ContentControl Content="{Binding Current}" Margin="16" Focusable="False" IsTabStop="False" />
   </DockPanel>
 </Window>

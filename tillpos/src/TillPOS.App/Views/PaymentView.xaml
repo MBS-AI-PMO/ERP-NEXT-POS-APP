@@ -1,6 +1,7 @@
 <UserControl x:Class="TillPOS.App.Views.PaymentView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:TillPOS.App">
   <UserControl.InputBindings>
     <KeyBinding Key="Enter" Command="{Binding CompleteCommand}" />
     <KeyBinding Key="Escape" Command="{Binding BackCommand}" />
@@ -22,10 +23,10 @@
       </UniformGrid>
       <StackPanel Visibility="{Binding IsSplit, Converter={StaticResource BoolToVisibility}}">
         <TextBlock Text="Card part (charge on the card machine)" />
-        <TextBox x:Name="CardBox" Text="{Binding Card.Text, UpdateSourceTrigger=PropertyChanged}" FontSize="26" Height="52" FontFamily="Consolas" GotFocus="CardFocused" />
+        <TextBox x:Name="CardBox" local:Keyboarding.SelectAllOnTap="True" Text="{Binding Card.Text, UpdateSourceTrigger=PropertyChanged}" FontSize="26" Height="52" FontFamily="Consolas" GotFocus="CardFocused" />
       </StackPanel>
       <TextBlock Text="Cash received" Margin="0,8,0,0" />
-      <TextBox x:Name="CashBox" Text="{Binding Cash.Text, UpdateSourceTrigger=PropertyChanged}" FontSize="26" Height="52" FontFamily="Consolas" GotFocus="CashFocused" />
+      <TextBox x:Name="CashBox" local:Keyboarding.SelectAllOnTap="True" Text="{Binding Cash.Text, UpdateSourceTrigger=PropertyChanged}" FontSize="26" Height="52" FontFamily="Consolas" GotFocus="CashFocused" />
       <ItemsControl ItemsSource="{Binding QuickCash}" Margin="0,8">
         <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
         <ItemsControl.ItemTemplate>
