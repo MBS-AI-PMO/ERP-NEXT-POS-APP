@@ -1,4 +1,5 @@
 using System.Globalization;
+using TillPOS.Core.Security;
 using TillPOS.Data;
 
 namespace TillPOS.Sync.Upload;
@@ -35,15 +36,44 @@ public static class UploadHistory
     {
         if (LiveSince(kv) is not null) return false;
         if (shifts.Current() is not null) throw new InvalidOperationException(CloseShiftFirst);
+        // The exclusion (or inclusion) comes first and the time is written last: if the first step fails, the till has not gone
+        // Live and the next switch starts over.
         if (includeHistory)
         {
             var earliest = shifts.EarliestOpening() is { } first && first < now ? first : now;
-            kv.SetValue(LiveSinceKey, earliest.ToString("O", CultureInfo.InvariantCulture));
             shifts.IncludeAll();
+            kv.SetValue(LiveSinceKey, earliest.ToString("O", CultureInfo.InvariantCulture));
             return true;
         }
-        kv.SetValue(LiveSinceKey, now.ToString("O", CultureInfo.InvariantCulture));
         shifts.ExcludeClosedBefore(now);
+        kv.SetValue(LiveSinceKey, now.ToString("O", CultureInfo.InvariantCulture));
         return true;
     }
+
+    /// <summary>kv flag: the refusal of Live from settings.json is logged (once, until the mode changes).</summary>
+    public const string RefusalLoggedKey = "upload_live_refused_logged";
+
+    /// <summary>The upload mode a till starts in, for the mode in its settings file. Live while the first switch must wait for an
+    /// open shift starts Off, with <see cref="CloseShiftFirst"/> as the notice, and is logged once (until the mode changes). Live
+    /// otherwise records the switch the first time (history before it stays out) and logs it "from settings file".</summary>
+    public static (UploadMode Mode, string? Notice) ModeAtStart(UploadMode requested, ShiftStore shifts, CatalogStore kv, ApprovalStore approvals,
+        DateTimeOffset now)
+    {
+        if (requested != UploadMode.Live || !MustCloseShiftFirst(shifts, kv))
+        {
+            if (kv.GetValue(RefusalLoggedKey) is { Length: > 0 }) kv.SetValue(RefusalLoggedKey, "");
+            if (requested == UploadMode.Live && SwitchToLive(shifts, kv, now, includeHistory: false))
+                approvals.Add(Log("from settings file", now));
+            return (requested, null);
+        }
+        if (kv.GetValue(RefusalLoggedKey) is not { Length: > 0 })
+        {
+            approvals.Add(Log("Live requested in settings.json while a shift was open — stayed Off", now));
+            kv.SetValue(RefusalLoggedKey, "1");
+        }
+        return (UploadMode.Off, CloseShiftFirst);
+    }
+
+    private static ApprovalRecord Log(string reason, DateTimeOffset now) =>
+        new(Guid.NewGuid().ToString("N"), ApprovalAction.UploadModeChange, "", "", "", null, null, 0m, reason, now);
 }

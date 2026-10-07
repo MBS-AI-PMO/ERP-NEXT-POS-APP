@@ -608,6 +608,21 @@ public sealed class UploaderTests : IDisposable
     }
 
     [Fact]
+    public async Task An_opening_handled_with_its_erpnext_name_lets_the_bills_go()
+    {
+        OpenShift();
+        Sale("TILL2-A", 1);
+        shifts.MarkFailed(ShiftId, ShiftDocument.Opening, "POS Profile not found", clock);
+        shifts.MarkHandled(ShiftId, ShiftDocument.Opening, "Handled by sup: opened by hand POSA-OS-26-00042", "POSA-OS-26-00042");
+
+        await New().RunOnceAsync();
+
+        Assert.DoesNotContain("POS Opening Shift", InsertedDoctypes);
+        Assert.Equal("POSA-OS-26-00042", Str(Assert.Single(InsertedInvoices), "posa_pos_opening_shift"));
+        Assert.Equal(ReceiptSyncStatus.Synced, receipts.SyncInfo("TILL2-A").Status);
+    }
+
+    [Fact]
     public async Task Off_does_nothing_at_all()
     {
         OpenShift();

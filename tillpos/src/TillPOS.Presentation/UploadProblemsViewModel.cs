@@ -117,24 +117,25 @@ public sealed class UploadProblemsViewModel : ObservableObject
 
     private async Task RetryAsync(UploadProblemRow? row)
     {
-        if (row is null || row.IsExcluded || row.IsHandled) return;
+        if (row is null || row.IsExcluded || row.IsHandled || !StillListed(row)) return;
         if (await gate.ApproveAsync(ApprovalAction.UploadRetry, $"Retry upload of {row.Title}", ReceiptId(row)) is null) return;
-        Act(row, $"{row.Title} will be uploaded again shortly.", () =>
+        Act(row, $"{row.Title} will be uploaded again shortly.", () => row.Problem.Kind switch
         {
-            switch (row.Problem.Kind)
-            {
-                case OutboxKind.Bill: ctx.Receipts.Retry(row.Id); break;
-                case OutboxKind.Approval: ctx.Approvals.Retry(row.Id); break;
-                default: ctx.Shifts.Retry(row.Id); break;
-            }
+            OutboxKind.Bill => ctx.Receipts.Retry(row.Id),
+            OutboxKind.Approval => ctx.Approvals.Retry(row.Id),
+            _ => ctx.Shifts.Retry(row.Id),
         });
     }
 
+    /// <summary>A POS Opening Shift's name in ERPNext (POS Awesome numbers them POSA-OS-…).</summary>
+    private static bool LooksLikeOpeningShift(string reference) => reference.StartsWith("POSA-OS-", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>Asks why (required) and for the ERPNext reference (optional), then a supervisor; the note "Handled by {supervisor}
-    /// ({when}): {reason} {reference}" stays on the document.</summary>
+    /// ({when}): {reason} {reference}" stays on the document. An opening handled with its POS Opening Shift name lets the shift's
+    /// bills go with that name; without it, its waiting bills would wait, so that needs a confirmation.</summary>
     private async Task MarkHandledAsync(UploadProblemRow? row)
     {
-        if (row is null || row.IsHandled) return;
+        if (row is null || row.IsHandled || !StillListed(row)) return;
         var reason = (await ctx.Dialogs.AskTextAsync("Mark as handled", $"Why is {row.Title} handled by hand?"))?.Trim();
         if (string.IsNullOrEmpty(reason))
         {
@@ -142,38 +143,46 @@ public sealed class UploadProblemsViewModel : ObservableObject
             return;
         }
         var reference = (await ctx.Dialogs.AskTextAsync("Mark as handled", "ERPNext document name (optional)"))?.Trim() ?? "";
+        string? openingName = null;
+        if (row.Problem.Kind == OutboxKind.Opening)
+        {
+            if (LooksLikeOpeningShift(reference)) openingName = reference;
+            else if (WaitingBills(row.Shift) is var waiting and > 0 && !ctx.Dialogs.Confirm("Mark as handled", string.Create(CultureInfo.InvariantCulture,
+                         $"{waiting} bill(s) of this shift will wait until its opening is in ERPNext — continue?")))
+            {
+                Message = "Not marked.";
+                return;
+            }
+        }
         if (await gate.ApproveAsync(ApprovalAction.UploadMarkHandled, $"Mark {row.Title} as handled in ERPNext: {reason} {reference}".Trim(),
                 ReceiptId(row)) is not { } supervisor)
             return;
         var when = ctx.Clock.Now.ToString("dd/MM HH:mm", CultureInfo.InvariantCulture);
         var note = $"Handled by {supervisor} ({when}): {reason} {reference}".Trim();
-        Act(row, $"{row.Title} is marked as handled; it will not be uploaded.", () =>
+        var done = openingName is null
+            ? $"{row.Title} is marked as handled; it will not be uploaded."
+            : $"{row.Title} is marked as handled as {openingName}; its bills will upload with it.";
+        Act(row, done, () => row.Problem.Kind switch
         {
-            switch (row.Problem.Kind)
-            {
-                case OutboxKind.Bill: ctx.Receipts.MarkHandled(row.Id, note); break;
-                case OutboxKind.Approval: ctx.Approvals.MarkHandled(row.Id, note); break;
-                case OutboxKind.Opening: ctx.Shifts.MarkHandled(row.Id, ShiftDocument.Opening, note); break;
-                default: ctx.Shifts.MarkHandled(row.Id, ShiftDocument.Closing, note); break;
-            }
+            OutboxKind.Bill => ctx.Receipts.MarkHandled(row.Id, note),
+            OutboxKind.Approval => ctx.Approvals.MarkHandled(row.Id, note),
+            OutboxKind.Opening => ctx.Shifts.MarkHandled(row.Id, ShiftDocument.Opening, note, openingName),
+            _ => ctx.Shifts.MarkHandled(row.Id, ShiftDocument.Closing, note),
         });
     }
 
-    /// <summary>Takes a handled document back into the upload queue.</summary>
+    /// <summary>Takes a handled document back: a failed one into the upload queue, an excluded one back to Excluded.</summary>
     private async Task UnhandleAsync(UploadProblemRow? row)
     {
-        if (row is null || !row.IsHandled) return;
+        if (row is null || !row.IsHandled || !StillListed(row)) return;
         if (await gate.ApproveAsync(ApprovalAction.UploadUnhandle, $"Upload {row.Title} again (no longer handled by hand)", ReceiptId(row)) is null)
             return;
-        Act(row, $"{row.Title} will be uploaded.", () =>
+        Act(row, $"{row.Title} is no longer handled by hand.", () => row.Problem.Kind switch
         {
-            switch (row.Problem.Kind)
-            {
-                case OutboxKind.Bill: ctx.Receipts.Unhandle(row.Id); break;
-                case OutboxKind.Approval: ctx.Approvals.Unhandle(row.Id); break;
-                case OutboxKind.Opening: ctx.Shifts.Unhandle(row.Id, ShiftDocument.Opening); break;
-                default: ctx.Shifts.Unhandle(row.Id, ShiftDocument.Closing); break;
-            }
+            OutboxKind.Bill => ctx.Receipts.Unhandle(row.Id),
+            OutboxKind.Approval => ctx.Approvals.Unhandle(row.Id),
+            OutboxKind.Opening => ctx.Shifts.Unhandle(row.Id, ShiftDocument.Opening),
+            _ => ctx.Shifts.Unhandle(row.Id, ShiftDocument.Closing),
         });
     }
 
@@ -181,22 +190,50 @@ public sealed class UploadProblemsViewModel : ObservableObject
     /// outside a shift comes back alone.</summary>
     private async Task IncludeAsync(UploadProblemRow? row)
     {
-        if (row is null || !row.IsExcluded) return;
+        if (row is null || !row.IsExcluded || !StillListed(row)) return;
         var what = row.Shift.Length > 0 ? $"shift {row.Shift}" : row.Title;
         if (await gate.ApproveAsync(ApprovalAction.UploadIncludeHistory, $"Upload {what} (taken before going Live)", ReceiptId(row)) is null) return;
-        Act(row, $"{what} will be uploaded.", () =>
-        {
-            if (row.Shift.Length > 0) ctx.Shifts.Include(row.Shift);
-            else ctx.Approvals.Include(row.Id);
-        });
+        Act(row, $"{what} will be uploaded.", () => row.Shift.Length > 0 ? ctx.Shifts.Include(row.Shift) : ctx.Approvals.Include(row.Id));
     }
 
-    private void Act(UploadProblemRow row, string done, Action action)
+    /// <summary>True when the document is still as listed. Otherwise (changed by the uploader or another screen since) nothing is
+    /// asked or logged: the list is refreshed with "changed meanwhile — nothing done".</summary>
+    private bool StillListed(UploadProblemRow row)
+    {
+        bool listed;
+        try
+        {
+            listed = All(ctx).Any(p => p.Kind == row.Problem.Kind && p.Id == row.Id && p.Status == row.Problem.Status);
+        }
+        catch (Exception ex)
+        {
+            Message = $"Could not read the upload state: {ex.Message}";
+            return false;
+        }
+        if (listed) return true;
+        Message = $"{row.Title} changed meanwhile — nothing done.";
+        Reload();
+        return false;
+    }
+
+    private int WaitingBills(string shiftId)
     {
         try
         {
-            action();
-            Message = done;
+            return ctx.Receipts.Outbox(shiftId).Count(e => e.Sync.Status is ReceiptSyncStatus.Pending or ReceiptSyncStatus.Failed);
+        }
+        catch (Exception)
+        {
+            return 0;
+        }
+    }
+
+    /// <summary>Runs the change; when it changed nothing (the document changed in between), says so.</summary>
+    private void Act(UploadProblemRow row, string done, Func<bool> action)
+    {
+        try
+        {
+            Message = action() ? done : $"{row.Title} changed meanwhile — nothing done.";
         }
         catch (Exception ex)
         {

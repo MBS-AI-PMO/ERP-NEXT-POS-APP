@@ -204,6 +204,49 @@ public sealed class UploadStateStoreTests : IDisposable
     }
 
     [Fact]
+    public void Un_handle_restores_what_the_document_was_before()
+    {
+        Open("S1", 0);
+        Bill("EXCL", "S1");
+        Close("S1", 1);
+        shifts.ExcludeClosedBefore(At.AddHours(2));          // S1, its opening, closing and EXCL become Excluded
+        Open("S2", 3);
+        Bill("FAIL", "S2");
+        receipts.MarkFailed("FAIL", "Item disabled", null);
+
+        Assert.True(receipts.MarkHandled("EXCL", "Handled by sup: test data"));
+        Assert.True(receipts.MarkHandled("FAIL", "Handled by sup: by hand"));
+        Assert.False(receipts.MarkHandled("FAIL", "again"));   // already handled: nothing changes
+        Assert.True(shifts.MarkHandled("S1", ShiftDocument.Opening, "Handled by sup: test data"));
+
+        Assert.True(receipts.Unhandle("EXCL"));
+        Assert.True(receipts.Unhandle("FAIL"));
+        Assert.False(receipts.Unhandle("FAIL"));
+        Assert.True(shifts.Unhandle("S1", ShiftDocument.Opening));
+
+        Assert.Equal(ReceiptSyncStatus.Excluded, receipts.SyncInfo("EXCL").Status);
+        Assert.Equal(ReceiptSyncStatus.Pending, receipts.SyncInfo("FAIL").Status);
+        Assert.Equal(UploadStatus.Excluded, shifts.SyncInfo("S1")!.OpeningStatus);
+    }
+
+    [Fact]
+    public void Each_shift_document_keeps_its_own_error()
+    {
+        Open("S1", 0);
+        Close("S1", 1);
+        shifts.MarkFailed("S1", ShiftDocument.Opening, "opening refused", null);
+        shifts.MarkHandled("S1", ShiftDocument.Opening, "Handled by sup: opened by hand", "POSA-OS-26-00001");
+        shifts.MarkFailed("S1", ShiftDocument.Closing, "closing refused", null);
+
+        var sync = shifts.SyncInfo("S1")!;
+        Assert.Equal(("Handled by sup: opened by hand", "closing refused", "closing refused", "POSA-OS-26-00001"),
+            (sync.OpeningError, sync.ClosingError, sync.LastError, sync.ErpOpeningName));
+        Assert.Equal([(OutboxKind.Opening, "Handled by sup: opened by hand"), (OutboxKind.Closing, "closing refused")],
+            shifts.Problems().Select(p => (p.Kind, p.Error)));
+        Assert.False(shifts.Include("S1"));   // nothing excluded: nothing changes
+    }
+
+    [Fact]
     public void Saving_a_bill_or_opening_and_closing_a_shift_signals_the_upload()
     {
         var signals = 0;

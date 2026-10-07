@@ -179,6 +179,58 @@ public sealed class UploadProblemsTests : IDisposable
     }
 
     [Fact]
+    public async Task A_document_changed_meanwhile_is_left_alone_without_a_pin_or_a_log_row()
+    {
+        var vm = Vm();
+        f.Ctx.Receipts.Retry("TILL2-A");   // e.g. retried on another screen since the list was read
+
+        await vm.RetryCommand.ExecuteAsync(vm.Failed.Count > 0 ? vm.Failed[0] : null);
+        var stale = new UploadProblemRow(new OutboxProblem(OutboxKind.Bill, "TILL2-A", Shift, f.Clock.Now, UploadStatus.Failed, "x", 1));
+        await vm.RetryCommand.ExecuteAsync(stale);
+        await vm.MarkHandledCommand.ExecuteAsync(stale);
+
+        Assert.Equal(0, f.Dialogs.PinRequests);
+        Assert.Empty(f.Dialogs.TextPrompts);
+        Assert.Equal("Bill TILL2-A changed meanwhile — nothing done.", vm.Message);
+        Assert.DoesNotContain(f.Ctx.Approvals.Unsynced(), a => a.Action is ApprovalAction.UploadRetry or ApprovalAction.UploadMarkHandled);
+    }
+
+    [Fact]
+    public async Task An_opening_handled_with_its_pos_opening_shift_name_keeps_that_name()
+    {
+        var vm = Vm();
+        f.Dialogs.TextAnswers.Enqueue("Opened by hand on the website");
+        f.Dialogs.TextAnswers.Enqueue("POSA-OS-26-00042");
+        f.Dialogs.Pins.Enqueue("9999");
+
+        await vm.MarkHandledCommand.ExecuteAsync(vm.Excluded.Single(r => r.Kind == "Opening shift"));
+
+        var sync = f.Ctx.Shifts.SyncInfo(OldShift)!;
+        Assert.Equal((UploadStatus.Handled, "POSA-OS-26-00042"), (sync.OpeningStatus, sync.ErpOpeningName));
+        Assert.Empty(f.Dialogs.Confirms);
+        Assert.Equal("Opening shift TILL2-SHIFT-20261001080000 is marked as handled as POSA-OS-26-00042; its bills will upload with it.", vm.Message);
+    }
+
+    [Fact]
+    public async Task Handling_an_opening_without_its_name_asks_first_when_bills_wait()
+    {
+        f.Ctx.Shifts.Include(OldShift);
+        f.Ctx.Shifts.MarkFailed(OldShift, ShiftDocument.Opening, "POS Profile not found", null);
+        var vm = Vm();
+        var opening = vm.Failed.Single(r => r.Kind == "Opening shift");
+        f.Dialogs.TextAnswers.Enqueue("Done by hand");
+        f.Dialogs.TextAnswers.Enqueue("");
+        f.Dialogs.ConfirmAnswers.Enqueue(false);
+
+        await vm.MarkHandledCommand.ExecuteAsync(opening);
+
+        Assert.Equal("1 bill(s) of this shift will wait until its opening is in ERPNext — continue?", Assert.Single(f.Dialogs.Confirms));
+        Assert.Equal(UploadStatus.Failed, f.Ctx.Shifts.SyncInfo(OldShift)!.OpeningStatus);
+        Assert.Equal(0, f.Dialogs.PinRequests);
+        Assert.Equal("Not marked.", vm.Message);
+    }
+
+    [Fact]
     public void View_without_the_counter_settings_says_so()
     {
         var vm = Vm();

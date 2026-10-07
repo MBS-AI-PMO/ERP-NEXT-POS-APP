@@ -63,17 +63,9 @@ public sealed class AppHost
         // The write guard: a writer over the client is built only in Live mode of a production build (UploadPipeline.LiveWriter
         // is null otherwise). Shifts saved before counters existed (blank counter) belong to the default counter.
         var testBuild = settings.IsTestBuild;
-        var mode = settings.EffectiveUpload;
-        var now = DateTimeOffset.Now;
-        // Live set in settings.json (not through Settings): the first switch waits until no shift is open, like the Settings
-        // flow; the till stays Off for now and says why at login.
-        if (mode == UploadMode.Live && UploadHistory.MustCloseShiftFirst(shifts, store))
-        {
-            mode = UploadMode.Off;
-            startupNotice = UploadHistory.CloseShiftFirst;
-            approvals.Add(new ApprovalRecord(Guid.NewGuid().ToString("N"), ApprovalAction.UploadModeChange, "", "", "", null, null, 0m,
-                "Live requested in settings.json while a shift was open — stayed Off", now));
-        }
+        // Live set in settings.json: the first switch waits until no shift is open, like the Settings flow (the till stays Off
+        // for now and says why at login, logged once); otherwise the first time records the moment and logs it.
+        (var mode, startupNotice) = UploadHistory.ModeAtStart(settings.EffectiveUpload, shifts, store, approvals, DateTimeOffset.Now);
         Shell.Upload = mode;
         // Read-only: what ERPNext has returned against another till's bill, checked before it is refunded or its return uploaded.
         var remoteReturns = new RemoteReturnsCheck(erp, remoteReceipts, settings.TillNumber, () => DateTimeOffset.Now);
@@ -88,10 +80,6 @@ public sealed class AppHost
             RemoteReceipts = remoteReceipts,
             RemoteReturns = remoteReturns,
         };
-        // Live set in settings.json: the first time, record the moment (history before it stays out) and log it.
-        if (mode == UploadMode.Live && UploadHistory.SwitchToLive(shifts, store, now, includeHistory: false))
-            approvals.Add(new ApprovalRecord(Guid.NewGuid().ToString("N"), ApprovalAction.UploadModeChange, "", "", "", null, null, 0m,
-                "from settings file", now));
 
         Shell.TillName = $"Till {settings.TillNumber}";
         Output = new ReceiptOutput(settings, store);

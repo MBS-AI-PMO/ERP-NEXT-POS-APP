@@ -164,6 +164,55 @@ public sealed class ExcludedHistoryTests : IDisposable
     }
 
     [Fact]
+    public void A_failing_exclusion_leaves_the_till_not_live()
+    {
+        using (var c = temp.Db.Open())
+        using (var cmd = c.CreateCommand())
+        {
+            cmd.CommandText = "CREATE TRIGGER boom BEFORE UPDATE ON shift BEGIN SELECT RAISE(ABORT, 'boom'); END;";
+            cmd.ExecuteNonQuery();
+        }
+
+        Assert.ThrowsAny<Exception>(() => UploadHistory.SwitchToLive(shifts, kv, goLive, includeHistory: false));
+
+        Assert.Null(UploadHistory.LiveSince(kv));
+        Assert.Equal(UploadStatus.Pending, shifts.SyncInfo("OLD1")!.OpeningStatus);
+    }
+
+    [Fact]
+    public void Live_from_the_settings_file_waits_for_the_open_shift_and_logs_the_refusal_once()
+    {
+        Shift("OPEN", goLive.AddHours(-1), close: false);
+
+        Assert.Equal((UploadMode.Off, UploadHistory.CloseShiftFirst), UploadHistory.ModeAtStart(UploadMode.Live, shifts, kv, approvals, goLive));
+        Assert.Equal((UploadMode.Off, UploadHistory.CloseShiftFirst), UploadHistory.ModeAtStart(UploadMode.Live, shifts, kv, approvals, goLive));
+        var refusal = Assert.Single(approvals.Outbox(), a => a.Record.Action == ApprovalAction.UploadModeChange).Record;
+        Assert.Equal(("", "Live requested in settings.json while a shift was open — stayed Off"), (refusal.SupervisorId, refusal.Reason));
+        Assert.Null(UploadHistory.LiveSince(kv));
+
+        shifts.Close(new ShiftClosing("OPEN", goLive.AddMinutes(-1), [], 1, 0, 10.5m, 10m, 0.5m));
+        Assert.Equal((UploadMode.Live, (string?)null), UploadHistory.ModeAtStart(UploadMode.Live, shifts, kv, approvals, goLive));
+        Assert.Equal(goLive, UploadHistory.LiveSince(kv));
+        Assert.Single(approvals.Outbox(), a => a.Record.Reason == "from settings file");
+
+        // Once Live, a later start with a shift open is normal and logs nothing more.
+        Shift("NEXT", goLive.AddHours(1), close: false);
+        Assert.Equal((UploadMode.Live, (string?)null), UploadHistory.ModeAtStart(UploadMode.Live, shifts, kv, approvals, goLive.AddHours(2)));
+        Assert.Equal(2, approvals.Outbox().Count(a => a.Record.Action == ApprovalAction.UploadModeChange));
+    }
+
+    [Fact]
+    public void The_refusal_is_logged_again_after_the_mode_changed()
+    {
+        Shift("OPEN", goLive.AddHours(-1), close: false);
+        UploadHistory.ModeAtStart(UploadMode.Live, shifts, kv, approvals, goLive);
+        Assert.Equal((UploadMode.DryRun, (string?)null), UploadHistory.ModeAtStart(UploadMode.DryRun, shifts, kv, approvals, goLive));
+        UploadHistory.ModeAtStart(UploadMode.Live, shifts, kv, approvals, goLive);
+
+        Assert.Equal(2, approvals.Outbox().Count(a => a.Record.Reason?.StartsWith("Live requested", StringComparison.Ordinal) == true));
+    }
+
+    [Fact]
     public async Task An_excluded_shift_can_be_put_back()
     {
         UploadHistory.SwitchToLive(shifts, kv, goLive, includeHistory: false);
