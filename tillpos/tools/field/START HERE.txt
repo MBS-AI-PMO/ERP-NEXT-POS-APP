@@ -42,6 +42,14 @@ LOGIN PINs (for testing - made for this package only, keep them private)
 - Cashier:     {{CASHIER_PIN}}
 - Supervisor:  {{SUPERVISOR_PIN}}
 
+COUNTERS
+When you open a shift, first press the counter you are working at, then
+count the cash in its drawer. The counter stays with the shift until the
+shift is closed; the top bar shows it next to the till number.
+A counter marked "Not available" could not be downloaded from ERPNext
+(for example the test login cannot read it); choose another counter.
+The counters are set up on the setup screen (Settings on the Login screen).
+
 KEYS
 F2      Search for an item
 F3      Change quantity

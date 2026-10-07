@@ -1,8 +1,8 @@
 <#
 Builds the TillPOS field-test package.
 Usage (from the tillpos folder):
-  powershell -File tools\publish-field.ps1 -Version 0.3.5 [-CashierPin 4821] [-SupervisorPin 7350]             -> ..\publish\TillPOS-field-<Version>.zip
-  powershell -File tools\publish-field.ps1 -Version 0.3.5 -SingleExe [-CashierPin 4821] [-SupervisorPin 7350]  -> ..\publish\TillPOS-exe-<Version>\TillPOS.exe
+  powershell -File tools\publish-field.ps1 -Version 0.3.6 [-CashierPin 4821] [-SupervisorPin 7350]             -> ..\publish\TillPOS-field-<Version>.zip
+  powershell -File tools\publish-field.ps1 -Version 0.3.6 -SingleExe [-CashierPin 4821] [-SupervisorPin 7350]  -> ..\publish\TillPOS-exe-<Version>\TillPOS.exe
 Zip: TillPOS folder + settings.json beside the exe + START HERE.txt.
 -SingleExe: one self-contained TillPOS.exe with settings.json built in (imported into C:\ProgramData\TillPOS on the first
 start) + "TillPOS <Version> - START HERE.txt". The built-in plain API secret cannot be removed from the exe, so treat the exe
@@ -13,7 +13,7 @@ Test PINs: without -CashierPin / -SupervisorPin, random 4-digit PINs are generat
 They are written only into the package (settings and START HERE), never into the repo.
 #>
 param(
-    [string]$Version = "0.3.5",
+    [string]$Version = "0.3.6",
     [string]$CashierPin,
     [string]$SupervisorPin,
     [switch]$SingleExe
@@ -118,6 +118,13 @@ $settings = [ordered]@{
     )
     SetupDone           = $false
     SampleQr            = $true
+    # The counters a cashier can open a shift at (the first is the default). "Test Counter" rounds nothing (its POS Profile
+    # disables the rounded total); "Al Ain Counter 1" rounds cash to 0.25. If the test API user cannot read a counter's
+    # POS Profile, that counter shows as "Not available" on the Open Shift screen.
+    Counters            = @(
+        [ordered]@{ PosProfile = "Test Counter";     Label = "Test Counter"; CashMode = "Cash Counter 2"; CardMode = "Credit Card" },
+        [ordered]@{ PosProfile = "Al Ain Counter 1"; Label = "Counter 1";    CashMode = "Cash Counter 1"; CardMode = "Credit Card" }
+    )
 }
 $json = $settings | ConvertTo-Json -Depth 5
 $utf8 = New-Object System.Text.UTF8Encoding($false)
