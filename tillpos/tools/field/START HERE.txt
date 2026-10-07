@@ -1,4 +1,4 @@
-TILLPOS - FIELD TEST (version {{VERSION}})
+TILLPOS - FIELD TEST (version {{VERSION}}, {{PACKAGE_KIND}})
 ==========================================
 
 WHAT THIS IS
@@ -12,10 +12,22 @@ WHAT YOU NEED
 - The receipt printer connected and installed in Windows.
 
 HOW TO START
-1. Unzip this file anywhere, for example on the Desktop.
-2. Open the TillPOS folder and double-click TillPOS.exe.
-3. Windows may say "Windows protected your PC". This is normal for a new
-   program. Click "More info", then click "Run anyway".
+#ZIP#1. Unzip this file anywhere, for example on the Desktop.
+#ZIP#2. Open the TillPOS folder and double-click TillPOS.exe.
+#ZIP#3. Windows may say "Windows protected your PC". This is normal for a new
+#ZIP#   program. Click "More info", then click "Run anyway".
+#EXE#1. Copy TillPOS.exe anywhere (e.g. Desktop) and double-click it.
+#EXE#   It is one file with everything inside; nothing needs to be installed.
+#EXE#2. The first start needs internet. Settings are kept in
+#EXE#   C:\ProgramData\TillPOS
+#EXE#3. Windows may say "Windows protected your PC". This is normal for a new
+#EXE#   program. Click "More info", then click "Run anyway".
+
+USED AN OLDER TEST VERSION ON THIS PC?
+The till keeps the settings it already has in C:\ProgramData\TillPOS.
+To start with this version's settings (and the sample QR code), close
+TillPOS, delete C:\ProgramData\TillPOS\settings.json, then start it again.
+The setup screen then opens again.
 
 FIRST-TIME SETUP
 The setup screen opens by itself the first time.
@@ -47,8 +59,15 @@ CASH DRAWER
 Connect the drawer cable to the DK (RJ11) port on the back of the receipt
 printer. The drawer opens on cash sales only.
 
+QR CODE ON THE RECEIPT
+The receipt ends with a SAMPLE QR code, with "SAMPLE QR - FOR TESTING ONLY"
+under it. It is only there to check that the printer prints QR codes well
+(size, sharpness, position). It is NOT a valid tax QR code. Please check
+that a phone camera can read it.
+
 NO PRINTER CHOSEN?
 Receipts are saved as files in C:\ProgramData\TillPOS\receipts
+(the QR code shows there as "[QR code]").
 
 CHANGING THE PRINTER LATER
 On the Login screen press "Settings", enter the supervisor PIN, and choose
@@ -57,12 +76,14 @@ the new printer.
 MORE THAN ONE TILL
 The simplest way is one Windows user per till. The till's settings are kept
 in C:\ProgramData\TillPOS.
-Do not copy the TillPOS folder to another PC after it has been run. Unzip
-the original zip file again on the other PC instead.
+#ZIP#Do not copy the TillPOS folder to another PC after it has been run. Unzip
+#ZIP#the original zip file again on the other PC instead.
+#EXE#You can copy TillPOS.exe to each till PC. Each PC keeps its own settings
+#EXE#and bills in its own C:\ProgramData\TillPOS.
 
 WHAT TO SEND BACK
 - The file C:\ProgramData\TillPOS\errors.log (if it exists)
-- Photos of the printed receipts
+- Photos of the printed receipts (with the QR code)
 - The version number shown on the Login screen
 
 NOT IN THIS VERSION YET
