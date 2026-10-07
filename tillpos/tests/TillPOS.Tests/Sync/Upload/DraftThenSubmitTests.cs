@@ -199,7 +199,8 @@ public sealed class DraftThenSubmitTests : IDisposable
         shifts.Retry(ShiftId);
         erp.Fail = q => q.Doctype == "POS Opening Shift" ? new ErpException(502, "Bad Gateway", null) : null;
         var stopped = await New().RunOnceAsync();
-        Assert.Equal(new ShiftSyncInfo(UploadStatus.Pending, null, UploadStatus.Pending, null, "Field not permitted in query: custom_offline_id", 0, null),
+        Assert.Equal(new ShiftSyncInfo(UploadStatus.Pending, null, UploadStatus.Pending, null, "Field not permitted in query: custom_offline_id", 0, null,
+            OpeningError: "Field not permitted in query: custom_offline_id"),
             shifts.SyncInfo(ShiftId));
         Assert.Equal(0, stopped.Failed);
         Assert.Contains(stopped.Problems, p => p.Message == "Upload stopped: Bad Gateway");

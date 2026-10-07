@@ -26,7 +26,7 @@ public sealed class LoginViewModel : ObservableObject
         LoginCommand = new RelayCommand(Login);
         SettingsCommand = new AsyncRelayCommand(OpenSettingsAsync);
         UploadProblemsCommand = new AsyncRelayCommand(OpenUploadProblemsAsync);
-        UploadProblemsCount = UploadProblemsViewModel.Count(ctx);
+        (UploadProblemsCount, HandledUploads) = UploadProblemsViewModel.Counts(ctx);
         ShiftInfo = OpenShiftInfo();
     }
 
@@ -44,7 +44,16 @@ public sealed class LoginViewModel : ObservableObject
     /// <summary>How many documents are on the Upload problems screen (the button shows when there are any).</summary>
     public int UploadProblemsCount { get; }
 
-    public string UploadProblemsLabel => $"Upload problems ({UploadProblemsCount.ToString(CultureInfo.InvariantCulture)})";
+    /// <summary>How many documents were handled by hand (listed on the same screen).</summary>
+    public int HandledUploads { get; }
+
+    /// <summary>Failed, excluded and handled documents together: the button shows when there is any.</summary>
+    public int UploadProblemsTotal => UploadProblemsCount + HandledUploads;
+
+    /// <summary>"Upload problems (2)", or "Upload problems (0 · 3 handled)" when some were handled by hand.</summary>
+    public string UploadProblemsLabel => HandledUploads == 0
+        ? $"Upload problems ({UploadProblemsCount.ToString(CultureInfo.InvariantCulture)})"
+        : $"Upload problems ({UploadProblemsCount.ToString(CultureInfo.InvariantCulture)} · {HandledUploads.ToString(CultureInfo.InvariantCulture)} handled)";
 
     public string Pin
     {

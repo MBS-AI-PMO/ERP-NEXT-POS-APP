@@ -97,13 +97,16 @@ public sealed class ReceiptStore(TillDb db) : IReceiptStore
 
     /// <summary>A failure reported after the bill was already uploaded is ignored. <paramref name="nextAttemptAt"/> is the backoff:
     /// the uploader leaves the bill alone until then.</summary>
-    public void MarkFailed(string clientId, string error, DateTimeOffset? nextAttemptAt = null)
+    /// <param name="keepUnknown">The failure is the escalation of unanswered writes: the count stays, so later tries only look
+    /// the bill up (Retry resets it).</param>
+    public void MarkFailed(string clientId, string error, DateTimeOffset? nextAttemptAt = null, bool keepUnknown = false)
     {
         var changed = Update("""
-            UPDATE receipt SET sync_status = 'Failed', last_error = @e, attempts = attempts + 1, next_attempt_at = @next, unknown_attempts = 0
+            UPDATE receipt SET sync_status = 'Failed', last_error = @e, attempts = attempts + 1, next_attempt_at = @next,
+                unknown_attempts = CASE WHEN @keep = 1 THEN unknown_attempts ELSE 0 END
             WHERE client_id = @id AND sync_status IN ('Pending', 'Failed')
             """,
-            clientId, true, ("@e", error), ("@next", SqlExt.Instant(nextAttemptAt)));
+            clientId, true, ("@e", error), ("@next", SqlExt.Instant(nextAttemptAt)), ("@keep", keepUnknown ? 1 : 0));
         if (changed != 0) return;
         using var c = db.Open();
         if (c.Scalar(null, "SELECT 1 FROM receipt WHERE client_id = @id", ("@id", clientId)) is null)
@@ -144,24 +147,28 @@ public sealed class ReceiptStore(TillDb db) : IReceiptStore
     }
 
     /// <summary>A supervisor dealt with a failed or excluded bill by hand in ERPNext: it is never uploaded and no longer counted.
-    /// <paramref name="note"/> ("Handled by …: reason reference") is kept as its last error.</summary>
-    public void MarkHandled(string clientId, string note) =>
+    /// <paramref name="note"/> ("Handled by …: reason reference") is kept as its last error, and the status it had is kept for
+    /// <see cref="Unhandle"/>. False when it was no longer Failed or Excluded (nothing changed).</summary>
+    public bool MarkHandled(string clientId, string note) =>
         Update("""
-            UPDATE receipt SET sync_status = 'Handled', last_error = @n, next_attempt_at = NULL, unknown_attempts = 0
+            UPDATE receipt SET status_before_handled = sync_status, sync_status = 'Handled', last_error = @n, next_attempt_at = NULL,
+                unknown_attempts = 0
             WHERE client_id = @id AND sync_status IN ('Failed', 'Excluded')
-            """, clientId, true, ("@n", note));
+            """, clientId, true, ("@n", note)) > 0;
 
-    /// <summary>Takes a handled bill back into the queue (Pending, backoff reset).</summary>
-    public void Unhandle(string clientId) =>
+    /// <summary>Takes back a handled bill: an excluded one is excluded again, a failed one goes back to the queue (backoff
+    /// reset). False when it was no longer Handled.</summary>
+    public bool Unhandle(string clientId) =>
         Update("""
-            UPDATE receipt SET sync_status = 'Pending', last_error = NULL, attempts = 0, next_attempt_at = NULL, unknown_attempts = 0
+            UPDATE receipt SET sync_status = CASE status_before_handled WHEN 'Excluded' THEN 'Excluded' ELSE 'Pending' END,
+                status_before_handled = NULL, last_error = NULL, attempts = 0, next_attempt_at = NULL, unknown_attempts = 0
             WHERE client_id = @id AND sync_status = 'Handled'
-            """, clientId, true);
+            """, clientId, true) > 0;
 
     /// <summary>A failed bill goes back to the queue at once, its backoff reset.</summary>
-    public void Retry(string clientId) =>
+    public bool Retry(string clientId) =>
         Update("UPDATE receipt SET sync_status = 'Pending', attempts = 0, next_attempt_at = NULL, unknown_attempts = 0 WHERE client_id = @id AND sync_status = 'Failed'",
-            clientId, true);
+            clientId, true) > 0;
 
     public ReceiptSyncInfo SyncInfo(string clientId)
     {

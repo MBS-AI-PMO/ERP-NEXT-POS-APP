@@ -85,9 +85,47 @@ public sealed class UnknownOutcomeTests : IDisposable
         Assert.Equal(ReceiptSyncStatus.Failed, info.Status);
         Assert.Equal("ERPNext did not answer 3 times and does not have this document. Last answer: upload in progress; no answer: Internal Server Error",
             info.LastError);
-        Assert.Equal(0, info.UnknownAttempts);
+        Assert.Equal(Uploader.UnknownLimit, info.UnknownAttempts);   // kept: later automatic tries only look it up
         Assert.Equal(1, report.Failed);
         Assert.Contains(receipts.Problems(), p => p.Id == "TILL2-A" && p.Status == UploadStatus.Failed);
+
+        // After the backoff: a lookup, no insert, the same failure (its text does not grow).
+        var lookups = erp.ListCalls.Count(q => q.Doctype == "POS Invoice");
+        clock = clock.Add(Uploader.MaxBackoff);
+        await New().RunOnceAsync();
+        Assert.Equal(lookups + 1, erp.ListCalls.Count(q => q.Doctype == "POS Invoice"));
+        Assert.Equal(Uploader.UnknownLimit, InvoiceInserts);
+        Assert.Equal(info.LastError, receipts.SyncInfo("TILL2-A").LastError);
+        Assert.Equal(ReceiptSyncStatus.Failed, receipts.SyncInfo("TILL2-A").Status);
+
+        // A supervisor retry starts over: it is sent again.
+        receipts.Retry("TILL2-A");
+        Assert.Equal(0, receipts.SyncInfo("TILL2-A").UnknownAttempts);
+        erp.RejectInsert = null;
+        await New().RunOnceAsync();
+        Assert.Equal(ReceiptSyncStatus.Synced, receipts.SyncInfo("TILL2-A").Status);
+    }
+
+    [Fact]
+    public async Task A_lost_answer_on_an_approval_is_adopted_on_the_next_run()
+    {
+        approvals.Add(new TillPOS.Core.Security.ApprovalRecord("ap1", TillPOS.Core.Security.ApprovalAction.SettingsChange, "", "sup1", "", null,
+            null, 0m, "Change till settings", Morning));
+        erp.LoseInsertAnswer = (doctype, _) => doctype == "TillPOS Approval" ? new HttpRequestException("connection reset") : null;
+
+        await New().RunOnceAsync();
+        Assert.Single(erp.Inserted, i => i.Doctype == "TillPOS Approval");
+        Assert.Equal(UploadStatus.Pending, Assert.Single(approvals.Outbox()).Status);
+
+        erp.LoseInsertAnswer = null;
+        clock = clock.Add(Uploader.InFlightHold);
+        await New().RunOnceAsync();
+
+        Assert.Single(erp.Inserted, i => i.Doctype == "TillPOS Approval");   // adopted, not inserted again
+        Assert.Empty(approvals.Outbox());
+        Assert.Empty(approvals.Problems());
+        // The lookup asked only for name and docstatus, as the real client does: no draft check applies to an approval.
+        Assert.Contains(erp.ListCalls, q => q.Doctype == "TillPOS Approval" && q.Fields.SequenceEqual(["name", "docstatus"]));
     }
 
     [Fact]

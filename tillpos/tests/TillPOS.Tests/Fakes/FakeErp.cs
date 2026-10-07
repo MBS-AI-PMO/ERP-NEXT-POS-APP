@@ -26,8 +26,23 @@ public sealed class FakeErp : IErpClient, IErpWriter
     {
         ListCalls.Add(q);
         if (Fail?.Invoke(q) is { } ex) throw ex;
-        var rows = Override?.Invoke(q) ?? Filtered(q);
+        // Like Frappe, stored rows come back with the requested fields only (an Override answers exactly as it is written).
+        var rows = Override?.Invoke(q) ?? Filtered(q).Select(r => (object)Project((Dictionary<string, object?>)r, q.Fields)).ToList();
         return Task.FromResult<IReadOnlyList<JsonElement>>(rows.Select(r => JsonSerializer.SerializeToElement(r)).ToList());
+    }
+
+    /// <summary>The row's requested fields: "field", "`tabChild`.field as alias" (the alias) or "*" (all).</summary>
+    private static Dictionary<string, object?> Project(Dictionary<string, object?> row, IReadOnlyList<string> fields)
+    {
+        if (fields.Contains("*")) return row;
+        var result = new Dictionary<string, object?>();
+        foreach (var field in fields)
+        {
+            var parts = field.Split(" as ", 2, StringSplitOptions.TrimEntries);
+            var source = parts[0][(parts[0].LastIndexOf('.') + 1)..].Trim('`');
+            if (row.TryGetValue(source, out var value)) result[parts.Length == 2 ? parts[1] : source] = value;
+        }
+        return result;
     }
 
     public List<(string Doctype, IReadOnlyList<object[]> Filters)> CountCalls { get; } = [];

@@ -109,5 +109,17 @@ internal static class Migrations
         ALTER TABLE shift ADD COLUMN unknown_attempts INTEGER NOT NULL DEFAULT 0;
         ALTER TABLE approval_log ADD COLUMN unknown_attempts INTEGER NOT NULL DEFAULT 0;
         """,
+        // Plan 2b fix wave 3: the status a document had before it was marked handled (Un-handle restores it), and each shift
+        // document's own error (last_error stays, mirroring the latest one).
+        """
+        ALTER TABLE receipt ADD COLUMN status_before_handled TEXT;
+        ALTER TABLE approval_log ADD COLUMN status_before_handled TEXT;
+        ALTER TABLE shift ADD COLUMN opening_before_handled TEXT;
+        ALTER TABLE shift ADD COLUMN closing_before_handled TEXT;
+        ALTER TABLE shift ADD COLUMN opening_error TEXT;
+        ALTER TABLE shift ADD COLUMN closing_error TEXT;
+        UPDATE shift SET opening_error = last_error WHERE opening_status <> 'Synced';
+        UPDATE shift SET closing_error = last_error WHERE opening_status = 'Synced';
+        """,
     ];
 }

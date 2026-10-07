@@ -77,13 +77,15 @@ public sealed class UploadStateStoreTests : IDisposable
         shifts.MarkFailed("S1", ShiftDocument.Opening, "POS Profile not found", next);
         shifts.MarkFailed("S1", ShiftDocument.Opening, "POS Profile not found", next.AddMinutes(1));
 
-        Assert.Equal(new ShiftSyncInfo(UploadStatus.Failed, null, UploadStatus.Pending, null, "POS Profile not found", 2, next.AddMinutes(1)),
+        Assert.Equal(new ShiftSyncInfo(UploadStatus.Failed, null, UploadStatus.Pending, null, "POS Profile not found", 2, next.AddMinutes(1),
+            OpeningError: "POS Profile not found"),
             shifts.SyncInfo("S1"));
         Assert.Equal(1, shifts.CountFailed());
         Assert.Equal(0, shifts.CountPending());
 
         shifts.Retry("S1");
-        Assert.Equal(new ShiftSyncInfo(UploadStatus.Pending, null, UploadStatus.Pending, null, "POS Profile not found", 0, null), shifts.SyncInfo("S1"));
+        Assert.Equal(new ShiftSyncInfo(UploadStatus.Pending, null, UploadStatus.Pending, null, "POS Profile not found", 0, null,
+            OpeningError: "POS Profile not found"), shifts.SyncInfo("S1"));
 
         shifts.MarkSynced("S1", ShiftDocument.Opening, "POS-OPE-1");
         Assert.Equal(new ShiftSyncInfo(UploadStatus.Synced, "POS-OPE-1", UploadStatus.Pending, null, null, 0, null), shifts.SyncInfo("S1"));
@@ -152,7 +154,8 @@ public sealed class UploadStateStoreTests : IDisposable
         approvals.MarkInFlight("a1", until);
 
         Assert.Equal(new ReceiptSyncInfo(ReceiptSyncStatus.Pending, null, "upload in progress", 1, until), receipts.SyncInfo("B1"));
-        Assert.Equal(new ShiftSyncInfo(UploadStatus.Pending, null, UploadStatus.Pending, null, "upload in progress", 0, until), shifts.SyncInfo("S1"));
+        Assert.Equal(new ShiftSyncInfo(UploadStatus.Pending, null, UploadStatus.Pending, null, "upload in progress", 0, until,
+            OpeningError: "upload in progress"), shifts.SyncInfo("S1"));
         var a = Assert.Single(approvals.Outbox());
         Assert.Equal((UploadStatus.Pending, "upload in progress", (DateTimeOffset?)until), (a.Status, a.LastError, a.NextAttemptAt));
 

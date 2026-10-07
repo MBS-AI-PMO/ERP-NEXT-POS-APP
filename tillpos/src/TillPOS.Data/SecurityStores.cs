@@ -65,11 +65,12 @@ public sealed class ApprovalStore(TillDb db)
             """, id, ("@n", erpName));
 
     /// <summary>A failure reported after the approval was already uploaded is ignored.</summary>
-    public void MarkFailed(string id, string error, DateTimeOffset? nextAttemptAt) =>
+    public void MarkFailed(string id, string error, DateTimeOffset? nextAttemptAt, bool keepUnknown = false) =>
         Update("""
-            UPDATE approval_log SET sync_status = 'Failed', last_error = @e, attempts = attempts + 1, next_attempt_at = @next, unknown_attempts = 0
+            UPDATE approval_log SET sync_status = 'Failed', last_error = @e, attempts = attempts + 1, next_attempt_at = @next,
+                unknown_attempts = CASE WHEN @keep = 1 THEN unknown_attempts ELSE 0 END
             WHERE id = @id AND sync_status IN ('Pending', 'Failed')
-            """, id, ("@e", error), ("@next", SqlExt.Instant(nextAttemptAt)));
+            """, id, ("@e", error), ("@next", SqlExt.Instant(nextAttemptAt)), ("@keep", keepUnknown ? 1 : 0));
 
     /// <summary>Failed and excluded approvals, oldest first (the Upload problems screen).</summary>
     public IReadOnlyList<OutboxProblem> Problems()
@@ -96,12 +97,13 @@ public sealed class ApprovalStore(TillDb db)
     }
 
     /// <summary>A supervisor dealt with a failed or excluded approval by hand: it is never uploaded. <paramref name="note"/> is
-    /// kept as its last error.</summary>
-    public void MarkHandled(string id, string note) =>
+    /// kept as its last error, and the status it had for <see cref="Unhandle"/>. False when it was no longer Failed or Excluded.</summary>
+    public bool MarkHandled(string id, string note) =>
         Update("""
-            UPDATE approval_log SET sync_status = 'Handled', last_error = @n, next_attempt_at = NULL, unknown_attempts = 0
+            UPDATE approval_log SET status_before_handled = sync_status, sync_status = 'Handled', last_error = @n, next_attempt_at = NULL,
+                unknown_attempts = 0
             WHERE id = @id AND sync_status IN ('Failed', 'Excluded')
-            """, id, ("@n", note));
+            """, id, ("@n", note)) > 0;
 
     /// <summary>A write of the approval got no answer (see <see cref="ReceiptStore.MarkUnknown"/>).</summary>
     public void MarkUnknown(string id, string error) =>
@@ -110,16 +112,18 @@ public sealed class ApprovalStore(TillDb db)
             WHERE id = @id AND sync_status IN ('Pending', 'Failed')
             """, id, ("@e", error));
 
-    /// <summary>Takes a handled approval back into the queue (Pending, backoff reset).</summary>
-    public void Unhandle(string id) =>
+    /// <summary>Takes back a handled approval: an excluded one is excluded again, a failed one goes back to the queue (backoff
+    /// reset). False when it was no longer Handled.</summary>
+    public bool Unhandle(string id) =>
         Update("""
-            UPDATE approval_log SET sync_status = 'Pending', last_error = NULL, attempts = 0, next_attempt_at = NULL, unknown_attempts = 0
+            UPDATE approval_log SET sync_status = CASE status_before_handled WHEN 'Excluded' THEN 'Excluded' ELSE 'Pending' END,
+                status_before_handled = NULL, last_error = NULL, attempts = 0, next_attempt_at = NULL, unknown_attempts = 0
             WHERE id = @id AND sync_status = 'Handled'
-            """, id);
+            """, id) > 0;
 
-    /// <summary>Puts an excluded approval back in the queue.</summary>
-    public void Include(string id) =>
-        Update("UPDATE approval_log SET sync_status = 'Pending', attempts = 0, next_attempt_at = NULL, unknown_attempts = 0 WHERE id = @id AND sync_status = 'Excluded'", id);
+    /// <summary>Puts an excluded approval back in the queue. False when it was not excluded.</summary>
+    public bool Include(string id) =>
+        Update("UPDATE approval_log SET sync_status = 'Pending', attempts = 0, next_attempt_at = NULL, unknown_attempts = 0 WHERE id = @id AND sync_status = 'Excluded'", id) > 0;
 
     /// <summary>Written just before the approval is sent (see <see cref="ReceiptStore.MarkInFlight"/>); false when it is no
     /// longer Pending or Failed.</summary>
@@ -130,8 +134,8 @@ public sealed class ApprovalStore(TillDb db)
             """, id, ("@e", ReceiptStore.InFlight), ("@u", SqlExt.Instant(until))) > 0;
 
     /// <summary>A failed approval goes back to the queue at once, its backoff reset.</summary>
-    public void Retry(string id) =>
-        Update("UPDATE approval_log SET sync_status = 'Pending', attempts = 0, next_attempt_at = NULL, unknown_attempts = 0 WHERE id = @id AND sync_status = 'Failed'", id);
+    public bool Retry(string id) =>
+        Update("UPDATE approval_log SET sync_status = 'Pending', attempts = 0, next_attempt_at = NULL, unknown_attempts = 0 WHERE id = @id AND sync_status = 'Failed'", id) > 0;
 
     public int CountPending() => Count("Pending");
 

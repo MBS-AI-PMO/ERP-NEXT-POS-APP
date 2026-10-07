@@ -149,24 +149,24 @@ public sealed class Uploader
         // decided once, at the first switch to Live (UploadHistory).
         var sync = entry.Sync;
         if (sync.OpeningStatus == UploadStatus.Excluded) return;
-        if (sync.OpeningStatus == UploadStatus.Handled)
+        if (sync.OpeningStatus == UploadStatus.Handled && sync.ErpOpeningName is null)
         {
             run.Add(id, $"Opening of shift {id} was handled by hand: its other documents wait (they need its ERPNext name).");
             return;
         }
 
-        // 1. POS Opening Shift.
-        var openingName = sync.OpeningStatus == UploadStatus.Synced ? sync.ErpOpeningName : run.Planned(OpeningKey(id));
+        // 1. POS Opening Shift (handled by hand with its ERPNext name given: the bills use that name).
+        var openingName = sync.OpeningStatus is UploadStatus.Synced or UploadStatus.Handled ? sync.ErpOpeningName : run.Planned(OpeningKey(id));
         if (openingName is null)
         {
-            if (!Due(sync.NextAttemptAt, id, $"Opening of shift {id}", sync.LastError, run)) return;
+            if (!Due(sync.NextAttemptAt, id, $"Opening of shift {id}", sync.OpeningError ?? sync.LastError, run)) return;
             openingName = await UploadAsync(
                 new Doc(OpeningShiftPayload.Doctype, OfflineIdField, id, OpeningKey(id), $"Opening of shift {id}", true,
                     () => OpeningShiftPayload.Build(opening, profile.PosProfile, profile.Company, user),
                     Check: (checks, body, ct) => checks.ShiftAsync(body, "balance_details", ct)),
                 new Marks(sync.Attempts, name => shifts.MarkSynced(id, ShiftDocument.Opening, name),
-                    (error, next) => shifts.MarkFailed(id, ShiftDocument.Opening, error, next),
-                    until => shifts.MarkInFlight(id, ShiftDocument.Opening, until), sync.UnknownAttempts, sync.LastError,
+                    (error, next, keep) => shifts.MarkFailed(id, ShiftDocument.Opening, error, next, keep),
+                    until => shifts.MarkInFlight(id, ShiftDocument.Opening, until), sync.UnknownAttempts, sync.OpeningError,
                     error => shifts.MarkUnknown(id, ShiftDocument.Opening, error)), run, ct);
             if (openingName is null) return;
         }
@@ -192,15 +192,15 @@ public sealed class Uploader
             run.Add(id, $"Closing of shift {id} waits: {waiting.ToString(CultureInfo.InvariantCulture)} bill(s) of the shift are not uploaded yet.");
             return;
         }
-        if (!Due(sync.NextAttemptAt, id, $"Closing of shift {id}", sync.LastError, run)) return;
+        if (!Due(sync.NextAttemptAt, id, $"Closing of shift {id}", sync.ClosingError ?? sync.LastError, run)) return;
         await UploadAsync(
             new Doc(ClosingShiftPayload.Doctype, OfflineIdField, id, ClosingKey(id), $"Closing of shift {id}", true,
                 () => ClosingShiftPayload.Build(opening, closing, openingName, uploaded, profile.PosProfile, profile.Company, user,
                     profile.Customer, profile.TaxesAndCharges is { Length: > 0 } taxes ? TaxTemplates(taxes) : null),
                 Check: (checks, body, ct) => checks.ShiftAsync(body, "payment_reconciliation", ct)),
             new Marks(sync.Attempts, name => shifts.MarkSynced(id, ShiftDocument.Closing, name),
-                (error, next) => shifts.MarkFailed(id, ShiftDocument.Closing, error, next),
-                until => shifts.MarkInFlight(id, ShiftDocument.Closing, until), sync.UnknownAttempts, sync.LastError,
+                (error, next, keep) => shifts.MarkFailed(id, ShiftDocument.Closing, error, next, keep),
+                until => shifts.MarkInFlight(id, ShiftDocument.Closing, until), sync.UnknownAttempts, sync.ClosingError,
                 error => shifts.MarkUnknown(id, ShiftDocument.Closing, error)), run, ct);
     }
 
@@ -252,7 +252,7 @@ public sealed class Uploader
             new Doc(PosInvoicePayload.Doctype, InvoiceIdField, receipt.ClientId, InvoiceKey(receipt.ClientId), label, true, () => payload.Doc,
                 payload.Expected, profile.WriteOffLimit, (checks, body, ct) => checks.InvoiceAsync(receipt, body, ct)),
             new Marks(bill.Attempts, name => receipts.MarkSynced(receipt.ClientId, name),
-                (error, next) => receipts.MarkFailed(receipt.ClientId, error, next), until => receipts.MarkInFlight(receipt.ClientId, until),
+                (error, next, keep) => receipts.MarkFailed(receipt.ClientId, error, next, keep), until => receipts.MarkInFlight(receipt.ClientId, until),
                 bill.UnknownAttempts, bill.LastError, error => receipts.MarkUnknown(receipt.ClientId, error)),
             run, ct);
     }
@@ -346,7 +346,7 @@ public sealed class Uploader
             await UploadAsync(
                 new Doc(ApprovalPayload.Doctype, OfflineIdField, a.Id, $"APPROVAL-{a.Id}", label, false,
                     () => ApprovalPayload.Build(a, till, shiftName, invoiceName)),
-                new Marks(entry.Attempts, name => approvals.MarkUploaded(a.Id, name), (error, next) => approvals.MarkFailed(a.Id, error, next),
+                new Marks(entry.Attempts, name => approvals.MarkUploaded(a.Id, name), (error, next, keep) => approvals.MarkFailed(a.Id, error, next, keep),
                     until => approvals.MarkInFlight(a.Id, until), entry.UnknownAttempts, entry.LastError,
                     error => approvals.MarkUnknown(a.Id, error)), run, ct);
         }
@@ -360,7 +360,7 @@ public sealed class Uploader
     /// <summary>How a document's upload state is written: synced (with its ERPNext name), failed (error, next try), in flight
     /// (sent, answer pending, until; false when the document is no longer Pending or Failed) and an unknown outcome (no answer to
     /// a write: counted, with what came back). UnknownAttempts and LastError are the document's state when the run read it.</summary>
-    private sealed record Marks(int Attempts, Action<string> Synced, Action<string, DateTimeOffset> Failed, Func<DateTimeOffset, bool> InFlight,
+    private sealed record Marks(int Attempts, Action<string> Synced, Action<string, DateTimeOffset, bool> Failed, Func<DateTimeOffset, bool> InFlight,
         int UnknownAttempts, string? LastError, Action<string> Unknown);
 
     /// <summary>After this many writes in a row without an answer, the next try settles it: in ERPNext (adopted), or a failure the
@@ -387,13 +387,15 @@ public sealed class Uploader
         {
             var found = await LookupAsync(doc, ct);
             // Unknown outcomes escalate: not in ERPNext after the limit, or a found draft still unanswered after one more submit.
+            // The count stays (keepUnknown), so later automatic tries only look it up; Retry, Un-handle or Include reset it.
             if (found is null && marks.UnknownAttempts >= UnknownLimit)
-                throw new DocumentFailure(
-                    $"ERPNext did not answer {UnknownLimit} times and does not have this document. Last answer: {marks.LastError}");
-            if (found is { DocStatus: 0 } && marks.UnknownAttempts > UnknownLimit)
-                throw new DocumentFailure(
-                    $"Draft {found.Name} is in ERPNext, but writing it got no answer {marks.UnknownAttempts} times. Last answer: {marks.LastError}");
-            if (found is { DocStatus: 0 } && doc.Expected is null && DraftMismatch(doc, found) is { } foreign)
+                throw new DocumentFailure(Escalated(marks,
+                    $"ERPNext did not answer {UnknownLimit} times and does not have this document."), keepUnknown: true);
+            // Only submittable documents have drafts; a non-submittable one (an approval) found by its id is simply adopted.
+            if (doc.Submittable && found is { DocStatus: 0 } && marks.UnknownAttempts > UnknownLimit)
+                throw new DocumentFailure(Escalated(marks,
+                    $"Draft {found.Name} is in ERPNext, but writing it got no answer {marks.UnknownAttempts} times."), keepUnknown: true);
+            if (doc.Submittable && found is { DocStatus: 0 } && doc.Expected is null && DraftMismatch(doc, found) is { } foreign)
                 throw new DocumentFailure(foreign);
             found ??= await InsertDraftAsync(doc, marks, ct);
             var draft = doc.Submittable && found.DocStatus == 0;
@@ -417,7 +419,7 @@ public sealed class Uploader
         catch (Exception ex) when (ex is DocumentFailure || Classify(ex) == ErpOutcome.Refused)
         {
             var error = Short(ex.Message);
-            marks.Failed(error, now() + Backoff(marks.Attempts + 1));
+            marks.Failed(error, now() + Backoff(marks.Attempts + 1), ex is DocumentFailure { KeepUnknown: true });
             run.Add(doc.ClientId, $"{doc.Label}: {error}");
             return null;
         }
@@ -641,7 +643,18 @@ public sealed class Uploader
     }
 
     /// <summary>A definite problem with one document (recorded on it as Failed).</summary>
-    private sealed class DocumentFailure(string message) : Exception(message);
+    private sealed class DocumentFailure(string message, bool keepUnknown = false) : Exception(message)
+    {
+        /// <summary>The failure ends unanswered writes: the unknown-outcome count stays at the limit.</summary>
+        public bool KeepUnknown { get; } = keepUnknown;
+    }
+
+    /// <summary>An escalation message with the last answer that came back; a repeated escalation keeps the first one's text.</summary>
+    private static string Escalated(Marks marks, string what) =>
+        marks.LastError is { } last && (last.StartsWith("ERPNext did not answer", StringComparison.Ordinal)
+            || (last.StartsWith("Draft ", StringComparison.Ordinal) && last.Contains("got no answer", StringComparison.Ordinal)))
+            ? last
+            : $"{what} Last answer: {marks.LastError}";
 
     /// <summary>The document is no longer Pending or Failed on the till (e.g. a supervisor marked it handled): not sent.</summary>
     private sealed class DocumentSkipped : Exception;

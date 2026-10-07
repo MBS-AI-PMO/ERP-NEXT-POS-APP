@@ -64,7 +64,7 @@ public sealed class ShiftStore(TillDb db)
     }
 
     private const string SyncColumns =
-        "opening_status, erp_opening, closing_status, erp_closing, last_error, attempts, next_attempt_at, unknown_attempts";
+        "opening_status, erp_opening, closing_status, erp_closing, last_error, attempts, next_attempt_at, unknown_attempts, opening_error, closing_error";
 
     /// <summary>Shifts with a document still to upload (the opening, a bill, or the closing of a closed shift), oldest first.</summary>
     public IReadOnlyList<ShiftOutboxEntry> Unfinished()
@@ -87,31 +87,38 @@ public sealed class ShiftStore(TillDb db)
         return c.Query($"SELECT {SyncColumns} FROM shift WHERE client_id = @id", r => ReadSync(r, 0), ("@id", clientId)).FirstOrDefault();
     }
 
+    // Each document keeps its own error (opening_error, closing_error); last_error mirrors the latest one for older readers.
+
     public void MarkSynced(string clientId, ShiftDocument document, string erpName)
     {
-        var (status, name) = Columns(document);
-        Update($"UPDATE shift SET {status} = 'Synced', {name} = @n, last_error = NULL, attempts = 0, next_attempt_at = NULL, unknown_attempts = 0 WHERE client_id = @id",
-            clientId, ("@n", erpName));
+        var (status, name, error, _) = Columns(document);
+        Update($"""
+            UPDATE shift SET {status} = 'Synced', {name} = @n, {error} = NULL, last_error = NULL, attempts = 0, next_attempt_at = NULL,
+                unknown_attempts = 0
+            WHERE client_id = @id
+            """, clientId, ("@n", erpName));
     }
 
-    /// <summary>A failure reported after the document was already uploaded is ignored.</summary>
-    public void MarkFailed(string clientId, ShiftDocument document, string error, DateTimeOffset? nextAttemptAt)
+    /// <summary>A failure reported after the document was already uploaded is ignored. <paramref name="keepUnknown"/>: the failure
+    /// is the escalation of unanswered writes, so the count stays (later tries only look the document up).</summary>
+    public void MarkFailed(string clientId, ShiftDocument document, string error, DateTimeOffset? nextAttemptAt, bool keepUnknown = false)
     {
-        var (status, _) = Columns(document);
+        var (status, _, errorColumn, _) = Columns(document);
         Update($"""
-            UPDATE shift SET {status} = 'Failed', last_error = @e, attempts = attempts + 1, next_attempt_at = @next, unknown_attempts = 0
+            UPDATE shift SET {status} = 'Failed', {errorColumn} = @e, last_error = @e, attempts = attempts + 1, next_attempt_at = @next,
+                unknown_attempts = CASE WHEN @keep = 1 THEN unknown_attempts ELSE 0 END
             WHERE client_id = @id AND {status} IN ('Pending', 'Failed')
             """,
-            clientId, ("@e", error), ("@next", SqlExt.Instant(nextAttemptAt)));
+            clientId, ("@e", error), ("@next", SqlExt.Instant(nextAttemptAt)), ("@keep", keepUnknown ? 1 : 0));
     }
 
     /// <summary>Written just before the document is sent (see <see cref="ReceiptStore.MarkInFlight"/>); false when it is no
     /// longer Pending or Failed.</summary>
     public bool MarkInFlight(string clientId, ShiftDocument document, DateTimeOffset until)
     {
-        var (status, _) = Columns(document);
+        var (status, _, error, _) = Columns(document);
         return Update($"""
-            UPDATE shift SET {status} = 'Pending', last_error = @e, next_attempt_at = @u
+            UPDATE shift SET {status} = 'Pending', {error} = @e, last_error = @e, next_attempt_at = @u
             WHERE client_id = @id AND {status} IN ('Pending', 'Failed')
             """, clientId, ("@e", ReceiptStore.InFlight), ("@u", SqlExt.Instant(until))) > 0;
     }
@@ -119,9 +126,9 @@ public sealed class ShiftStore(TillDb db)
     /// <summary>A write of the document got no answer (see <see cref="ReceiptStore.MarkUnknown"/>).</summary>
     public void MarkUnknown(string clientId, ShiftDocument document, string error)
     {
-        var (status, _) = Columns(document);
+        var (status, _, errorColumn, _) = Columns(document);
         Update($"""
-            UPDATE shift SET unknown_attempts = unknown_attempts + 1, last_error = @e
+            UPDATE shift SET unknown_attempts = unknown_attempts + 1, {errorColumn} = @e, last_error = @e
             WHERE client_id = @id AND {status} IN ('Pending', 'Failed')
             """, clientId, ("@e", error));
     }
@@ -131,54 +138,59 @@ public sealed class ShiftStore(TillDb db)
     {
         using var c = db.Open();
         var rows = c.Query("""
-            SELECT client_id, opened_at, closed_at, opening_status, closing_status, last_error, attempts FROM shift
+            SELECT client_id, opened_at, closed_at, opening_status, closing_status, opening_error, closing_error, attempts FROM shift
             WHERE opening_status IN ('Failed', 'Excluded', 'Handled')
                OR (closed_at IS NOT NULL AND closing_status IN ('Failed', 'Excluded', 'Handled'))
             ORDER BY opened_at, client_id
             """,
             r => (Id: r.GetString(0), Opened: SqlExt.Instant(r, 1)!.Value, Closed: SqlExt.Instant(r, 2),
-                Opening: Enum.Parse<UploadStatus>(r.GetString(3)), Closing: Enum.Parse<UploadStatus>(r.GetString(4)), Error: SqlExt.Str(r, 5),
-                Attempts: r.GetInt32(6)));
+                Opening: Enum.Parse<UploadStatus>(r.GetString(3)), Closing: Enum.Parse<UploadStatus>(r.GetString(4)),
+                OpeningError: SqlExt.Str(r, 5), ClosingError: SqlExt.Str(r, 6), Attempts: r.GetInt32(7)));
         var problems = new List<OutboxProblem>();
         foreach (var s in rows)
         {
             if (s.Opening is UploadStatus.Failed or UploadStatus.Excluded or UploadStatus.Handled)
-                problems.Add(new OutboxProblem(OutboxKind.Opening, s.Id, s.Id, s.Opened, s.Opening, s.Error, s.Attempts));
+                problems.Add(new OutboxProblem(OutboxKind.Opening, s.Id, s.Id, s.Opened, s.Opening, s.OpeningError, s.Attempts));
             if (s.Closed is { } closed && s.Closing is UploadStatus.Failed or UploadStatus.Excluded or UploadStatus.Handled)
-                problems.Add(new OutboxProblem(OutboxKind.Closing, s.Id, s.Id, closed, s.Closing, s.Error, s.Attempts));
+                problems.Add(new OutboxProblem(OutboxKind.Closing, s.Id, s.Id, closed, s.Closing, s.ClosingError, s.Attempts));
         }
         return problems;
     }
 
     /// <summary>A supervisor dealt with a failed or excluded shift document by hand in ERPNext: it is never uploaded.
-    /// <paramref name="note"/> is kept as the shift's last error.</summary>
-    public void MarkHandled(string clientId, ShiftDocument document, string note)
+    /// <paramref name="note"/> is kept as the document's error, and the status it had is kept for <see cref="Unhandle"/>.
+    /// <paramref name="erpName"/>: the document's name in ERPNext when the supervisor gave it (an opening's bills can then go).
+    /// False when the document was no longer Failed or Excluded (nothing changed).</summary>
+    public bool MarkHandled(string clientId, ShiftDocument document, string note, string? erpName = null)
     {
-        var (status, _) = Columns(document);
-        Update($"""
-            UPDATE shift SET {status} = 'Handled', last_error = @n, next_attempt_at = NULL, unknown_attempts = 0
+        var (status, name, error, before) = Columns(document);
+        return Update($"""
+            UPDATE shift SET {before} = {status}, {status} = 'Handled', {error} = @n, last_error = @n, {name} = COALESCE(@erp, {name}),
+                next_attempt_at = NULL, unknown_attempts = 0
             WHERE client_id = @id AND {status} IN ('Failed', 'Excluded')
-            """, clientId, ("@n", note));
+            """, clientId, ("@n", note), ("@erp", erpName)) > 0;
     }
 
-    /// <summary>Takes a handled shift document back into the queue (Pending, backoff reset).</summary>
-    public void Unhandle(string clientId, ShiftDocument document)
+    /// <summary>Takes back a handled shift document: an excluded one is excluded again, a failed one goes back to the queue
+    /// (backoff reset). False when it was no longer Handled.</summary>
+    public bool Unhandle(string clientId, ShiftDocument document)
     {
-        var (status, _) = Columns(document);
-        Update($"""
-            UPDATE shift SET {status} = 'Pending', last_error = NULL, attempts = 0, next_attempt_at = NULL, unknown_attempts = 0
+        var (status, name, error, before) = Columns(document);
+        return Update($"""
+            UPDATE shift SET {status} = CASE {before} WHEN 'Excluded' THEN 'Excluded' ELSE 'Pending' END, {before} = NULL, {name} = NULL,
+                {error} = NULL, last_error = NULL, attempts = 0, next_attempt_at = NULL, unknown_attempts = 0
             WHERE client_id = @id AND {status} = 'Handled'
-            """, clientId);
+            """, clientId) > 0;
     }
 
-    /// <summary>A failed shift document goes back to the queue at once, its backoff reset.</summary>
-    public void Retry(string clientId) =>
+    /// <summary>A failed shift document goes back to the queue at once, its backoff reset. False when none was failed.</summary>
+    public bool Retry(string clientId) =>
         Update("""
             UPDATE shift SET opening_status = CASE opening_status WHEN 'Failed' THEN 'Pending' ELSE opening_status END,
                 closing_status = CASE closing_status WHEN 'Failed' THEN 'Pending' ELSE closing_status END,
                 attempts = 0, next_attempt_at = NULL, unknown_attempts = 0
-            WHERE client_id = @id
-            """, clientId);
+            WHERE client_id = @id AND (opening_status = 'Failed' OR closing_status = 'Failed')
+            """, clientId) > 0;
 
     /// <summary>The first switch to Live: every shift <b>closed</b> before <paramref name="since"/> with something still to upload
     /// is excluded (with its bills and approvals of before then), and so is every approval of before then that names no shift.
@@ -208,13 +220,15 @@ public sealed class ShiftStore(TillDb db)
     }
 
     /// <summary>Puts an excluded shift back in the queue: its excluded opening, closing, bills and approvals become Pending.</summary>
-    public void Include(string clientId)
+    /// <returns>False when nothing of the shift was excluded (nothing changed).</returns>
+    public bool Include(string clientId)
     {
         using var c = db.Open();
         using var tx = c.BeginTransaction();
-        IncludeWhere(c, tx, "WHERE client_id = @id", "WHERE shift_client_id = @id", "WHERE json_extract(json, '$.ShiftClientId') = @id",
-            ("@id", clientId));
+        var changed = IncludeWhere(c, tx, "WHERE client_id = @id", "WHERE shift_client_id = @id",
+            "WHERE json_extract(json, '$.ShiftClientId') = @id", ("@id", clientId));
         tx.Commit();
+        return changed > 0;
     }
 
     /// <summary>Puts every excluded document (shifts, bills, approvals) back in the queue.</summary>
@@ -253,17 +267,15 @@ public sealed class ShiftStore(TillDb db)
             """, ("@id", id), ("@before", before));
     }
 
-    private static void IncludeWhere(SqliteConnection c, SqliteTransaction tx, string shiftWhere, string receiptWhere, string approvalWhere,
-        params (string Name, object? Value)[] ps)
-    {
+    private static int IncludeWhere(SqliteConnection c, SqliteTransaction tx, string shiftWhere, string receiptWhere, string approvalWhere,
+        params (string Name, object? Value)[] ps) =>
         c.Exec(tx, $"""
             UPDATE shift SET opening_status = CASE opening_status WHEN 'Excluded' THEN 'Pending' ELSE opening_status END,
                 closing_status = CASE closing_status WHEN 'Excluded' THEN 'Pending' ELSE closing_status END
-            {shiftWhere}
-            """, ps);
-        c.Exec(tx, $"UPDATE receipt SET sync_status = 'Pending', attempts = 0, next_attempt_at = NULL, unknown_attempts = 0 {And(receiptWhere, "sync_status = 'Excluded'")}", ps);
-        c.Exec(tx, $"UPDATE approval_log SET sync_status = 'Pending', attempts = 0, next_attempt_at = NULL, unknown_attempts = 0 {And(approvalWhere, "sync_status = 'Excluded'")}", ps);
-    }
+            {And(shiftWhere, "(opening_status = 'Excluded' OR closing_status = 'Excluded')")}
+            """, ps)
+        + c.Exec(tx, $"UPDATE receipt SET sync_status = 'Pending', attempts = 0, next_attempt_at = NULL, unknown_attempts = 0 {And(receiptWhere, "sync_status = 'Excluded'")}", ps)
+        + c.Exec(tx, $"UPDATE approval_log SET sync_status = 'Pending', attempts = 0, next_attempt_at = NULL, unknown_attempts = 0 {And(approvalWhere, "sync_status = 'Excluded'")}", ps);
 
     private static string And(string where, string condition) => where.Length == 0 ? $"WHERE {condition}" : $"{where} AND {condition}";
 
@@ -281,12 +293,14 @@ public sealed class ShiftStore(TillDb db)
             """, ("@s", status)), CultureInfo.InvariantCulture);
     }
 
-    private static (string Status, string Name) Columns(ShiftDocument document) =>
-        document == ShiftDocument.Opening ? ("opening_status", "erp_opening") : ("closing_status", "erp_closing");
+    private static (string Status, string Name, string Error, string Before) Columns(ShiftDocument document) =>
+        document == ShiftDocument.Opening
+            ? ("opening_status", "erp_opening", "opening_error", "opening_before_handled")
+            : ("closing_status", "erp_closing", "closing_error", "closing_before_handled");
 
     private static ShiftSyncInfo ReadSync(SqliteDataReader r, int i) =>
         new(Enum.Parse<UploadStatus>(r.GetString(i)), SqlExt.Str(r, i + 1), Enum.Parse<UploadStatus>(r.GetString(i + 2)), SqlExt.Str(r, i + 3),
-            SqlExt.Str(r, i + 4), r.GetInt32(i + 5), SqlExt.Instant(r, i + 6), r.GetInt32(i + 7));
+            SqlExt.Str(r, i + 4), r.GetInt32(i + 5), SqlExt.Instant(r, i + 6), r.GetInt32(i + 7), SqlExt.Str(r, i + 8), SqlExt.Str(r, i + 9));
 
     private int Update(string sql, string clientId, params (string Name, object? Value)[] extra)
     {

@@ -12,8 +12,9 @@ public enum UploadStatus { Pending, Synced, Failed, Excluded, Handled }
 /// <summary>The two ERPNext documents of a till shift.</summary>
 public enum ShiftDocument { Opening, Closing }
 
-/// <summary>Upload state of a shift's POS Opening Shift and POS Closing Shift. LastError, Attempts and NextAttemptAt belong to
-/// the document being uploaded (the opening until it is in ERPNext, then the closing); they are reset when one is uploaded.</summary>
+/// <summary>Upload state of a shift's POS Opening Shift and POS Closing Shift. Attempts, NextAttemptAt and UnknownAttempts belong
+/// to the document being uploaded (the opening until it is in ERPNext, then the closing); they are reset when one is uploaded.
+/// OpeningError and ClosingError are each document's own error (or handled note); LastError is the latest of the two.</summary>
 public sealed record ShiftSyncInfo(
     UploadStatus OpeningStatus,
     string? ErpOpeningName,
@@ -22,7 +23,9 @@ public sealed record ShiftSyncInfo(
     string? LastError,
     int Attempts,
     DateTimeOffset? NextAttemptAt,
-    int UnknownAttempts = 0);
+    int UnknownAttempts = 0,
+    string? OpeningError = null,
+    string? ClosingError = null);
 
 /// <summary>A shift that still has something to upload.</summary>
 public sealed record ShiftOutboxEntry(ShiftOpening Opening, ShiftClosing? Closing, ShiftSyncInfo Sync);

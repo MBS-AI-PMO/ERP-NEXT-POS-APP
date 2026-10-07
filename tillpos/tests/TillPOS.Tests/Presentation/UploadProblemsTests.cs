@@ -196,6 +196,20 @@ public sealed class UploadProblemsTests : IDisposable
     }
 
     [Fact]
+    public void The_login_button_stays_when_only_handled_documents_are_left()
+    {
+        f.Ctx.Receipts.MarkHandled("TILL2-A", "Handled by sup: by hand");
+        f.Ctx.Receipts.MarkHandled("TILL2-OLD", "Handled by sup: test data");
+        f.Ctx.Shifts.MarkHandled(OldShift, ShiftDocument.Opening, "Handled by sup: test data");
+        f.Ctx.Shifts.MarkHandled(OldShift, ShiftDocument.Closing, "Handled by sup: test data");
+
+        var login = new LoginViewModel(f.Ctx, f.Session, () => new object());
+
+        Assert.Equal((0, 4, 4), (login.UploadProblemsCount, login.HandledUploads, login.UploadProblemsTotal));
+        Assert.Equal("Upload problems (0 · 4 handled)", login.UploadProblemsLabel);
+    }
+
+    [Fact]
     public async Task The_login_screen_opens_upload_problems_behind_the_supervisor_pin()
     {
         var login = new LoginViewModel(f.Ctx, f.Session, () => new object());

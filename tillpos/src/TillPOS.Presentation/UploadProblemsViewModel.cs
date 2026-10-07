@@ -77,15 +77,20 @@ public sealed class UploadProblemsViewModel : ObservableObject
     public RelayCommand BackCommand { get; }
 
     /// <summary>How many documents need a look (failed + excluded), e.g. for the login screen's button; 0 when the stores fail.</summary>
-    public static int Count(TillContext ctx)
+    public static int Count(TillContext ctx) => Counts(ctx).NeedALook;
+
+    /// <summary>The documents that need a look (failed + excluded) and those handled by hand; (0, 0) when the stores fail.</summary>
+    public static (int NeedALook, int Handled) Counts(TillContext ctx)
     {
         try
         {
-            return All(ctx).Count(p => p.Status != UploadStatus.Handled);
+            var all = All(ctx);
+            var handled = all.Count(p => p.Status == UploadStatus.Handled);
+            return (all.Count - handled, handled);
         }
         catch (Exception)
         {
-            return 0;
+            return (0, 0);
         }
     }
 
