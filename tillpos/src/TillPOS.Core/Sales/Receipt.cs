@@ -60,6 +60,10 @@ public sealed record Receipt(
     public string? Warehouse { get; init; }
 
     public bool? DisableRoundedTotal { get; init; }
+
+    /// <summary>The bill's customer; null = the POS Profile's default customer. A return keeps its original's (ERPNext requires
+    /// the same customer on a return as on the bill it returns), e.g. a bill of another till made for a named customer.</summary>
+    public string? Customer { get; init; }
 }
 
 /// <summary>The POS Profile payment modes the till uses for cash and card.</summary>

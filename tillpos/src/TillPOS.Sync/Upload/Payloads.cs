@@ -41,7 +41,7 @@ public static class PosInvoicePayload
             ["is_pos"] = 1,
             ["pos_profile"] = posProfileName,
             ["company"] = profile.Company,
-            ["customer"] = profile.Customer,
+            ["customer"] = r.Customer ?? profile.Customer,
             ["set_posting_time"] = 1,
             ["posting_date"] = ErpFormat.Date(r.CreatedAt),
             ["posting_time"] = ErpFormat.Time(r.CreatedAt),
@@ -129,7 +129,7 @@ public static class ClosingShiftPayload
     /// <param name="posProfile">The shift's POS Profile.</param>
     /// <param name="company">The profile's company.</param>
     /// <param name="erpUser">The till's ERPNext user.</param>
-    /// <param name="customer">The POS Profile's customer (each transaction and payment row names it).</param>
+    /// <param name="customer">The POS Profile's customer (each transaction names it, unless the bill has its own).</param>
     /// <param name="taxTemplate">The profile's Sales Taxes and Charges Template: its account heads and rates for the taxes rows.</param>
     public static Dictionary<string, object?> Build(ShiftOpening opening, ShiftClosing closing, string openingErpName,
         IReadOnlyList<(string ErpName, Receipt Receipt)> invoices, string posProfile, string company, string erpUser, string customer,
@@ -151,7 +151,7 @@ public static class ClosingShiftPayload
             {
                 ["pos_invoice"] = i.ErpName,
                 ["posting_date"] = ErpFormat.Date(i.Receipt.CreatedAt),
-                ["customer"] = customer,
+                ["customer"] = i.Receipt.Customer ?? customer,
                 ["grand_total"] = i.Receipt.GrandTotal,
             })
             .ToList(),

@@ -52,6 +52,7 @@ public sealed record RemoteReceipt(
             Payments.Select(p => new ReceiptPayment(p.ModeOfPayment, p.Amount)).ToList(), 0m, 0m, null)
         {
             PosProfile = PosProfile,
+            Customer = Customer,
         };
     }
 }

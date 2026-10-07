@@ -166,6 +166,23 @@ public partial class PayloadTests
     }
 
     [Fact]
+    public void A_bill_with_its_own_customer_sends_it_and_others_send_the_profiles()
+    {
+        var ret = Return("TILL2-20261006153005-000001") with { Customer = "Ahmed Trading" };
+
+        Assert.Equal("Ahmed Trading", Build(ret, returnAgainst: "ACC-PSINV-2026-01234").Doc["customer"]);
+        Assert.Equal("Walk-in Customer", Build(ret with { Customer = null }, returnAgainst: "ACC-PSINV-2026-01234").Doc["customer"]);
+
+        var opening = new ShiftOpening("TILL2-SHIFT-20261006080000", "cashier1", "Al Ain Counter 1", At.AddHours(-7),
+            [new ReceiptPayment("Cash Counter 1", 200m)]);
+        var closing = new ShiftClosing(opening.ClientId, At.AddHours(1), [new ShiftModeSummary("Cash Counter 1", 200m, 200m, 200m, 0m)],
+            1, 1, 0m, 0m, 0m);
+        var doc = ClosingShiftPayload.Build(opening, closing, "POS-OPE-1", [("ACC-1", ret)], "Al Ain Counter 1", "Al Ain Market",
+            "till2@shop.local", "Walk-in Customer");
+        Assert.Equal("Ahmed Trading", Assert.Single(Rows(doc, "pos_transactions"))["customer"]);
+    }
+
+    [Fact]
     public void Return_without_receipt_has_no_return_against()
     {
         var payload = Build(Return(null), returnAgainst: null);

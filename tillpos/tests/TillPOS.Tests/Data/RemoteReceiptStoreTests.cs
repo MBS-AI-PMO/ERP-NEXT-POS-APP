@@ -70,6 +70,7 @@ public sealed class RemoteReceiptStoreTests : IDisposable
             (receipt.Lines[0].ItemCode, receipt.Lines[0].Barcode, receipt.Lines[0].Qty, receipt.Lines[0].Rate, receipt.Lines[0].ItemTaxTemplate));
         Assert.Equal(sale.GrandTotal, receipt.GrandTotal);
         Assert.Equal("Al Ain Counter 1", receipt.PosProfile);
+        Assert.Equal("Walk-in Customer", receipt.Customer);
 
         // POS Awesome's random row ids (or repeated numbers) are numbered by position.
         Assert.Equal(new[] { 1, 2 }, (sale with { Lines = [Milk("a7x", 1m), Rice("9", 1m)] }).ToReceipt().Lines.Select(l => l.LineNo));

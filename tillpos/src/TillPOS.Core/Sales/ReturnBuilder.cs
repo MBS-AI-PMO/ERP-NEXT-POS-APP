@@ -66,7 +66,8 @@ public sealed class ReturnBuilder(IReceiptStore store, SaleContext ctx, int till
     }
 
     /// <summary>A checked, priced return that has not been saved.</summary>
-    private sealed record Draft(IReadOnlyList<ReceiptLine> Lines, BillTotals Totals, string? ReturnAgainst, IReadOnlyList<ApprovalAction> Needs);
+    private sealed record Draft(IReadOnlyList<ReceiptLine> Lines, BillTotals Totals, string? ReturnAgainst, IReadOnlyList<ApprovalAction> Needs,
+        string? Customer = null);
 
     private Draft Prepare(Receipt original, IReadOnlyList<ReturnLineRequest> requests)
     {
@@ -94,7 +95,7 @@ public sealed class ReturnBuilder(IReceiptStore store, SaleContext ctx, int till
         var alreadyRefunded = -returns.Sum(r => r.GrandTotal);
         if (alreadyRefunded - totals.GrandTotal > approvalLimit) needs.Add(ApprovalAction.ReturnOverLimit);
         if (DateOnly.FromDateTime(original.CreatedAt.LocalDateTime) < ctx.Today().AddDays(-maxAgeDays)) needs.Add(ApprovalAction.ReturnOldReceipt);
-        return new Draft(WithAmounts(lines, totals), totals, original.ClientId, needs);
+        return new Draft(WithAmounts(lines, totals), totals, original.ClientId, needs, original.Customer);
     }
 
     private Draft PrepareWithoutReceipt(Cart cart)
@@ -153,6 +154,7 @@ public sealed class ReturnBuilder(IReceiptStore store, SaleContext ctx, int till
             PosProfile = ctx.PosProfile,
             Warehouse = ctx.Warehouse,
             DisableRoundedTotal = ctx.Money.DisableRoundedTotal,
+            Customer = draft.Customer,
         };
         store.Save(receipt);
         return receipt;

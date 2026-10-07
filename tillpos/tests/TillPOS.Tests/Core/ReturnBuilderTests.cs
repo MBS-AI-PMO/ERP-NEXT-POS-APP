@@ -368,6 +368,16 @@ public class ReturnBuilderTests
     }
 
     [Fact]
+    public void A_return_keeps_the_customer_of_its_original_bill()
+    {
+        var original = RemoteSale("ACC-PSINV-2026-00043", 2m, daysAgo: 1) with { Customer = "Ahmed Trading" };
+        var builder = new ReturnBuilder(store, ctx, 2, Modes, () => At, otherTills: new OtherTills());
+
+        Assert.Equal("Ahmed Trading", builder.Build(original, [new ReturnLineRequest(1, 1m)], TenderKind.Cash, "c", "S2", null).Customer);
+        Assert.Null(Builder().Build(SellMilk(1), [new ReturnLineRequest(1, 1m)], TenderKind.Cash, "c", "S2", null).Customer);
+    }
+
+    [Fact]
     public void A_bill_from_another_till_follows_the_same_approval_rules()
     {
         var old = RemoteSale("ACC-PSINV-2026-00007", 2m, daysAgo: 8);
