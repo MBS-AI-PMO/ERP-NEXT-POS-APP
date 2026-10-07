@@ -39,6 +39,18 @@ public sealed class ReceiptStoreTests : IDisposable
     }
 
     [Fact]
+    public void Recent_sales_are_sales_only_newest_first()
+    {
+        store.Save(Sale("A", minute: 1));
+        store.Save(Sale("C", minute: 3));
+        store.Save(Sale("B", minute: 2));
+        store.Save(Sale("R", minute: 4, returnAgainst: "A", qty: -1m));
+
+        Assert.Equal(new[] { "C", "B", "A" }, store.RecentSales(10).Select(r => r.ClientId));
+        Assert.Equal(new[] { "C", "B" }, store.RecentSales(2).Select(r => r.ClientId));
+    }
+
+    [Fact]
     public void Marking_an_unknown_receipt_throws()
     {
         Assert.Throws<KeyNotFoundException>(() => store.MarkFailed("NOPE", "x"));

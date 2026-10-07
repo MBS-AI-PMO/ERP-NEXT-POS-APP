@@ -6,10 +6,16 @@ namespace TillPOS.Core.Sales;
 
 public sealed record ReturnLineRequest(int LineNo, decimal Qty);
 
+/// <summary>What a return would refund, before it is saved. RefundDue is the rounded cash refund (negative);
+/// Needs lists every supervisor approval the return requires (empty when none).</summary>
+public sealed record ReturnPreview(decimal GrandTotal, decimal TotalTaxes, decimal RefundDue, decimal RoundingDifference,
+    IReadOnlyList<ApprovalAction> Needs);
+
 /// <summary>Builds and stores return receipts. Lines keep the original sale's line number and rate; quantities are negative.
-/// A return without a receipt, or refunds on one receipt that add up to more than the limit, need a supervisor.</summary>
+/// A return without a receipt, refunds on one receipt that add up to more than the limit, or a receipt older than
+/// maxAgeDays calendar days (till local time) need a supervisor.</summary>
 public sealed class ReturnBuilder(IReceiptStore store, SaleContext ctx, int tillNumber, TenderModes modes, Func<DateTimeOffset> now,
-    decimal approvalLimit = 50m)
+    decimal approvalLimit = 50m, int maxAgeDays = 7)
 {
     public decimal Returnable(Receipt original, int lineNo)
     {
@@ -18,8 +24,28 @@ public sealed class ReturnBuilder(IReceiptStore store, SaleContext ctx, int till
         return sold.Qty - returned;
     }
 
+    /// <summary>The return <see cref="Build"/> would make, checked the same way, without saving anything.</summary>
+    public ReturnPreview Preview(Receipt original, IReadOnlyList<ReturnLineRequest> requests) => ToPreview(Prepare(original, requests));
+
+    /// <summary>The return <see cref="BuildWithoutReceipt"/> would make, without saving anything or clearing the cart.</summary>
+    public ReturnPreview PreviewWithoutReceipt(Cart cart) => ToPreview(PrepareWithoutReceipt(cart));
+
     public Receipt Build(Receipt original, IReadOnlyList<ReturnLineRequest> requests, TenderKind refundKind, string cashier,
-        string shiftClientId, string? approvedBy, string? reason = null, string? cashierUser = null)
+        string shiftClientId, string? approvedBy, string? reason = null, string? cashierUser = null, string? cashierName = null) =>
+        Finish(Prepare(original, requests), refundKind, cashier, shiftClientId, approvedBy, reason, cashierUser, cashierName);
+
+    public Receipt BuildWithoutReceipt(Cart cart, TenderKind refundKind, string cashier, string shiftClientId, string? approvedBy,
+        string? reason = null, string? cashierUser = null, string? cashierName = null)
+    {
+        var receipt = Finish(PrepareWithoutReceipt(cart), refundKind, cashier, shiftClientId, approvedBy, reason, cashierUser, cashierName);
+        cart.Clear();
+        return receipt;
+    }
+
+    /// <summary>A checked, priced return that has not been saved.</summary>
+    private sealed record Draft(IReadOnlyList<ReceiptLine> Lines, BillTotals Totals, string? ReturnAgainst, IReadOnlyList<ApprovalAction> Needs);
+
+    private Draft Prepare(Receipt original, IReadOnlyList<ReturnLineRequest> requests)
     {
         if (original.Kind != ReceiptKind.Sale) throw new InvalidOperationException("Only a sale can be returned.");
         if (requests.Count == 0 || requests.Any(r => r.Qty <= 0m))
@@ -38,46 +64,63 @@ public sealed class ReturnBuilder(IReceiptStore store, SaleContext ctx, int till
             if (request.Qty > left) throw new InvalidOperationException($"Only {left} of {sold.ItemName} can still be returned.");
             lines.Add(sold with { Qty = -request.Qty, Amount = 0m });
         }
+
+        var totals = Price(lines);
+        var needs = new List<ApprovalAction>();
         var alreadyRefunded = -store.ReturnsAgainst(original.ClientId).Sum(r => r.GrandTotal);
-        return Finish(lines, original.ClientId, refundKind, cashier, shiftClientId, approvedBy, alwaysNeedsApproval: false, alreadyRefunded, reason, cashierUser);
+        if (alreadyRefunded - totals.GrandTotal > approvalLimit) needs.Add(ApprovalAction.ReturnOverLimit);
+        if (DateOnly.FromDateTime(original.CreatedAt.LocalDateTime) < ctx.Today().AddDays(-maxAgeDays)) needs.Add(ApprovalAction.ReturnOldReceipt);
+        return new Draft(WithAmounts(lines, totals), totals, original.ClientId, needs);
     }
 
-    public Receipt BuildWithoutReceipt(Cart cart, TenderKind refundKind, string cashier, string shiftClientId, string? approvedBy,
-        string? reason = null, string? cashierUser = null)
+    private Draft PrepareWithoutReceipt(Cart cart)
     {
         if (cart.Lines.Count == 0) throw new InvalidOperationException("Scan the items being returned first.");
         var lines = SaleRecorder.ToLines(cart, cart.Totals()).Select(l => l with { Qty = -l.Qty, Amount = 0m }).ToList();
-        var receipt = Finish(lines, null, refundKind, cashier, shiftClientId, approvedBy, alwaysNeedsApproval: true, alreadyRefunded: 0m, reason, cashierUser);
-        cart.Clear();
-        return receipt;
+        var totals = Price(lines);
+        return new Draft(WithAmounts(lines, totals), totals, null, [ApprovalAction.ReturnWithoutReceipt]);
     }
 
-    private Receipt Finish(List<ReceiptLine> lines, string? returnAgainst, TenderKind refundKind, string cashier, string shiftClientId,
-        string? approvedBy, bool alwaysNeedsApproval, decimal alreadyRefunded, string? reason, string? cashierUser)
-    {
-        var totals = new TaxCalculator(ctx.Money, ctx.Catalog.FindItemTaxTemplate)
+    private BillTotals Price(IReadOnlyList<ReceiptLine> lines) =>
+        new TaxCalculator(ctx.Money, ctx.Catalog.FindItemTaxTemplate)
             .Calculate(lines.Select(l => new TaxLineInput(l.Qty, l.Rate, l.ItemTaxTemplate)).ToList(), ctx.TaxTemplate);
-        lines = lines.Select((l, i) => l with { Amount = totals.Lines[i].Amount }).ToList();
 
+    private static List<ReceiptLine> WithAmounts(IReadOnlyList<ReceiptLine> lines, BillTotals totals) =>
+        lines.Select((l, i) => l with { Amount = totals.Lines[i].Amount }).ToList();
+
+    private ReturnPreview ToPreview(Draft draft)
+    {
+        var cash = new PaymentCalculator(ctx.Money).PlanRefund(draft.Totals.GrandTotal, TenderKind.Cash);
+        return new ReturnPreview(draft.Totals.GrandTotal, draft.Totals.TotalTaxes, cash.AmountDue, cash.RoundingDifference, draft.Needs);
+    }
+
+    private string NeedMessage(ApprovalAction need) => need switch
+    {
+        ApprovalAction.ReturnWithoutReceipt => "A return without a receipt needs a supervisor.",
+        ApprovalAction.ReturnOverLimit => $"Refunds above {approvalLimit} on one receipt need a supervisor.",
+        ApprovalAction.ReturnOldReceipt => $"Receipts older than {maxAgeDays} days need a supervisor.",
+        _ => "This return needs a supervisor.",
+    };
+
+    private Receipt Finish(Draft draft, TenderKind refundKind, string cashier, string shiftClientId, string? approvedBy, string? reason,
+        string? cashierUser, string? cashierName)
+    {
         var approved = !string.IsNullOrWhiteSpace(approvedBy);
-        if (!approved)
-        {
-            if (alwaysNeedsApproval) throw new ApprovalRequiredException("A return without a receipt needs a supervisor.");
-            if (alreadyRefunded - totals.GrandTotal > approvalLimit)
-                throw new ApprovalRequiredException($"Refunds above {approvalLimit} on one receipt need a supervisor.");
-        }
+        if (!approved && draft.Needs.Count > 0) throw new ApprovalRequiredException(NeedMessage(draft.Needs[0]));
 
+        var totals = draft.Totals;
         var plan = new PaymentCalculator(ctx.Money).PlanRefund(totals.GrandTotal, refundKind);
         var at = now();
         var receipt = new Receipt(
-            ClientIds.Receipt(tillNumber, at, store.NextSequence()), ReceiptKind.Return, returnAgainst, shiftClientId, cashier, at,
-            lines, totals.Total, totals.NetTotal, totals.TotalTaxes, totals.GrandTotal,
+            ClientIds.Receipt(tillNumber, at, store.NextSequence()), ReceiptKind.Return, draft.ReturnAgainst, shiftClientId, cashier, at,
+            draft.Lines, totals.Total, totals.NetTotal, totals.TotalTaxes, totals.GrandTotal,
             plan.UsesErpRoundedTotal,
             plan.UsesErpRoundedTotal ? plan.AmountDue : 0m,
             plan.UsesErpRoundedTotal ? plan.RoundingDifference : 0m,
             SaleRecorder.Payments(plan, modes), 0m, plan.RoundingDifference, approved ? approvedBy : null)
         {
             CashierUser = cashierUser,
+            CashierName = cashierName,
             Reason = reason,
         };
         store.Save(receipt);

@@ -49,8 +49,8 @@ public partial class ReceiptDialog : Window
     /// <summary>The barcode that closed the popup, or null when it was closed by hand.</summary>
     public string? ScannedCode { get; private set; }
 
-    /// <summary>Lines are shown exactly as the renderer gives them (spaces kept). Title text is bare, so it is centred here;
-    /// it prints double width and height, Big prints double height.</summary>
+    /// <summary>Lines are shown exactly as the renderer gives them (spaces kept). Title and Barcode text is bare, so it is centred
+    /// here; Title prints double width and height, Big prints double height, Barcode shows the number large.</summary>
     private static TextBlock LineBlock(PrintLine line)
     {
         var block = new TextBlock
@@ -74,6 +74,13 @@ public partial class ReceiptDialog : Window
                 break;
             case LineStyle.Bold:
                 block.FontWeight = FontWeights.Bold;
+                break;
+            case LineStyle.Barcode:
+                // The printer draws CODE128 bars here; on screen the invoice number is shown large instead.
+                block.FontSize = PaperFontSize * 1.6;
+                block.FontWeight = FontWeights.Bold;
+                block.TextAlignment = TextAlignment.Center;
+                block.Margin = new Thickness(0, 6, 0, 6);
                 break;
         }
         return block;

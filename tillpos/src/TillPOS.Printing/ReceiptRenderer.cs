@@ -12,8 +12,9 @@ public sealed record ReceiptHeader(string CompanyName, string? Address, string? 
 
 /// <summary>How a receipt line is printed. Title = double width + double height + bold + centred (its text is unpadded and
 /// at most half the paper columns); Big = double height + bold (full width); Bold = bold only; Qr = a centred QR code whose
-/// Text is the QR payload (not paper text).</summary>
-public enum LineStyle { Normal, Bold, Title, Big, Qr }
+/// Text is the QR payload (not paper text); Barcode = a centred CODE128 barcode whose Text is the barcode data (the printer
+/// prints it as text under the bars; a text file shows it centred).</summary>
+public enum LineStyle { Normal, Bold, Title, Big, Qr, Barcode }
 
 /// <summary>One receipt line. Except for Title and Qr lines, the text is already padded for the paper width.</summary>
 public sealed record PrintLine(string Text, LineStyle Style = LineStyle.Normal);
@@ -45,16 +46,20 @@ public static class ReceiptRenderer
         if (h.Trn is { } trn) Centered("TRN: " + trn);
         Rule('=');
         var isReturn = r.Kind == ReceiptKind.Return;
-        foreach (var part in Wrap(isReturn ? "CREDIT NOTE" : "TAX INVOICE", w / 2)) Add(part, LineStyle.Title);
-        if (isReturn) Centered("Tax Credit Note");
+        foreach (var part in Wrap(isReturn ? "TAX CREDIT NOTE" : "TAX INVOICE", w / 2)) Add(part, LineStyle.Title);
         Rule('=');
         if (copy) Centered(CopyMark, LineStyle.Bold);
 
         foreach (var text in Field("Invoice No", r.ClientId, w)) Add(text);
         if (r.ReturnAgainst is { } original) foreach (var text in Field("Return of", original, w)) Add(text);
+        else if (isReturn) Add("Return without receipt");
         foreach (var text in Field("Date", r.CreatedAt.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture), w)) Add(text);
         foreach (var text in Field("Cashier", r.CashierName ?? r.Cashier, w)) Add(text);
         foreach (var text in Field("Till", h.TillName, w)) Add(text);
+        if (isReturn && !string.IsNullOrWhiteSpace(r.Reason)) foreach (var text in Field("Reason", r.Reason, w)) Add(text);
+        if (isReturn && !string.IsNullOrWhiteSpace(r.ApprovedBy)) foreach (var text in Field("Approved by", r.ApprovedBy, w)) Add(text);
+        // A sale's invoice number as a barcode, so the receipt can be scanned for a return.
+        if (!isReturn) Add(r.ClientId, LineStyle.Barcode);
         Rule('-');
 
         var columns = Columns.For(paper);
@@ -86,7 +91,8 @@ public static class ReceiptRenderer
         }
         Rule('-');
 
-        foreach (var payment in r.Payments) Add(Pair(payment.ModeOfPayment, Money(payment.Amount), w));
+        // Refunds are paid in cash from the drawer (Plan 3c decision).
+        foreach (var payment in r.Payments) Add(Pair(isReturn ? "Refund paid (cash)" : payment.ModeOfPayment, Money(payment.Amount), w));
         if (r.Change != 0m) Add(Pair("Change", Money(r.Change), w));
         var saved = decimal.Round(r.Lines.Where(l => l.Rate < l.PriceListRate).Sum(Saved), 3);
         if (!isReturn && saved > 0m) Add(Pair("You saved", Money(saved), w));
@@ -114,24 +120,27 @@ public static class ReceiptRenderer
         PlainText(Layout(r, h, paper, copy), paper);
 
     public static byte[] EscPosBytes(Receipt r, ReceiptHeader h, PaperWidth paper, bool openDrawer, bool copy = false) =>
-        StyledBytes(Layout(r, h, paper, copy), openDrawer);
+        StyledBytes(Layout(r, h, paper, copy), openDrawer, paper);
 
-    /// <summary>Styled lines as plain text: Title lines are centred across the paper, a QR line becomes "[QR code]".</summary>
+    /// <summary>Styled lines as plain text: Title and Barcode lines are centred across the paper, a QR line becomes "[QR code]".</summary>
     internal static IReadOnlyList<string> PlainText(IEnumerable<PrintLine> lines, PaperWidth paper) =>
         lines.Select(l => l.Style switch
         {
-            LineStyle.Title => Center(l.Text, (int)paper),
+            LineStyle.Title or LineStyle.Barcode => Center(l.Text, (int)paper),
             LineStyle.Qr => Center(QrPlaceholder, (int)paper),
             _ => l.Text,
         }).ToList();
 
-    /// <summary>Styled lines as ESC/POS bytes, then feed and cut (and the drawer kick when asked).</summary>
-    internal static byte[] StyledBytes(IEnumerable<PrintLine> lines, bool openDrawer)
+    /// <summary>Styled lines as ESC/POS bytes, then feed and cut (and the drawer kick when asked). A barcode uses 2-dot modules
+    /// on 80 mm paper (576 dots) and 1-dot modules on 58 mm (384 dots), so an invoice number fits the paper.</summary>
+    internal static byte[] StyledBytes(IEnumerable<PrintLine> lines, bool openDrawer, PaperWidth paper = PaperWidth.Mm80)
     {
         var printer = new EscPos().Init().Style(LineStyle.Normal);
+        var moduleWidth = paper == PaperWidth.Mm58 ? (byte)1 : (byte)2;
         foreach (var line in lines)
         {
             if (line.Style == LineStyle.Qr) printer.Align(Alignment.Center).Qr(line.Text).Style(LineStyle.Normal);
+            else if (line.Style == LineStyle.Barcode) printer.Align(Alignment.Center).Barcode128(line.Text, moduleWidth).Line().Style(LineStyle.Normal);
             else if (line.Style == LineStyle.Normal) printer.Line(line.Text);
             else printer.Style(line.Style).Line(line.Text).Style(LineStyle.Normal);
         }

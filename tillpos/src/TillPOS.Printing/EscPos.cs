@@ -43,6 +43,58 @@ public sealed class EscPos
         return Raw(0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30);
     }
 
+    /// <summary>CODE128 via GS k 73 (height GS h 60, module width GS w, human-readable text below with GS H 2). Data is printable
+    /// ASCII. Text goes in code set B; runs of four or more digits go in code set C (two digits per symbol), which keeps a
+    /// 27-character invoice number at about 255 modules so it fits 80 mm paper at width 2.</summary>
+    public EscPos Barcode128(string data, byte moduleWidth = 2)
+    {
+        if (data.Length == 0 || data.Any(ch => ch is < ' ' or > '~'))
+            throw new ArgumentException("A CODE128 barcode holds printable ASCII text only.", nameof(data));
+        if (moduleWidth is < 1 or > 6) throw new ArgumentOutOfRangeException(nameof(moduleWidth), "Module width is 1 to 6 dots.");
+        var payload = Code128Data(data);
+        if (payload.Count > 255) throw new ArgumentException("The barcode text is too long.", nameof(data));
+        Raw(0x1D, 0x68, 60).Raw(0x1D, 0x77, moduleWidth).Raw(0x1D, 0x48, 0x02);
+        Raw(0x1D, 0x6B, 0x49, (byte)payload.Count);
+        bytes.AddRange(payload);
+        return this;
+    }
+
+    /// <summary>GS k 73 data: "{B" + characters ('{' doubled) or "{C" + one byte (0–99) per digit pair.</summary>
+    private static List<byte> Code128Data(string data)
+    {
+        var payload = new List<byte>();
+        char? set = null;
+        void Use(char codeSet)
+        {
+            if (set == codeSet) return;
+            payload.Add((byte)'{');
+            payload.Add((byte)codeSet);
+            set = codeSet;
+        }
+        void AddB(char ch)
+        {
+            Use('B');
+            if (ch == '{') payload.Add((byte)'{');
+            payload.Add((byte)ch);
+        }
+
+        var i = 0;
+        while (i < data.Length)
+        {
+            var end = i;
+            while (end < data.Length && char.IsAsciiDigit(data[end])) end++;
+            if (end - i < 4)
+            {
+                AddB(data[i++]);
+                continue;
+            }
+            if ((end - i) % 2 == 1) AddB(data[i++]);           // an odd run: its first digit stays in set B
+            Use('C');
+            for (; i < end; i += 2) payload.Add((byte)((data[i] - '0') * 10 + (data[i + 1] - '0')));
+        }
+        return payload;
+    }
+
     public EscPos Feed(int lines) => Raw(0x1B, 0x64, (byte)Math.Clamp(lines, 0, 255));
     public EscPos Cut() => Raw(0x1D, 0x56, 0x42, 0x00);
     /// <summary>ESC p 0 25 250 — pulse on drawer pin 2.</summary>

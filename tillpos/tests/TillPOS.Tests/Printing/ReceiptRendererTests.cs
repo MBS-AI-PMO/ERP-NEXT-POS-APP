@@ -199,10 +199,10 @@ public class ReceiptRendererTests
         var layout = ReceiptRenderer.Layout(Sale(ReceiptKind.Return, "TILL2-20261006120000-000000"), Header, PaperWidth.Mm80);
         var text = string.Join("\n", layout.Select(l => l.Text));
 
-        Assert.Equal("CREDIT NOTE", Assert.Single(layout, l => l.Style == LineStyle.Title).Text);
-        Assert.Contains("Tax Credit Note", text);
+        Assert.Equal("TAX CREDIT NOTE", Assert.Single(layout, l => l.Style == LineStyle.Title).Text);
         Assert.Contains("Return of : TILL2-20261006120000-000000", text);
         Assert.DoesNotContain("TAX INVOICE", text);
+        Assert.DoesNotContain("Return without receipt", text);
     }
 
     [Theory]
@@ -214,11 +214,12 @@ public class ReceiptRendererTests
         var layout = ReceiptRenderer.Layout(CreditNote(), Header, paper);
         var lines = Text(CreditNote(), paper);
 
-        Assert.Equal("CREDIT NOTE", Assert.Single(layout, l => l.Style == LineStyle.Title).Text);
+        Assert.Equal("TAX CREDIT NOTE", Assert.Single(layout, l => l.Style == LineStyle.Title).Text);
         Assert.All(layout.Where(l => l.Style != LineStyle.Qr), l => Assert.True(l.Text.Length <= width, $"[{l.Text}]"));
         Assert.Contains(lines, l => l.StartsWith("VAT 5%") && l.EndsWith(" -0.746"));
         Assert.Contains(lines, l => l.StartsWith("TOTAL AED") && l.EndsWith(" -15.67"));
-        Assert.Contains(lines, l => l.StartsWith("Cash Counter 2") && l.EndsWith(" -15.67"));
+        Assert.Contains(lines, l => l.StartsWith("Refund paid (cash)") && l.EndsWith(" -15.67"));
+        Assert.DoesNotContain(lines, l => l.StartsWith("Cash Counter 2"));
         Assert.DoesNotContain(lines, l => l.Contains("Offer") || l.Contains("You saved"));
 
         // Item rows and the column header share their right edges (Qty, Price at 80 mm; the amount at the paper edge).
@@ -239,6 +240,68 @@ public class ReceiptRendererTests
                 Assert.True(row[22] != ' ' && row[23] == ' ', $"Qty x Price edge: [{row}]");
             }
         }
+    }
+
+    [Theory]
+    [InlineData(PaperWidth.Mm80)]
+    [InlineData(PaperWidth.Mm58)]
+    public void Sale_has_a_centred_barcode_of_the_invoice_number_after_the_invoice_block(PaperWidth paper)
+    {
+        var width = (int)paper;
+        var layout = ReceiptRenderer.Layout(Sale(), Header, paper).ToList();
+
+        var barcode = Assert.Single(layout, l => l.Style == LineStyle.Barcode);
+        Assert.Equal("TILL2-20261006153000-000001", barcode.Text);
+        var index = layout.IndexOf(barcode);
+        Assert.StartsWith("Till ", layout[index - 1].Text);
+        Assert.Equal(new string('-', width), layout[index + 1].Text);
+
+        var text = Text(Sale(), paper);
+        Assert.Contains(new string(' ', (width - barcode.Text.Length) / 2) + barcode.Text, text);
+    }
+
+    [Fact]
+    public void A_credit_note_has_no_barcode() =>
+        Assert.DoesNotContain(ReceiptRenderer.Layout(CreditNote(), Header, PaperWidth.Mm80), l => l.Style == LineStyle.Barcode);
+
+    [Theory]
+    [InlineData(PaperWidth.Mm80, 2)]
+    [InlineData(PaperWidth.Mm58, 1)]
+    public void Escpos_prints_the_barcode_centred_with_a_module_width_that_fits_the_paper(PaperWidth paper, byte moduleWidth)
+    {
+        var bytes = ReceiptRenderer.EscPosBytes(Sale(), Header, paper, openDrawer: false);
+
+        var expected = new EscPos().Align(Alignment.Center).Barcode128("TILL2-20261006153000-000001", moduleWidth).ToArray();
+        Assert.Equal(1, Count(bytes, expected));
+        Assert.False(EscPosTests.Contains(ReceiptRenderer.EscPosBytes(CreditNote(), Header, paper, openDrawer: false), [0x1D, 0x6B, 0x49]));
+    }
+
+    [Fact]
+    public void Credit_note_shows_the_refund_reason_and_approver()
+    {
+        var note = CreditNote() with { Reason = "Damaged", ApprovedBy = "SUP-1" };
+
+        var lines = Text(note);
+
+        AssertInOrder(lines, "TAX CREDIT NOTE", "Invoice No", "Return of : TILL2-20261006120000-000000", "Till", "Reason    : Damaged",
+            "Approved by: SUP-1", "TOTAL AED", "Refund paid (cash)");
+        Assert.Contains(lines, l => l.StartsWith("Refund paid (cash)") && l.EndsWith(" -15.67"));
+    }
+
+    [Fact]
+    public void Credit_note_without_a_receipt_says_so_and_omits_empty_reason_and_approver()
+    {
+        var lines = Text(CreditNote() with { ReturnAgainst = null });
+
+        Assert.Contains("Return without receipt", lines);
+        Assert.DoesNotContain(lines, l => l.StartsWith("Return of") || l.StartsWith("Reason") || l.StartsWith("Approved by"));
+    }
+
+    [Fact]
+    public void A_sale_has_no_refund_reason_or_approver_lines()
+    {
+        var lines = Text(Sale() with { Reason = "x", ApprovedBy = "SUP-1" });
+        Assert.DoesNotContain(lines, l => l.StartsWith("Reason") || l.StartsWith("Approved by") || l.Contains("Refund paid"));
     }
 
     [Fact]

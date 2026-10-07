@@ -41,6 +41,15 @@ public sealed class ReceiptStore(TillDb db) : IReceiptStore
     public IReadOnlyList<Receipt> ReturnsAgainst(string clientId) => Query("WHERE return_against = @p ORDER BY created_at", clientId);
     public IReadOnlyList<Receipt> ByShift(string shiftClientId) => Query("WHERE shift_client_id = @p ORDER BY created_at", shiftClientId);
 
+    /// <summary>The newest sales on this till, newest first (the Returns screen's recent bills). Returns are left out;
+    /// ask <see cref="ReturnsAgainst"/> for what was already returned from a sale.</summary>
+    public IReadOnlyList<Receipt> RecentSales(int limit)
+    {
+        using var c = db.Open();
+        return c.Query("SELECT json FROM receipt WHERE kind = 'Sale' ORDER BY created_at DESC, client_id DESC LIMIT @l",
+            r => Deserialize(r.GetString(0)), ("@l", limit));
+    }
+
     public int CountPending()
     {
         using var c = db.Open();

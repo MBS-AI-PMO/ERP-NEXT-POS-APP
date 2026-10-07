@@ -32,12 +32,14 @@ public class ReturnBuilderTests
         ctx = new SaleContext(catalog, Money, "Standard Selling", "Stores - AAML", null, Vat, () => new DateOnly(2026, 10, 6));
     }
 
-    private Receipt SellMilk(int count)
+    private Receipt SellMilk(int count, int daysAgo = 0) => Sell("111", count, daysAgo);
+
+    private Receipt Sell(string barcode, int count, int daysAgo = 0)
     {
         var cart = new Cart(ctx);
-        for (var i = 0; i < count; i++) cart.AddBarcode("111");
+        for (var i = 0; i < count; i++) cart.AddBarcode(barcode);
         var plan = new PaymentCalculator(Money).Plan(cart.Totals().GrandTotal, Tender.Card());
-        return new SaleRecorder(store, 2, Modes, () => At.AddHours(-1)).CompleteSale(cart, plan, "cashier", "S1");
+        return new SaleRecorder(store, 2, Modes, () => At.AddHours(-1).AddDays(-daysAgo)).CompleteSale(cart, plan, "cashier", "S1");
     }
 
     private ReturnBuilder Builder() => new(store, ctx, 2, Modes, () => At);
@@ -174,5 +176,111 @@ public class ReturnBuilderTests
         var noReceipt = Builder().BuildWithoutReceipt(cart, TenderKind.Cash, "c", "S2", "SUP-1", "Expired", "s@x");
         Assert.Equal("Expired", noReceipt.Reason);
         Assert.Equal("s@x", noReceipt.CashierUser);
+    }
+
+    [Fact]
+    public void Preview_gives_the_build_totals_and_saves_nothing()
+    {
+        var sale = SellMilk(3);
+        var saved = store.Saved.Count;
+
+        var preview = Builder().Preview(sale, [new ReturnLineRequest(1, 2m)]);
+
+        Assert.Equal(saved, store.Saved.Count);
+        Assert.Equal(3m, Builder().Returnable(sale, 1));
+        var ret = Builder().Build(sale, [new ReturnLineRequest(1, 2m)], TenderKind.Cash, "c", "S2", null);
+        Assert.Equal(ret.GrandTotal, preview.GrandTotal);
+        Assert.Equal(ret.TotalTaxes, preview.TotalTaxes);
+        Assert.Equal(ret.RoundedTotal, preview.RefundDue);
+        Assert.Equal(ret.RoundingDifference, preview.RoundingDifference);
+        Assert.Equal(M("-13.580"), preview.GrandTotal);
+        Assert.Equal(M("-13.500"), preview.RefundDue);
+        Assert.Empty(preview.Needs);
+    }
+
+    [Fact]
+    public void Preview_refund_due_is_the_rounded_cash_amount()
+    {
+        var preview = Builder().Preview(SellMilk(1), [new ReturnLineRequest(1, 1m)]);
+        Assert.Equal(M("-6.790"), preview.GrandTotal);
+        Assert.Equal(M("-6.750"), preview.RefundDue);
+        Assert.Equal(M("0.040"), preview.RoundingDifference);
+    }
+
+    [Fact]
+    public void Preview_without_receipt_keeps_the_cart_and_always_needs_a_supervisor()
+    {
+        var cart = new Cart(ctx);
+        cart.AddBarcode("111");
+
+        var preview = Builder().PreviewWithoutReceipt(cart);
+
+        Assert.Single(cart.Lines);
+        Assert.Empty(store.Saved);
+        Assert.Equal(new[] { ApprovalAction.ReturnWithoutReceipt }, preview.Needs);
+        var ret = Builder().BuildWithoutReceipt(cart, TenderKind.Cash, "c", "S2", "SUP-1");
+        Assert.Equal(ret.GrandTotal, preview.GrandTotal);
+        Assert.Equal(ret.TotalTaxes, preview.TotalTaxes);
+        Assert.Equal(ret.RoundedTotal, preview.RefundDue);
+    }
+
+    [Fact]
+    public void Preview_refuses_what_build_refuses()
+    {
+        var sale = SellMilk(1);
+        Assert.Throws<ArgumentException>(() => Builder().Preview(sale, []));
+        Assert.Throws<ArgumentException>(() => Builder().Preview(sale, [new ReturnLineRequest(1, M("0.5"))]));
+        Assert.Throws<InvalidOperationException>(() => Builder().Preview(sale, [new ReturnLineRequest(1, 2m)]));
+        Assert.Throws<InvalidOperationException>(() => Builder().PreviewWithoutReceipt(new Cart(ctx)));
+        Assert.Single(store.Saved);
+    }
+
+    [Fact]
+    public void Preview_lists_every_approval_the_return_needs()
+    {
+        Assert.Empty(Builder().Preview(SellMilk(1), [new ReturnLineRequest(1, 1m)]).Needs);
+        Assert.Equal(new[] { ApprovalAction.ReturnOverLimit },
+            Builder().Preview(Sell("999", 1), [new ReturnLineRequest(1, 1m)]).Needs);
+        Assert.Equal(new[] { ApprovalAction.ReturnOldReceipt },
+            Builder().Preview(SellMilk(1, daysAgo: 8), [new ReturnLineRequest(1, 1m)]).Needs);
+        Assert.Equal(new[] { ApprovalAction.ReturnOverLimit, ApprovalAction.ReturnOldReceipt },
+            Builder().Preview(Sell("999", 1, daysAgo: 8), [new ReturnLineRequest(1, 1m)]).Needs);
+    }
+
+    [Fact]
+    public void A_receipt_exactly_seven_days_old_needs_no_supervisor() =>
+        Assert.Empty(Builder().Preview(SellMilk(1, daysAgo: 7), [new ReturnLineRequest(1, 1m)]).Needs);
+
+    [Fact]
+    public void The_age_limit_can_be_changed()
+    {
+        var builder = new ReturnBuilder(store, ctx, 2, Modes, () => At, maxAgeDays: 2);
+        Assert.Equal(new[] { ApprovalAction.ReturnOldReceipt }, builder.Preview(SellMilk(1, daysAgo: 3), [new ReturnLineRequest(1, 1m)]).Needs);
+    }
+
+    [Fact]
+    public void An_old_receipt_needs_a_supervisor()
+    {
+        var sale = SellMilk(1, daysAgo: 8);
+
+        Assert.Throws<ApprovalRequiredException>(() =>
+            Builder().Build(sale, [new ReturnLineRequest(1, 1m)], TenderKind.Cash, "c", "S2", null));
+        Assert.Single(store.Saved);
+
+        var ret = Builder().Build(sale, [new ReturnLineRequest(1, 1m)], TenderKind.Cash, "c", "S2", "SUP-1");
+        Assert.Equal("SUP-1", ret.ApprovedBy);
+    }
+
+    [Fact]
+    public void Returns_store_the_cashier_name()
+    {
+        var ret = Builder().Build(SellMilk(1), [new ReturnLineRequest(1, 1m)], TenderKind.Cash, "c", "S2", null, "Damaged", "s@x",
+            "Simran K");
+        Assert.Equal("Simran K", ret.CashierName);
+
+        var cart = new Cart(ctx);
+        cart.AddBarcode("111");
+        var noReceipt = Builder().BuildWithoutReceipt(cart, TenderKind.Cash, "c", "S2", "SUP-1", "Expired", "s@x", "Simran K");
+        Assert.Equal("Simran K", noReceipt.CashierName);
     }
 }

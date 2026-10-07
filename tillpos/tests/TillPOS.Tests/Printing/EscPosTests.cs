@@ -35,6 +35,55 @@ public class EscPosTests
         Assert.Equal(new byte[] { 0x1D, 0x21, 0x11 }, new EscPos().Size(true, true).ToArray());
     }
 
+    [Fact]
+    public void Code128_sets_height_width_and_text_below_then_prints_code_set_b() =>
+        Assert.Equal(new byte[]
+            {
+                0x1D, 0x68, 0x3C,                                  // GS h 60
+                0x1D, 0x77, 0x02,                                  // GS w 2
+                0x1D, 0x48, 0x02,                                  // GS H 2: text below
+                0x1D, 0x6B, 0x49, 0x06, 0x7B, 0x42, 0x54, 0x49, 0x4C, 0x4C,   // GS k 73 6 {B TILL
+            },
+            new EscPos().Barcode128("TILL").ToArray());
+
+    [Fact]
+    public void Code128_packs_digit_runs_in_code_set_c_so_an_invoice_number_fits_80mm_paper()
+    {
+        var bytes = new EscPos().Barcode128("TILL2-20261006153000-000001").ToArray();
+
+        var data = new byte[]
+        {
+            0x7B, 0x42, (byte)'T', (byte)'I', (byte)'L', (byte)'L', (byte)'2', (byte)'-',
+            0x7B, 0x43, 20, 26, 10, 6, 15, 30, 0,
+            0x7B, 0x42, (byte)'-',
+            0x7B, 0x43, 0, 0, 1,
+        };
+        Assert.Equal(new byte[] { 0x1D, 0x6B, 0x49, (byte)data.Length }.Concat(data), bytes[9..]);
+    }
+
+    [Fact]
+    public void Code128_keeps_an_odd_leading_digit_in_code_set_b_and_escapes_braces()
+    {
+        Assert.Equal(new byte[] { 0x7B, 0x42, (byte)'A', (byte)'1', 0x7B, 0x43, 23, 45 }, new EscPos().Barcode128("A12345").ToArray()[13..]);
+        Assert.Equal(new byte[] { 0x7B, 0x42, (byte)'A', 0x7B, 0x7B, (byte)'B' }, new EscPos().Barcode128("A{B").ToArray()[13..]);
+        Assert.Equal(new byte[] { 0x7B, 0x42, (byte)'1', (byte)'2', (byte)'3' }, new EscPos().Barcode128("123").ToArray()[13..]);
+    }
+
+    [Fact]
+    public void Code128_module_width_can_be_narrowed() =>
+        Assert.Equal(new byte[] { 0x1D, 0x77, 0x01 }, new EscPos().Barcode128("A", moduleWidth: 1).ToArray()[3..6]);
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("TILLÄ2")]
+    [InlineData("A\nB")]
+    public void Code128_refuses_anything_but_printable_ascii(string data) =>
+        Assert.Throws<ArgumentException>(() => new EscPos().Barcode128(data));
+
+    [Fact]
+    public void Code128_refuses_data_too_long_for_one_command() =>
+        Assert.Throws<ArgumentException>(() => new EscPos().Barcode128(new string('A', 254)));
+
     internal static bool Contains(byte[] haystack, byte[] needle)
     {
         for (var i = 0; i <= haystack.Length - needle.Length; i++)
