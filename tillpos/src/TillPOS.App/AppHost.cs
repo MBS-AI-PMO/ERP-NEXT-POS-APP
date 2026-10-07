@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.Security.Cryptography;
 using System.Windows.Threading;
@@ -61,24 +62,7 @@ public sealed class AppHost
 
     public async Task StartAsync()
     {
-        // CatalogPuller.RunAsync reports feed failures in its PullReport instead of throwing.
-        while (store.LoadPosSettings() is null)
-        {
-            Shell.Show(new StatusViewModel("Downloading items and prices from ERPNext…"));
-            string problem;
-            try
-            {
-                var report = await Task.Run(() => NewPuller().RunAsync());
-                if (store.LoadPosSettings() is not null) break;
-                problem = report.Feeds.FirstOrDefault(f => f.Error is not null)?.Error ?? "POS profile not found";
-            }
-            catch (Exception ex)
-            {
-                problem = ex.Message;
-            }
-            Shell.Show(new StatusViewModel($"Cannot reach ERPNext ({problem}). The first start needs the internet — retrying in 30 seconds."));
-            await Task.Delay(TimeSpan.FromSeconds(30));
-        }
+        if (store.LoadPosSettings() is null) await FirstDownloadAsync();
 
         Shell.ShopName = store.LoadPosSettings()!.CompanyName;
         Shell.Show(NewLogin());
@@ -88,6 +72,51 @@ public sealed class AppHost
     }
 
     public void Stop() => stop.Cancel();
+
+    /// <summary>The first start cannot sell before the POS profile and catalog are on the till: shows the download screen and
+    /// pulls until the POS settings exist, retrying every 30 s with a visible countdown. CatalogPuller.RunAsync reports feed
+    /// failures in its PullReport instead of throwing, so success is judged by the stored POS settings.</summary>
+    private async Task FirstDownloadAsync()
+    {
+        var retryIn = TimeSpan.FromSeconds(30);
+        var download = new DownloadViewModel(NewPuller().FeedNames);
+        Shell.Show(download);
+        var clock = Stopwatch.StartNew();
+        var timer = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Normal, (_, _) => download.Tick(clock.Elapsed), dispatcher);
+        timer.Start();
+        try
+        {
+            while (true)
+            {
+                // Created on the UI thread, so the puller's reports are posted back to it (in order, before the await resumes).
+                var progress = new Progress<PullProgress>(download.Apply);
+                string problem;
+                try
+                {
+                    var puller = NewPuller();
+                    var report = await Task.Run(() => puller.RunAsync(default, progress));
+                    if (store.LoadPosSettings() is not null) return;
+                    problem = report.Feeds.FirstOrDefault(f => f.Error is not null)?.Error ?? "POS profile not found";
+                }
+                catch (Exception ex)
+                {
+                    problem = ex.Message;
+                }
+
+                download.Failed(problem, retryIn);
+                for (var left = retryIn; left > TimeSpan.Zero;)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(1));
+                    left -= TimeSpan.FromSeconds(1);
+                    download.CountdownTick(left);
+                }
+            }
+        }
+        finally
+        {
+            timer.Stop();
+        }
+    }
 
     public object NewLogin() => new LoginViewModel(ctx, Shell.Session, NewSale);
 

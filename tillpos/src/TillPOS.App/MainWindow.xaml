@@ -7,6 +7,7 @@
         Background="{StaticResource Ground}" FontFamily="Segoe UI" FontSize="15">
   <Window.Resources>
     <DataTemplate DataType="{x:Type vm:StatusViewModel}"><views:StatusView /></DataTemplate>
+    <DataTemplate DataType="{x:Type vm:DownloadViewModel}"><views:DownloadView /></DataTemplate>
     <DataTemplate DataType="{x:Type vm:LoginViewModel}"><views:LoginView /></DataTemplate>
     <DataTemplate DataType="{x:Type vm:OpenShiftViewModel}"><views:OpenShiftView /></DataTemplate>
     <DataTemplate DataType="{x:Type vm:SaleViewModel}"><views:SaleView /></DataTemplate>
