@@ -163,3 +163,9 @@ Build: commit fd211a00 (Debug), `Upload = DryRun`, pointed at the dev sandbox `d
 - Previews: `TILL1-…-000001.json` (POS Invoice), `TILL1-SHIFT-…-opening.json`, `TILL1-SHIFT-…-closing.json` (with `pos_transactions`, `pos_payments`, `taxes`, `payment_reconciliation`), 7 `APPROVAL-*.json`. Field names match the live POS Awesome documents. Every item, UOM, warehouse, mode of payment, customer, tax template and profile reference was checked read-only on the sandbox.
 - Sandbox prepared via `tillpos/tools/erpnext-setup.mjs`: custom fields, TillPOS Approval, POS Cashier (+ two sandbox-only cashiers), `account_for_change_amount` on the three profiles (owner approved).
 - Next: Live upload on the **sandbox only** (Task 9), after the fix-wave review and the owner's go-ahead.
+
+## Build status (2026-10-08)
+
+Tasks 1–6 and the fix waves are implemented and reviewed on `feat/tillpos-ui-and-sync` (HEAD ee8bae0a): write guard (Off/DryRun/Live, Live refused in test builds and while a shift is open), payload builders, upload engine (lookup-first idempotency, in-flight marker, draft→check→submit, error classes, backoff, escalation), DryRun validation, cross-till returns with double-refund checks, Upload problems screen (Failed / Excluded / Handled, all supervisor-gated and logged), schema downgrade guard. 853 tests, 0 warnings. Test package 0.3.7 built (Upload = Off).
+
+Sandbox prepared (metadata + 2 cashiers + change accounts). **Task 9 (Live on the sandbox) waits for the owner's go-ahead.** Task 7/8 production items remain for the admin (TRN, cashiers, roles, Allow Negative Stock).
