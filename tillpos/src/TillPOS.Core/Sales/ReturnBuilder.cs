@@ -103,6 +103,8 @@ public sealed class ReturnBuilder(IReceiptStore store, SaleContext ctx, int till
         var needs = new List<ApprovalAction>();
         var alreadyRefunded = -returns.Sum(r => r.GrandTotal);
         if (alreadyRefunded - totals.GrandTotal > approvalLimit) needs.Add(ApprovalAction.ReturnOverLimit);
+        // Days are counted in the till's local time; a bill of another till carries ERPNext's posting time read as local time, so
+        // tills must run in the ERPNext site's time zone (UAE) for this rule to hold.
         if (DateOnly.FromDateTime(original.CreatedAt.LocalDateTime) < ctx.Today().AddDays(-maxAgeDays)) needs.Add(ApprovalAction.ReturnOldReceipt);
         return new Draft(WithAmounts(lines, totals), totals, original.ClientId, needs, original.Customer);
     }

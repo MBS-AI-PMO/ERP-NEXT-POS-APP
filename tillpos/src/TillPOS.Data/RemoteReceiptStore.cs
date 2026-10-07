@@ -46,7 +46,9 @@ public sealed record RemoteReceipt(
     }
 
     /// <summary>The bill as a <see cref="Receipt"/> read model: its ERPNext name stands for its number (so a return of it is
-    /// made against that name), its posting time is its time, and it belongs to no shift of this till.</summary>
+    /// made against that name), its posting time is its time, and it belongs to no shift of this till.
+    /// <para>ERPNext's posting time has no time zone: it is read as the till's local time. Tills must therefore run in the ERPNext
+    /// site's time zone (UAE, Gulf Standard Time), or the 7-day rule for returns counts from the wrong day.</para></summary>
     public Receipt ToReceipt()
     {
         var numbers = LineNumbers();

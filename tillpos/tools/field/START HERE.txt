@@ -10,6 +10,8 @@ WHAT YOU NEED
 - A Windows 10 or Windows 11 PC (64-bit).
 - Internet for the first start.
 - The receipt printer connected and installed in Windows.
+- The PC's clock set to the shop's time zone (UAE, "(UTC+04:00) Abu Dhabi,
+  Muscat"), the same as ERPNext. Returns of old bills depend on it.
 
 HOW TO START
 #ZIP#1. Unzip this file anywhere, for example on the Desktop.

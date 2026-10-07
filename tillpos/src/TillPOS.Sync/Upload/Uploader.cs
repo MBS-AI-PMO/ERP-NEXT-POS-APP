@@ -297,9 +297,14 @@ public sealed class Uploader
         }
         catch (KeyNotFoundException)
         {
-            return ClientIds.IsTillId(clientId) ? null : clientId;
+            return KnownRemoteName(clientId);
         }
     }
+
+    /// <summary>The ERPNext name of a downloaded bill of another till, or null (an approval never links a name the till does not
+    /// know: it goes without the invoice instead).</summary>
+    private string? KnownRemoteName(string id) =>
+        ClientIds.IsTillId(id) ? null : RemoteReceipts?.FindByErpName(id)?.ErpName;
 
     private async Task ApprovalsAsync(Run run, CancellationToken ct)
     {
@@ -308,7 +313,8 @@ public sealed class Uploader
             var a = entry.Record;
             var label = $"Approval {a.Action} ({a.Id})";
             // Approvals go after the shift and the bill they mention; one that names neither (or a bill that was never
-            // saved, e.g. a voided line) goes without the link. A bill of another till is linked by its ERPNext name.
+            // saved, e.g. a voided line) goes without the link. A bill of another till is linked by its ERPNext name when it is
+            // among the downloaded bills; any other name goes without the link.
             string? shiftName = null;
             var detached = false;
             if (!string.IsNullOrEmpty(a.ShiftClientId) && shifts.SyncInfo(a.ShiftClientId) is { } shift)
@@ -329,11 +335,13 @@ public sealed class Uploader
             string? invoiceName = null;
             if (detached)
                 invoiceName = string.IsNullOrEmpty(a.ReceiptClientId) ? null : UploadedName(a.ReceiptClientId);
-            else if (!string.IsNullOrEmpty(a.ReceiptClientId) && (receipts.Get(a.ReceiptClientId) is not null || !ClientIds.IsTillId(a.ReceiptClientId)))
+            else if (!string.IsNullOrEmpty(a.ReceiptClientId) && receipts.Get(a.ReceiptClientId) is not null)
             {
                 invoiceName = OriginalName(a.ReceiptClientId, run);
                 if (invoiceName is null) continue;
             }
+            else if (!string.IsNullOrEmpty(a.ReceiptClientId))
+                invoiceName = KnownRemoteName(a.ReceiptClientId);           // another till's bill when downloaded, else no link
             if (!Due(entry.NextAttemptAt, a.Id, label, entry.LastError, run)) continue;
             await UploadAsync(
                 new Doc(ApprovalPayload.Doctype, OfflineIdField, a.Id, $"APPROVAL-{a.Id}", label, false,

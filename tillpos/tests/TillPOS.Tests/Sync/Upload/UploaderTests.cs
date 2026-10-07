@@ -239,7 +239,9 @@ public sealed class UploaderTests : IDisposable
         approvals.Add(new ApprovalRecord("ap1", ApprovalAction.ReturnOldReceipt, "cashier1", "sup1", ShiftId, "ACC-PSINV-2026-00042", null,
             M("10.5"), "x", Morning.AddMinutes(65)));
 
-        var report = await New().RunOnceAsync();
+        ErpHas("ACC-PSINV-2026-00042", "TILL3-1", 3m);
+
+        var report = await WithCrossTillCheck().RunOnceAsync();
 
         var returned = InsertedInvoices.Single();
         Assert.Equal("ACC-PSINV-2026-00042", Str(returned, "return_against"));
@@ -328,6 +330,21 @@ public sealed class UploaderTests : IDisposable
         Assert.Empty(InsertedInvoices);
         Assert.Equal("Original ACC-PSINV-2026-00099 is not a submitted bill in ERPNext — check before retrying",
             receipts.SyncInfo("TILL2-R").LastError);
+    }
+
+    [Fact]
+    public async Task An_approval_names_an_invoice_only_when_the_till_knows_it_and_goes_without_one_otherwise()
+    {
+        OpenShift();
+        approvals.Add(new ApprovalRecord("ap1", ApprovalAction.ReturnOldReceipt, "cashier1", "sup1", ShiftId, "SOMETHING-ODD", null,
+            M("10.5"), "x", Morning.AddMinutes(65)));
+
+        var report = await WithCrossTillCheck().RunOnceAsync();
+
+        var approval = erp.Inserted.Single(i => i.Doctype == "TillPOS Approval").Doc;
+        Assert.Equal(JsonValueKind.Null, approval.GetProperty("invoice").ValueKind);
+        Assert.Empty(approvals.Outbox());
+        Assert.Empty(report.Problems);
     }
 
     [Fact]
