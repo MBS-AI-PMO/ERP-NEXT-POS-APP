@@ -20,7 +20,7 @@ public sealed class RecentInvoicesFeed(SyncContext ctx, RemoteReceiptStore remot
     private static readonly string[] Fields =
     [
         "docstatus", "posa_client_request_id", "pos_profile", "posting_date", "posting_time", "customer", "grand_total", "rounded_total",
-        "net_total", "total_taxes_and_charges", "is_return", "return_against",
+        "net_total", "total_taxes_and_charges", "is_return", "return_against", "discount_amount", "additional_discount_percentage",
     ];
 
     private static readonly string[] ItemFields = Child("POS Invoice Item",
@@ -74,7 +74,11 @@ public sealed class RecentInvoicesFeed(SyncContext ctx, RemoteReceiptStore remot
             .Select(p => new RemotePayment(p.Str("mode_of_payment"), p.Dec("amount"))).ToList();
         return new RemoteReceipt(row.Str("name"), clientId, TillOf(clientId), row.StrOrNull("pos_profile"), Posting(row),
             row.StrOrNull("customer"), row.Dec("grand_total"), row.Dec("rounded_total"), row.Dec("net_total"), row.Dec("total_taxes_and_charges"),
-            row.Bool("is_return"), row.StrOrNull("return_against"), lines, paid);
+            row.Bool("is_return"), row.StrOrNull("return_against"), lines, paid)
+        {
+            DiscountAmount = row.Dec("discount_amount"),
+            AdditionalDiscountPercentage = row.Dec("additional_discount_percentage"),
+        };
     }
 
     /// <summary>"TILL3" for a TillPOS client id ("TILL3-…"), else null (e.g. a POS Awesome counter's bill).</summary>

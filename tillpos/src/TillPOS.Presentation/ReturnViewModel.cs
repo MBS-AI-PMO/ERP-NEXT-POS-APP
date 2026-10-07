@@ -101,6 +101,9 @@ public sealed class ReturnViewModel : ObservableObject
     public const int RecentCount = 50;
     public const string SomethingChangedMessage = "Something changed — confirm again";
     public const string FromOtherTillMessage = "Bill from another till — found in ERPNext.";
+    public const string CannotRepriceMessage = "This bill has a discount or tax the till can't re-price — return it in ERPNext.";
+    /// <summary>How far the till's own pricing of another till's bill may be from ERPNext's grand total.</summary>
+    public const decimal RepriceTolerance = 0.01m;
 
     public static readonly IReadOnlyList<string> Reasons = ["Changed mind", "Damaged", "Expired", "Wrong item", "Other"];
 
@@ -285,6 +288,7 @@ public sealed class ReturnViewModel : ObservableObject
         }
         if (receipt is null) { Error($"Receipt {id} not found on this till. Ask a supervisor for a return without receipt."); return; }
         if (receipt.Kind != ReceiptKind.Sale) { Error($"{receipt.ClientId} is a credit note, not a sale — open the original sale."); return; }
+        if (remote is not null && !CanReprice(remote, receipt)) { Error(CannotRepriceMessage); return; }
 
         var lines = receipt.Lines.Select(l => new ReturnLine(l, Returned(returns, l.LineNo))).ToList();
         if (lines.All(l => l.Returnable <= 0m)) { Error($"Everything on {receipt.ClientId} has already been returned."); return; }
@@ -308,6 +312,21 @@ public sealed class ReturnViewModel : ObservableObject
         Info((remote is null ? "" : $"{FromOtherTillMessage} ") + (returns.Count > 0
             ? $"Part of {receipt.ClientId} was already returned — only what is left is shown."
             : $"Choose the items to return from {receipt.ClientId}."));
+    }
+
+    /// <summary>A bill of another till can be returned here only when the till prices it as ERPNext did: no whole-bill discount,
+    /// and the till's own pricing of its lines within <see cref="RepriceTolerance"/> of its grand total.</summary>
+    private bool CanReprice(RemoteReceipt remote, Receipt receipt)
+    {
+        if (remote.DiscountAmount != 0m || remote.AdditionalDiscountPercentage != 0m) return false;
+        try
+        {
+            return Math.Abs(builder.RepricedGrandTotal(receipt) - remote.GrandTotal) <= RepriceTolerance;
+        }
+        catch (Exception)
+        {
+            return false;                                           // e.g. a tax template the till does not have
+        }
     }
 
     /// <summary>Every line to its whole returnable quantity.</summary>

@@ -38,6 +38,10 @@ public sealed class ReturnBuilder(IReceiptStore store, SaleContext ctx, int till
     public IReadOnlyList<Receipt> ReturnsOf(Receipt original) =>
         [.. store.ReturnsAgainst(original.ClientId), .. otherTills?.ReturnsAgainst(original) ?? []];
 
+    /// <summary>The bill's grand total as this till prices its lines (rates, item tax templates, the counter's tax template): a
+    /// bill of another till whose own total differs was priced in a way the till cannot repeat (e.g. a different tax).</summary>
+    public decimal RepricedGrandTotal(Receipt original) => Price(original.Lines).GrandTotal;
+
     private static decimal Returned(IReadOnlyList<Receipt> returns, int lineNo) =>
         returns.SelectMany(r => r.Lines).Where(l => l.LineNo == lineNo).Sum(l => -l.Qty);
 

@@ -115,11 +115,11 @@ public sealed class ReturnViewModelTests : IDisposable
     {
         var posting = new DateTime(2026, 10, 7, 9, 0, 0).AddDays(-daysAgo);
         f.Ctx.RemoteReceipts!.Upsert(new RemoteReceipt(OtherTillName, OtherTillId, "TILL3", "Al Ain Counter 1", posting, "Walk-in Customer",
-            21.39m, 21.5m, 20.37m, 1.02m, false, null, [RemoteMilk("1", 3m)], [new RemotePayment("Cash Counter 1", 21.5m)]), f.Clock.Now);
+            20.37m, 20.25m, 19.40m, 0.97m, false, null, [RemoteMilk("1", 3m)], [new RemotePayment("Cash Counter 1", 20.25m)]), f.Clock.Now);
         if (returnedOnTill4)
             f.Ctx.RemoteReceipts.Upsert(new RemoteReceipt("ACC-PSINV-2026-00050", "TILL4-20261006130000-000001", "TILL4", "Al Ain Counter 1",
-                posting.AddHours(1), "Walk-in Customer", -7.13m, -7.25m, -6.79m, -0.34m, true, OtherTillName, [RemoteMilk("1", -1m)],
-                [new RemotePayment("Cash Counter 1", -7.25m)]), f.Clock.Now);
+                posting.AddHours(1), "Walk-in Customer", -6.79m, -6.75m, -6.47m, -0.32m, true, OtherTillName, [RemoteMilk("1", -1m)],
+                [new RemotePayment("Cash Counter 1", -6.75m)]), f.Clock.Now);
     }
 
     [Fact]
@@ -177,6 +177,40 @@ public sealed class ReturnViewModelTests : IDisposable
         vm.Scan(OtherTillId);
         vm.Lines[0].IncrementCommand.Execute(null);
         Assert.Equal("Needs supervisor: receipt older than 7 days", vm.NeedsText);
+    }
+
+    [Fact]
+    public void A_bill_of_another_till_with_a_discount_is_refused()
+    {
+        OtherTillSale();
+        var bill = f.Ctx.RemoteReceipts!.FindByErpName(OtherTillName)!;
+        f.Ctx.RemoteReceipts.Upsert(bill with { DiscountAmount = 1m }, f.Clock.Now);
+        var vm = OpenReturns();
+        vm.Scan(OtherTillId);
+        Assert.True(vm.IsFind);
+        Assert.True(vm.MessageIsError);
+        Assert.Equal(ReturnViewModel.CannotRepriceMessage, vm.Message);
+
+        f.Ctx.RemoteReceipts.Upsert(bill with { AdditionalDiscountPercentage = 5m }, f.Clock.Now);
+        vm.FindText = OtherTillName;
+        vm.FindCommand.Execute(null);
+        Assert.Equal((true, ReturnViewModel.CannotRepriceMessage), (vm.IsFind, vm.Message));
+    }
+
+    [Fact]
+    public void A_bill_of_another_till_whose_total_the_till_cannot_rebuild_is_refused()
+    {
+        OtherTillSale();
+        var bill = f.Ctx.RemoteReceipts!.FindByErpName(OtherTillName)!;
+        f.Ctx.RemoteReceipts.Upsert(bill with { GrandTotal = 21.39m }, f.Clock.Now);        // VAT added on top in ERPNext; the till's is included
+        var vm = OpenReturns();
+        vm.Scan(OtherTillId);
+        Assert.Equal((true, true, "This bill has a discount or tax the till can't re-price — return it in ERPNext."),
+            (vm.IsFind, vm.MessageIsError, vm.Message));
+
+        f.Ctx.RemoteReceipts.Upsert(bill with { GrandTotal = 20.375m }, f.Clock.Now);       // within 0.01 of the till's 20.37
+        vm.Scan(OtherTillId);
+        Assert.True(vm.IsChoose, vm.Message);
     }
 
     [Fact]

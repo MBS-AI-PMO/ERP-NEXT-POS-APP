@@ -50,7 +50,8 @@ public sealed class RecentInvoicesFeedTests : IDisposable
             ["name"] = name, ["modified"] = modified, ["docstatus"] = docstatus, ["company"] = company, ["posa_client_request_id"] = clientId,
             ["pos_profile"] = "Al Ain Counter 1", ["posting_date"] = postingDate, ["posting_time"] = "9:05:03.123456",
             ["customer"] = "Walk-in Customer", ["grand_total"] = 7.13m, ["rounded_total"] = 7.25m, ["net_total"] = 6.79m,
-            ["total_taxes_and_charges"] = 0.34m, ["is_return"] = returnAgainst is null ? 0 : 1, ["return_against"] = returnAgainst,
+            ["discount_amount"] = name == "ACC-PSINV-2026-00042" ? "0.5" : 0, ["additional_discount_percentage"] = name == "ACC-PSINV-2026-00042" ? 2.5m : 0,
+                        ["total_taxes_and_charges"] = 0.34m, ["is_return"] = returnAgainst is null ? 0 : 1, ["return_against"] = returnAgainst,
         };
         erp.AddRow("POS Invoice", row);
         items[name] = lines.Select((l, i) => new Dictionary<string, object?>
@@ -88,6 +89,7 @@ public sealed class RecentInvoicesFeedTests : IDisposable
             (sale.Lines[0].ItemName, sale.Lines[0].Uom, sale.Lines[0].ConversionFactor, sale.Lines[0].Rate, sale.Lines[0].Barcode, sale.Lines[0].ItemTaxTemplate));
         Assert.Equal(new[] { new RemotePayment("Cash Counter 1", M("7.25")) }, sale.Payments);   // unused modes left out
 
+        Assert.Equal((M("0.50"), M("2.5")), (sale.DiscountAmount, sale.AdditionalDiscountPercentage));
         Assert.Null(remote.FindByErpName("ACC-PSINV-2026-00043")!.Till);                      // a POS Awesome counter's bill
         Assert.Null(remote.FindByErpName("ACC-PSINV-2026-00044"));                            // this till's own bill
         var ret = remote.FindByErpName("ACC-PSINV-2026-00045")!;

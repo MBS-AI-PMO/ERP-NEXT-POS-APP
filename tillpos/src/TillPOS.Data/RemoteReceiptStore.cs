@@ -30,6 +30,12 @@ public sealed record RemoteReceipt(
     IReadOnlyList<RemoteLine> Lines,
     IReadOnlyList<RemotePayment> Payments)
 {
+    /// <summary>ERPNext's whole-bill discount (discount_amount) and its percentage (additional_discount_percentage): the till
+    /// cannot re-price such a bill, so it is not returned here.</summary>
+    public decimal DiscountAmount { get; init; }
+
+    public decimal AdditionalDiscountPercentage { get; init; }
+
     /// <summary>The line numbers given to <see cref="Lines"/>: their posa_row_id when every one is a distinct positive number
     /// (a TillPOS bill keeps its own line numbers), otherwise their position (1, 2, …).</summary>
     public IReadOnlyList<int> LineNumbers()
