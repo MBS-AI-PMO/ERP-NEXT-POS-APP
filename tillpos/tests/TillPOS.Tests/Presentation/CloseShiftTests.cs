@@ -287,6 +287,64 @@ public sealed class CloseShiftTests : IDisposable
         Assert.Equal("sup", Assert.Single(f.Output.ShiftReports).ApprovedBy);
     }
 
+    // ---- Recount cannot skip the gate ----
+
+    [Fact]
+    public async Task A_recount_after_a_count_over_the_limit_still_needs_a_supervisor()
+    {
+        var vm = Counted("313.45");                                              // 10 short
+        Assert.Equal(-10m, vm.CashDifference);
+        vm.RecountCommand.Execute(null);
+        vm.UseTotalInstead.Text = "323.45";                                      // now exact
+        vm.ConfirmCount();
+
+        Assert.Equal(0m, vm.CashDifference);
+        Assert.Equal(-10m, vm.FirstCashDifference);
+        Assert.True(vm.NeedsSupervisor);
+
+        f.Dialogs.Pins.Enqueue("1111");                                         // a cashier PIN is refused
+        await vm.CloseAsync();
+        Assert.NotNull(f.Ctx.Shifts.Current());
+        Assert.Empty(f.Output.ShiftReports);
+
+        f.Dialogs.Pins.Enqueue("9999");
+        await vm.CloseAsync();
+
+        Assert.Null(f.Ctx.Shifts.Current());
+        var approval = Assert.Single(f.Ctx.Approvals.Unsynced(), a => a.Action == ApprovalAction.ShiftVariance);
+        Assert.Equal("Cash difference 0.00 (first count -10.00)", approval.Reason);
+        Assert.Equal(0m, approval.Amount);
+        var report = Assert.Single(f.Output.ShiftReports);
+        Assert.Equal(-10m, report.FirstCountDifference);
+        Assert.Equal("sup", report.ApprovedBy);
+    }
+
+    [Fact]
+    public async Task A_recount_after_a_count_within_the_limit_needs_no_supervisor()
+    {
+        var vm = Counted("320");                                                 // 3.45 short
+        vm.RecountCommand.Execute(null);
+        vm.UseTotalInstead.Text = "323.45";
+        vm.ConfirmCount();
+
+        Assert.False(vm.NeedsSupervisor);
+        await vm.CloseAsync();
+
+        Assert.Equal(0, f.Dialogs.PinRequests);
+        Assert.Null(f.Ctx.Shifts.Current());
+        Assert.Equal(M("-3.45"), Assert.Single(f.Output.ShiftReports).FirstCountDifference);
+    }
+
+    [Fact]
+    public async Task A_recount_to_the_same_difference_prints_no_first_count_line()
+    {
+        var vm = Counted("320");
+        vm.RecountCommand.Execute(null);
+        vm.ConfirmCount();
+        await vm.CloseAsync();
+        Assert.Null(Assert.Single(f.Output.ShiftReports).FirstCountDifference);
+    }
+
     // ---- Close ----
 
     [Fact]

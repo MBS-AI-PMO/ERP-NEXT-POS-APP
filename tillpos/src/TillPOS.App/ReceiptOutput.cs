@@ -25,17 +25,19 @@ public sealed class ReceiptOutput(TillSettings settings, CatalogStore store) : I
     }
 
     /// <summary>The shift (Z) report; with no printer it is written to "SHIFT-{shift id}.txt" in the receipts folder.</summary>
-    public void PrintShiftReport(ShiftOpening opening, ShiftClosing closing, string cashierName, string? approvedBy)
+    public void PrintShiftReport(ShiftOpening opening, ShiftClosing closing, string cashierName, string? approvedBy,
+        decimal? firstCountDifference)
     {
         var header = Header();
         if (string.IsNullOrWhiteSpace(settings.PrinterName))
         {
             File.WriteAllLines(Path.Combine(ReceiptsFolder(), $"SHIFT-{opening.ClientId}.txt"),
-                ShiftReportRenderer.TextLines(opening, closing, header, cashierName, approvedBy, settings.PaperWidth));
+                ShiftReportRenderer.TextLines(opening, closing, header, cashierName, approvedBy, settings.PaperWidth,
+                    firstCountDifference));
             return;
         }
         RawPrinter.Send(settings.PrinterName,
-            ShiftReportRenderer.EscPosBytes(opening, closing, header, cashierName, approvedBy, settings.PaperWidth));
+            ShiftReportRenderer.EscPosBytes(opening, closing, header, cashierName, approvedBy, settings.PaperWidth, firstCountDifference));
     }
 
     private string ReceiptsFolder()

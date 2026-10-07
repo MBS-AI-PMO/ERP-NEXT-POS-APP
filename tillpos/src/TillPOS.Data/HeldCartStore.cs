@@ -15,7 +15,7 @@ public sealed class HeldCartStore(TillDb db)
         return held;
     }
 
-    /// <summary>Stores a held bill as it is (same id, label and time); used to put a taken bill back when its recall failed.</summary>
+    /// <summary>Stores a held bill as it is (same id, label and time).</summary>
     public void Put(HeldCart held)
     {
         using var c = db.Open();

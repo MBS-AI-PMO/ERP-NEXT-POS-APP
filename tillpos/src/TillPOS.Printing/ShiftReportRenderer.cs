@@ -11,8 +11,9 @@ public static class ShiftReportRenderer
     private const int LabelWidth = 8;    // "Cashier "
     private const string Signature = "Signature: ____________________";
 
+    /// <param name="firstCountDifference">The first count's cash difference when a recount changed it; printed when given.</param>
     public static IReadOnlyList<PrintLine> Layout(ShiftOpening opening, ShiftClosing closing, ReceiptHeader h, string cashierName,
-        string? approvedBy, PaperWidth paper)
+        string? approvedBy, PaperWidth paper, decimal? firstCountDifference = null)
     {
         var w = (int)paper;
         var lines = new List<PrintLine>();
@@ -40,6 +41,8 @@ public static class ShiftReportRenderer
             foreach (var text in table.Rows(mode)) Add(text);
         Rule();
 
+        if (firstCountDifference is { } first)
+            foreach (var part in Wrap("First count difference: " + Money(first), w)) Add(part);
         if (!string.IsNullOrWhiteSpace(approvedBy))
             foreach (var part in Wrap("Variance approved by: " + approvedBy, w)) Add(part);
         Add(Fit(Signature, w));
@@ -48,13 +51,13 @@ public static class ShiftReportRenderer
 
     /// <summary>Plain text (the report file when no printer is configured).</summary>
     public static IReadOnlyList<string> TextLines(ShiftOpening opening, ShiftClosing closing, ReceiptHeader h, string cashierName,
-        string? approvedBy, PaperWidth paper) =>
-        PlainText(Layout(opening, closing, h, cashierName, approvedBy, paper), paper);
+        string? approvedBy, PaperWidth paper, decimal? firstCountDifference = null) =>
+        PlainText(Layout(opening, closing, h, cashierName, approvedBy, paper, firstCountDifference), paper);
 
     /// <summary>ESC/POS bytes for the thermal printer; the drawer is never opened.</summary>
     public static byte[] EscPosBytes(ShiftOpening opening, ShiftClosing closing, ReceiptHeader h, string cashierName, string? approvedBy,
-        PaperWidth paper) =>
-        StyledBytes(Layout(opening, closing, h, cashierName, approvedBy, paper), openDrawer: false);
+        PaperWidth paper, decimal? firstCountDifference = null) =>
+        StyledBytes(Layout(opening, closing, h, cashierName, approvedBy, paper, firstCountDifference), openDrawer: false);
 
     private static string Time(DateTimeOffset at) => at.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture);
 

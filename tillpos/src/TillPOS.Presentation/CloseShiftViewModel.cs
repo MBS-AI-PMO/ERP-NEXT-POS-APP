@@ -33,8 +33,10 @@ public sealed record ShiftResultRow(string Mode, string Expected, string Counted
 /// <summary>Close shift in two stages. Stage 1 is a blind count: the cashier counts the cash (by note and coin, or one total)
 /// and enters the card machine's settlement total; nothing here shows or depends on the expected amounts, which are not even
 /// worked out until the count is confirmed. Stage 2 shows expected / counted / difference per mode with the bill count and
-/// totals; closing with a cash difference over <see cref="VarianceLimit"/> needs a supervisor. Closing stores the closing,
-/// prints the shift (Z) report, logs the cashier out and goes to the login screen.</summary>
+/// totals; closing with a cash difference over <see cref="VarianceLimit"/> needs a supervisor. A recount cannot avoid that:
+/// once any confirmed count was over the limit, the supervisor is needed for the rest of this close, and the first count's
+/// difference goes in the approval and on the report. Closing stores the closing, prints the shift (Z) report, logs the
+/// cashier out and goes to the login screen.</summary>
 public sealed class CloseShiftViewModel : ObservableObject
 {
     /// <summary>AED notes and coins, largest first.</summary>
@@ -49,6 +51,8 @@ public sealed class CloseShiftViewModel : ObservableObject
     private readonly Action back;
     private readonly Action done;
     private ShiftClosing? closing;
+    private decimal? firstCashDifference;
+    private bool overLimitSeen;
     private bool closed;
     private string message = "";
     private bool messageIsError;
@@ -98,7 +102,10 @@ public sealed class CloseShiftViewModel : ObservableObject
     public string VatText => closing is null ? "" : Format.Money(closing.TotalTaxes);
     public decimal CashDifference => closing?.Modes.FirstOrDefault(m => m.ModeOfPayment == ctx.Modes.Cash)?.Difference ?? 0m;
     public string CashDifferenceText => closing is null ? "" : Format.Money(CashDifference);
-    public bool NeedsSupervisor => closing is not null && Math.Abs(CashDifference) > VarianceLimit;
+    public bool NeedsSupervisor => closing is not null && (overLimitSeen || Math.Abs(CashDifference) > VarianceLimit);
+
+    /// <summary>The cash difference of the first confirmed count (null until a count is confirmed).</summary>
+    public decimal? FirstCashDifference => firstCashDifference;
 
     public AsyncRelayCommand CloseCommand { get; }
     public RelayCommand RecountCommand { get; }
@@ -129,6 +136,8 @@ public sealed class CloseShiftViewModel : ObservableObject
         foreach (var m in result.Modes)
             Rows.Add(new ShiftResultRow(m.ModeOfPayment, Format.Money(m.Expected), Format.Money(m.Counted), Format.Money(m.Difference),
                 m.Difference != 0m));
+        firstCashDifference ??= CashDifference;
+        if (Math.Abs(CashDifference) > VarianceLimit) overLimitSeen = true;
         ResultChanged();
         if (NeedsSupervisor) Error($"The cash difference is over {Format.Money(VarianceLimit)} — a supervisor must approve closing the shift.");
         else Info("");
@@ -145,7 +154,9 @@ public sealed class CloseShiftViewModel : ObservableObject
         if (NeedsSupervisor)
         {
             var diff = CashDifference;
-            approvedBy = await gate.ApproveAsync(ApprovalAction.ShiftVariance, $"Cash difference {Format.Money(diff)}", null, null, diff);
+            var reason = $"Cash difference {Format.Money(diff)}" +
+                (FirstCountDiffers() is { } first ? $" (first count {Format.Money(first)})" : "");
+            approvedBy = await gate.ApproveAsync(ApprovalAction.ShiftVariance, reason, null, null, diff);
             if (approvedBy is null)
             {
                 Error("The shift is still open: a supervisor must approve the cash difference, or recount.");
@@ -167,7 +178,7 @@ public sealed class CloseShiftViewModel : ObservableObject
 
         try
         {
-            ctx.Output.PrintShiftReport(opening, result, session.Cashier?.Name ?? opening.Cashier, approvedBy);
+            ctx.Output.PrintShiftReport(opening, result, session.Cashier?.Name ?? opening.Cashier, approvedBy, FirstCountDiffers());
         }
         catch (Exception ex)
         {
@@ -179,6 +190,9 @@ public sealed class CloseShiftViewModel : ObservableObject
         session.Cashier = null;
         done();
     }
+
+    /// <summary>The first count's cash difference when a recount changed it, otherwise null.</summary>
+    private decimal? FirstCountDiffers() => firstCashDifference is { } first && first != CashDifference ? first : null;
 
     private void CountChanged()
     {
@@ -211,6 +225,7 @@ public sealed class CloseShiftViewModel : ObservableObject
         OnPropertyChanged(nameof(CashDifference));
         OnPropertyChanged(nameof(CashDifferenceText));
         OnPropertyChanged(nameof(NeedsSupervisor));
+        OnPropertyChanged(nameof(FirstCashDifference));
     }
 
     private void Info(string text) { Message = text; MessageIsError = false; }

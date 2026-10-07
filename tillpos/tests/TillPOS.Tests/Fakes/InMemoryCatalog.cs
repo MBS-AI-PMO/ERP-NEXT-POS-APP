@@ -29,7 +29,14 @@ public sealed class InMemoryCatalog : ICatalog
         return c;
     }
 
-    public Item? FindItem(string itemCode) => Items.FirstOrDefault(i => i.ItemCode == itemCode);
+    /// <summary>Called on every item lookup (tests use it to act part-way through an operation).</summary>
+    public Action<string>? OnFindItem { get; set; }
+
+    public Item? FindItem(string itemCode)
+    {
+        OnFindItem?.Invoke(itemCode);
+        return Items.FirstOrDefault(i => i.ItemCode == itemCode);
+    }
     public ItemBarcode? FindBarcode(string barcode) => Barcodes.FirstOrDefault(b => b.Barcode == barcode);
 
     public decimal? ConversionFactor(string itemCode, string uom)

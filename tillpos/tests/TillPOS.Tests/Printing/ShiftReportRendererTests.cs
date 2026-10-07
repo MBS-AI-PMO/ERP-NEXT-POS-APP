@@ -105,6 +105,23 @@ public class ShiftReportRendererTests
     [Theory]
     [InlineData(PaperWidth.Mm80)]
     [InlineData(PaperWidth.Mm58)]
+    public void The_first_count_difference_is_printed_only_when_given(PaperWidth paper)
+    {
+        var lines = ShiftReportRenderer.Layout(Opening, Closing(), Header, "Test Cashier", "supervisor1", paper, M("-10")).ToList();
+        AssertFits(lines, paper);
+        var text = lines.Select(l => l.Text).ToList();
+        var first = text.IndexOf("First count difference: -10.00");
+        Assert.True(first > 0);
+        Assert.True(first < text.FindIndex(t => t.StartsWith("Variance approved by:", StringComparison.Ordinal)));
+
+        Assert.DoesNotContain(Layout(paper, "supervisor1").Select(l => l.Text), t => t.StartsWith("First count", StringComparison.Ordinal));
+        Assert.Contains("First count difference: 2.50",
+            ShiftReportRenderer.TextLines(Opening, Closing(), Header, "Test Cashier", null, paper, M("2.5")));
+    }
+
+    [Theory]
+    [InlineData(PaperWidth.Mm80)]
+    [InlineData(PaperWidth.Mm58)]
     public void Long_names_huge_amounts_and_returns_still_fit(PaperWidth paper)
     {
         var closing = Closing(

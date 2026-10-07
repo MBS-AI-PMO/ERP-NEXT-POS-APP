@@ -285,7 +285,7 @@ public sealed class PriceHoldRecallTests : IDisposable
     }
 
     [Fact]
-    public void A_recall_that_fails_part_way_puts_the_bill_back_on_hold_and_leaves_the_screen_empty()
+    public void A_recall_that_fails_part_way_leaves_the_bill_on_hold_and_the_screen_empty()
     {
         // A stored bill whose second line is broken: Restore adds the milk, then throws on the null line.
         var broken = new HeldCart("BROKEN", "09:00 · Simran · 2 items · 9.38", f.Clock.Now.AddHours(-1),
@@ -306,6 +306,47 @@ public sealed class PriceHoldRecallTests : IDisposable
         Assert.Equal(broken.Label, back.Label);
         Assert.Equal(broken.HeldAt, back.HeldAt);
         Assert.Equal(1, sale.HeldCount);
+    }
+
+    [Fact]
+    public void The_held_bill_is_removed_only_after_it_is_on_the_screen()
+    {
+        var sale = NewSale();
+        sale.Scan("111");
+        sale.Hold();
+        var stillHeld = new List<int>();
+        f.Catalog.OnFindItem = _ => stillHeld.Add(f.Ctx.Held.List().Count);
+        f.Dialogs.OnHeldBills = vm => vm.Bills[0].Id;
+
+        sale.Recall();
+
+        Assert.NotEmpty(stillHeld);
+        Assert.All(stillHeld, n => Assert.Equal(1, n));                 // still on hold while the lines are restored
+        Assert.Empty(f.Ctx.Held.List());
+        Assert.Equal("Bill recalled", sale.Message);
+    }
+
+    [Fact]
+    public void A_bill_taken_elsewhere_during_the_recall_stays_on_the_screen()
+    {
+        var sale = NewSale();
+        sale.Scan("111");
+        sale.Scan("111");
+        sale.Hold();
+        f.Dialogs.OnHeldBills = vm =>
+        {
+            var id = vm.Bills[0].Id;
+            f.Catalog.OnFindItem = _ => { f.Catalog.OnFindItem = null; f.Ctx.Held.Take(id); };   // another till/window takes it
+            return id;
+        };
+
+        sale.Recall();
+
+        Assert.True(sale.MessageIsError);
+        Assert.Equal("That bill was already recalled elsewhere — check the items", sale.Message);
+        Assert.Equal("2", Assert.Single(sale.Lines).Qty);
+        Assert.Empty(f.Ctx.Held.List());
+        Assert.Equal("2", Assert.Single(NewSale().Lines).Qty);           // and it is in the autosave
     }
 
     [Fact]

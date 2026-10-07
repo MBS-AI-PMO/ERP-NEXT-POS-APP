@@ -233,7 +233,9 @@ public sealed class SaleViewModel : ObservableObject
         RefreshHeldCount();
     }
 
-    /// <summary>F7: recalls a held bill onto an empty bill (never onto, or merged with, the current one). Lines are re-priced.</summary>
+    /// <summary>F7: recalls a held bill onto an empty bill (never onto, or merged with, the current one). Lines are re-priced.
+    /// The bill is restored and saved as the autosave before it is removed from the held bills, so a failure at any step
+    /// leaves it on hold (or, at worst, both on hold and on the screen) — never lost.</summary>
     public void Recall()
     {
         if (Cart.Lines.Count > 0) { Error("Finish or hold the current bill first"); return; }
@@ -248,7 +250,7 @@ public sealed class SaleViewModel : ObservableObject
         HeldCart? held;
         try
         {
-            held = ctx.Held.Take(id);
+            held = ctx.Held.List().FirstOrDefault(h => h.Id == id);
         }
         catch (Exception ex)
         {
@@ -256,6 +258,7 @@ public sealed class SaleViewModel : ObservableObject
             return;
         }
         if (held is null) { Error("That bill was already recalled"); RefreshHeldCount(); return; }
+
         IReadOnlyList<(HeldLine Line, AddOutcome Outcome)> failed;
         try
         {
@@ -263,12 +266,25 @@ public sealed class SaleViewModel : ObservableObject
         }
         catch (Exception)
         {
-            RecallFailed(held);
+            RecallFailed();
             return;
         }
-        if (failed.Count > 0) Error($"{failed.Count.ToString(CultureInfo.InvariantCulture)} item(s) on the held bill can no longer be sold");
+        Refresh();
+        if (!SaveAutosave()) { RecallFailed(); return; }
+
+        HeldCart? taken;
+        try
+        {
+            taken = ctx.Held.Take(id);
+        }
+        catch (Exception)
+        {
+            RecallFailed();
+            return;
+        }
+        if (taken is null) Error("That bill was already recalled elsewhere — check the items");
+        else if (failed.Count > 0) Error($"{failed.Count.ToString(CultureInfo.InvariantCulture)} item(s) on the held bill can no longer be sold");
         else Info("Bill recalled");
-        Changed();
         RefreshHeldCount();
     }
 
@@ -333,21 +349,9 @@ public sealed class SaleViewModel : ObservableObject
         ctx.Navigator.Show(newLogin());
     }
 
-    /// <summary>The recall could not restore the bill: it goes back on hold (same id, label and time) and the screen is left
-    /// empty. If even that fails, the restored lines stay on the bill (and in the autosave) so nothing is lost.</summary>
-    private void RecallFailed(HeldCart held)
+    /// <summary>The recall could not finish: the held bill was never removed, so the screen is emptied again (autosave "[]").</summary>
+    private void RecallFailed()
     {
-        try
-        {
-            ctx.Held.Put(held);
-        }
-        catch (Exception ex)
-        {
-            Changed();
-            Error($"Could not recall the whole bill ({ex.Message}) — check the lines on the screen against the customer's items.");
-            RefreshHeldCount();
-            return;
-        }
         Cart.Clear();
         Changed();
         Error("Could not recall the bill — it is still on hold");
@@ -438,13 +442,20 @@ public sealed class SaleViewModel : ObservableObject
     private void Changed()
     {
         Refresh();
+        if (!SaveAutosave()) Error("Could not save the unfinished bill — finish this sale normally.");
+    }
+
+    /// <summary>Saves the cart as the autosave; false when that failed.</summary>
+    private bool SaveAutosave()
+    {
         try
         {
             ctx.Kv.SetValue(AutosaveKey, JsonSerializer.Serialize(Cart.Snapshot()));
+            return true;
         }
         catch (Exception)
         {
-            Error("Could not save the unfinished bill — finish this sale normally.");
+            return false;
         }
     }
 

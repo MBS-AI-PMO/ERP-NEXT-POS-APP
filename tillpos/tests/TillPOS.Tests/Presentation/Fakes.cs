@@ -83,11 +83,13 @@ public sealed class FakeOutput : IReceiptOutput
         Printed.Add((receipt, openDrawer, copy));
     }
 
-    public List<(ShiftOpening Opening, ShiftClosing Closing, string CashierName, string? ApprovedBy)> ShiftReports { get; } = [];
+    public List<(ShiftOpening Opening, ShiftClosing Closing, string CashierName, string? ApprovedBy, decimal? FirstCountDifference)>
+        ShiftReports { get; } = [];
 
-    public void PrintShiftReport(ShiftOpening opening, ShiftClosing closing, string cashierName, string? approvedBy)
+    public void PrintShiftReport(ShiftOpening opening, ShiftClosing closing, string cashierName, string? approvedBy,
+        decimal? firstCountDifference)
     {
         if (Fail) throw new InvalidOperationException("Printer offline");
-        ShiftReports.Add((opening, closing, cashierName, approvedBy));
+        ShiftReports.Add((opening, closing, cashierName, approvedBy, firstCountDifference));
     }
 }

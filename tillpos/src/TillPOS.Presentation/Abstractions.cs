@@ -45,8 +45,9 @@ public interface IReceiptOutput
     void Print(Receipt receipt, bool openDrawer, bool copy = false);
 
     /// <summary>Prints the shift (Z) report; throws if the printer fails (the shift is already closed). Never opens the drawer.
-    /// <paramref name="approvedBy"/> is the supervisor who approved a cash difference over the limit, if one was needed.</summary>
-    void PrintShiftReport(ShiftOpening opening, ShiftClosing closing, string cashierName, string? approvedBy);
+    /// <paramref name="approvedBy"/> is the supervisor who approved a cash difference over the limit, if one was needed;
+    /// <paramref name="firstCountDifference"/> is the first count's cash difference when a recount changed it.</summary>
+    void PrintShiftReport(ShiftOpening opening, ShiftClosing closing, string cashierName, string? approvedBy, decimal? firstCountDifference);
 }
 
 /// <summary>Everything the view models need from the rest of the till, assembled once by the app.</summary>
