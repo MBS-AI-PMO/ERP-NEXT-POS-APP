@@ -134,13 +134,10 @@ public sealed class Uploader
             return;
         }
 
-        // An excluded shift (from before the till went Live) is never uploaded; bills taken in it since are excluded too.
+        // An excluded shift (closed before the till went Live) is never uploaded. Nothing is excluded here: what is excluded was
+        // decided once, at the first switch to Live (UploadHistory).
         var sync = entry.Sync;
-        if (sync.OpeningStatus == UploadStatus.Excluded)
-        {
-            if (Mode == UploadMode.Live) shifts.Exclude(id);
-            return;
-        }
+        if (sync.OpeningStatus == UploadStatus.Excluded) return;
         if (sync.OpeningStatus == UploadStatus.Handled)
         {
             run.Add(id, $"Opening of shift {id} was handled by hand: its other documents wait (they need its ERPNext name).");

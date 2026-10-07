@@ -53,7 +53,8 @@ public sealed class ExcludedHistoryTests : IDisposable
     {
         Assert.Equal(2, UploadHistory.EarlierShifts(shifts, kv, goLive));
 
-        Assert.Equal(2, UploadHistory.SwitchToLive(shifts, kv, goLive, includeHistory: false));
+        Assert.True(UploadHistory.SwitchToLive(shifts, kv, goLive, includeHistory: false));
+        Assert.False(UploadHistory.SwitchToLive(shifts, kv, goLive.AddDays(1), includeHistory: false));   // later switches change nothing
         Shift("NEW", goLive.AddHours(1), close: true);
         var report = await New().RunOnceAsync();
 
@@ -79,17 +80,48 @@ public sealed class ExcludedHistoryTests : IDisposable
     }
 
     [Fact]
-    public async Task Bills_taken_later_in_an_excluded_open_shift_are_excluded_too()
+    public void The_first_switch_to_live_is_refused_while_a_shift_is_open()
     {
         Shift("OPEN", goLive.AddHours(-1), close: false);
+
+        Assert.True(UploadHistory.MustCloseShiftFirst(shifts, kv));
+        var refused = Assert.Throws<InvalidOperationException>(() => UploadHistory.SwitchToLive(shifts, kv, goLive, includeHistory: false));
+        Assert.Equal("Close the shift first, then switch to Live.", refused.Message);
+        Assert.Null(UploadHistory.LiveSince(kv));
+        Assert.Equal(UploadStatus.Pending, shifts.SyncInfo("OLD1")!.OpeningStatus);   // nothing was excluded
+
+        shifts.Close(new ShiftClosing("OPEN", goLive.AddMinutes(-1), [], 1, 0, 10.5m, 10m, 0.5m));
+        Assert.False(UploadHistory.MustCloseShiftFirst(shifts, kv));
+        Assert.True(UploadHistory.SwitchToLive(shifts, kv, goLive, includeHistory: false));
+        Assert.False(UploadHistory.MustCloseShiftFirst(shifts, kv));   // once Live, shifts open as usual
+    }
+
+    [Fact]
+    public async Task Once_live_an_open_shift_is_normal_and_nothing_is_excluded_by_the_upload()
+    {
         UploadHistory.SwitchToLive(shifts, kv, goLive, includeHistory: false);
-        receipts.Save(UploadTestData.Sale("OPEN-LATER", "OPEN", goLive.AddHours(1)));
+        Shift("NEW", goLive.AddHours(1), close: false);
+        Assert.False(UploadHistory.MustCloseShiftFirst(shifts, kv));
 
-        var report = await New().RunOnceAsync();
+        await New().RunOnceAsync();
 
-        Assert.Empty(erp.Inserted);
-        Assert.Equal(ReceiptSyncStatus.Excluded, receipts.SyncInfo("OPEN-LATER").Status);
-        Assert.Equal(0, report.Waiting);
+        Assert.Equal(["NEW", "NEW-BILL"], SentIds.Take(2));
+        Assert.Equal(UploadStatus.Excluded, shifts.SyncInfo("OLD1")!.OpeningStatus);
+        Assert.Equal(ReceiptSyncStatus.Synced, receipts.SyncInfo("NEW-BILL").Status);
+    }
+
+    [Fact]
+    public void Nothing_created_at_or_after_the_switch_is_excluded()
+    {
+        // A bill stamped after the moment of going Live (clock change) in a shift closed before it stays in the queue.
+        receipts.Save(UploadTestData.Sale("OLD2-LATE", "OLD2", goLive.AddMinutes(1)));
+        approvals.Add(new ApprovalRecord("late", ApprovalAction.LineVoid, "cashier1", "sup1", "OLD2", null, null, 0m, null, goLive));
+
+        UploadHistory.SwitchToLive(shifts, kv, goLive, includeHistory: false);
+
+        Assert.Equal(ReceiptSyncStatus.Excluded, receipts.SyncInfo("OLD2-BILL").Status);
+        Assert.Equal(ReceiptSyncStatus.Pending, receipts.SyncInfo("OLD2-LATE").Status);
+        Assert.Contains(approvals.Outbox(), a => a.Record.Id == "late");
     }
 
     [Fact]

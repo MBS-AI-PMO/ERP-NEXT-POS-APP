@@ -76,21 +76,31 @@ public sealed class LoginViewModel : ObservableObject
     }
 
     /// <summary>The upload mode decides whether the till writes to ERPNext: its change is logged with the approving supervisor.
-    /// The first switch to Live leaves earlier shifts (test data) out of the upload unless a supervisor includes them (logged).</summary>
-    private async Task UploadModeChangedAsync(SupervisorGate gate, string supervisor, UploadMode from, UploadMode to)
+    /// The first switch to Live waits until no shift is open (returns false: the old mode stays), and leaves the shifts closed
+    /// before it (test data) out of the upload unless a supervisor includes them (logged).</summary>
+    private async Task<bool> UploadModeChangedAsync(SupervisorGate gate, string supervisor, UploadMode from, UploadMode to)
     {
+        if (to == UploadMode.Live && UploadHistory.MustCloseShiftFirst(ctx.Shifts, ctx.Kv))
+        {
+            ctx.Dialogs.Info(UploadHistory.CloseShiftFirst);
+            return false;
+        }
         var now = ctx.Clock.Now;
         ctx.Approvals.Add(new ApprovalRecord(Guid.NewGuid().ToString("N"), ApprovalAction.UploadModeChange, "", supervisor, "", null, null, 0m,
             $"Upload mode {from} → {to}", now));
-        if (to != UploadMode.Live) return;
+        if (to != UploadMode.Live) return true;
 
         var earlier = UploadHistory.EarlierShifts(ctx.Shifts, ctx.Kv, now);
         var include = false;
         if (earlier > 0 && ctx.Dialogs.Confirm("Earlier shifts",
                 $"{earlier.ToString(CultureInfo.InvariantCulture)} earlier shift(s) will NOT be uploaded (test data). Include them?"))
+        {
             include = await gate.ApproveAsync(ApprovalAction.UploadIncludeHistory,
                 $"Upload {earlier.ToString(CultureInfo.InvariantCulture)} earlier shift(s) to ERPNext") is not null;
+            if (!include) ctx.Dialogs.Info("History stays excluded (test data).");
+        }
         UploadHistory.SwitchToLive(ctx.Shifts, ctx.Kv, now, include);
+        return true;
     }
 
     private string OpenShiftInfo()

@@ -48,10 +48,13 @@ public sealed class FakeDialogs : IDialogs
     /// <summary>The upload-mode change the next setup reports (null: none).</summary>
     public (UploadMode From, UploadMode To)? SetupUploadChange { get; set; }
 
-    public async Task<bool> ShowSetupAsync(Func<UploadMode, UploadMode, Task> uploadModeChanged)
+    /// <summary>What the upload-mode callback answered last (false: the old mode would be saved back).</summary>
+    public bool? SetupUploadAccepted { get; private set; }
+
+    public async Task<bool> ShowSetupAsync(Func<UploadMode, UploadMode, Task<bool>> uploadModeChanged)
     {
         SetupRequests++;
-        if (SetupUploadChange is { } change) await uploadModeChanged(change.From, change.To);
+        if (SetupUploadChange is { } change) SetupUploadAccepted = await uploadModeChanged(change.From, change.To);
         return SetupResults.Count > 0 && SetupResults.Dequeue();
     }
 

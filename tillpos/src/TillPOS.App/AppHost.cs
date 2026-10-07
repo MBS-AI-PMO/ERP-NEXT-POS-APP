@@ -28,6 +28,7 @@ public sealed class AppHost
     private readonly SyncContext syncContext;
     private readonly TillContext ctx;
     private readonly Uploader uploader;
+    private readonly string? startupNotice;
     private readonly CancellationTokenSource stop = new();
 
     /// <param name="settingsPath">The settings file the till was started from (named in setup error messages).</param>
@@ -49,7 +50,6 @@ public sealed class AppHost
         var client = ErpClient.Create(new ErpConnection(new Uri(settings.BaseUrl), settings.ApiKey, ApiSecret(settings, settingsPath)),
             TimeSpan.FromSeconds(60));
         erp = new ReadOnlyErpClient(client);
-        Shell.Upload = settings.EffectiveUpload;
         // The first counter is the default: its POS settings are also kept under the default key (receipt header, price list).
         var counters = settings.EffectiveCounters();
         syncContext = new SyncContext(erp, store, new KeysetPager(erp, new KvSyncStateStore(store)), counters[0].PosProfile)
@@ -63,7 +63,19 @@ public sealed class AppHost
         // The write guard: a writer over the client is built only in Live mode of a production build (UploadPipeline.LiveWriter
         // is null otherwise). Shifts saved before counters existed (blank counter) belong to the default counter.
         var testBuild = settings.IsTestBuild;
-        uploader = new Uploader(erp, UploadPipeline.LiveWriter(settings.EffectiveUpload, () => new ErpWriter(client), testBuild), settings.EffectiveUpload,
+        var mode = settings.EffectiveUpload;
+        var now = DateTimeOffset.Now;
+        // Live set in settings.json (not through Settings): the first switch waits until no shift is open, like the Settings
+        // flow; the till stays Off for now and says why at login.
+        if (mode == UploadMode.Live && UploadHistory.MustCloseShiftFirst(shifts, store))
+        {
+            mode = UploadMode.Off;
+            startupNotice = UploadHistory.CloseShiftFirst;
+            approvals.Add(new ApprovalRecord(Guid.NewGuid().ToString("N"), ApprovalAction.UploadModeChange, "", "", "", null, null, 0m,
+                "Live requested in settings.json while a shift was open — stayed Off", now));
+        }
+        Shell.Upload = mode;
+        uploader = new Uploader(erp, UploadPipeline.LiveWriter(mode, () => new ErpWriter(client), testBuild), mode,
             shifts, receipts, approvals,
             profile => store.LoadPosSettings(string.IsNullOrWhiteSpace(profile) ? counters[0].PosProfile : profile),
             $"TILL{settings.TillNumber}", null, () => DateTimeOffset.Now, WritePreview, testBuild)
@@ -71,9 +83,10 @@ public sealed class AppHost
             TaxTemplates = catalog.FindSalesTaxTemplate,
             LogError = logError,
         };
-        // Live set by hand in settings.json (not through Settings): still never upload the history from before (no-op when the
-        // till already went Live once).
-        if (settings.EffectiveUpload == UploadMode.Live) UploadHistory.SwitchToLive(shifts, store, DateTimeOffset.Now, includeHistory: false);
+        // Live set in settings.json: the first time, record the moment (history before it stays out) and log it.
+        if (mode == UploadMode.Live && UploadHistory.SwitchToLive(shifts, store, now, includeHistory: false))
+            approvals.Add(new ApprovalRecord(Guid.NewGuid().ToString("N"), ApprovalAction.UploadModeChange, "", "", "", null, null, 0m,
+                "from settings file", now));
 
         Shell.TillName = $"Till {settings.TillNumber}";
         Output = new ReceiptOutput(settings, store);
@@ -102,6 +115,7 @@ public sealed class AppHost
 
         Shell.ShopName = store.LoadPosSettings()!.CompanyName;
         Shell.Show(NewLogin());
+        if (startupNotice is not null) ctx.Dialogs.Info(startupNotice);
 
         var sync = new SyncService(NewPuller, erp, uploader, Shell, dispatcher, TimeSpan.FromSeconds(settings.SyncIntervalSeconds), logError);
         // A sale, a return, or a shift opened or closed is uploaded within about 10 s.

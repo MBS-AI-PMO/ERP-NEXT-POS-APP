@@ -159,6 +159,25 @@ public sealed class LoginViewModelTests : IDisposable
         await Login().SettingsCommand.ExecuteAsync(null);
 
         Assert.Equal(UploadStatus.Excluded, f.Ctx.Shifts.SyncInfo("OLD1")!.OpeningStatus);
+        Assert.Contains("History stays excluded (test data).", f.Dialogs.Infos);
+    }
+
+    [Fact]
+    public async Task Going_live_is_refused_while_a_shift_is_open()
+    {
+        OldShift("OLD1", 2);
+        f.LogInWithOpenShift();
+        f.Dialogs.Pins.Enqueue("9999");
+        f.Dialogs.SetupUploadChange = (UploadMode.DryRun, UploadMode.Live);
+
+        await Login().SettingsCommand.ExecuteAsync(null);
+
+        Assert.False(f.Dialogs.SetupUploadAccepted);   // the old mode is saved back
+        Assert.Contains("Close the shift first, then switch to Live.", f.Dialogs.Infos);
+        Assert.Null(UploadHistory.LiveSince(f.Ctx.Kv));
+        Assert.Equal(UploadStatus.Pending, f.Ctx.Shifts.SyncInfo("OLD1")!.OpeningStatus);
+        Assert.DoesNotContain(f.Ctx.Approvals.Unsynced(), a => a.Action == ApprovalAction.UploadModeChange);
+        Assert.Empty(f.Dialogs.Confirms);
     }
 
     [Fact]

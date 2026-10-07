@@ -65,7 +65,7 @@ public sealed class WpfDialogs(
     }
 
     /// <summary>Starts from the file on disk (not the settings the till started with), so hand edits made since are kept.</summary>
-    public async Task<bool> ShowSetupAsync(Func<UploadMode, UploadMode, Task> uploadModeChanged)
+    public async Task<bool> ShowSetupAsync(Func<UploadMode, UploadMode, Task<bool>> uploadModeChanged)
     {
         TillSettings current;
         try
@@ -82,13 +82,28 @@ public sealed class WpfDialogs(
         if (dialog.ShowDialog() != true || dialog.Result is not { } saved) return false;
         if (saved.Upload != current.Upload)
         {
+            bool accepted;
             try
             {
-                await uploadModeChanged(current.Upload, saved.Upload);
+                accepted = await uploadModeChanged(current.Upload, saved.Upload);
             }
             catch (Exception ex)
             {
-                logError(ex); // the settings are saved; a failed log line must not stop the restart
+                logError(ex);
+                accepted = false;
+            }
+            // Refused (e.g. Live while a shift is open) or failed: the other settings stay saved, the upload mode does not change.
+            if (!accepted)
+            {
+                try
+                {
+                    SettingsStore.Save(saved with { Upload = current.Upload }, SettingsStore.ProgramDataPath);
+                }
+                catch (Exception ex)
+                {
+                    logError(ex);
+                    Info($"The upload mode could not be set back in {SettingsStore.ProgramDataPath}: {ex.Message}");
+                }
             }
         }
         restart();

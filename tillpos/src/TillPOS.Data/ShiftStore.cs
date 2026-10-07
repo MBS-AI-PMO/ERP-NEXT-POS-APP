@@ -154,20 +154,10 @@ public sealed class ShiftStore(TillDb db)
             WHERE client_id = @id
             """, clientId);
 
-    /// <summary>Excludes a shift from upload: its opening and closing, its bills and its approvals that are still to upload
-    /// become Excluded (uploaded or handled ones are left alone). Idempotent; also catches bills added since.</summary>
-    public void Exclude(string clientId)
-    {
-        using var c = db.Open();
-        using var tx = c.BeginTransaction();
-        ExcludeShift(c, tx, clientId);
-        tx.Commit();
-    }
-
-    /// <summary>The first switch to Live: every shift opened before <paramref name="since"/> with something still to upload is
-    /// excluded (with its bills and approvals), and so is every approval of before then that names no shift. Returns how many
-    /// shifts were excluded.</summary>
-    public int ExcludeOpenedBefore(DateTimeOffset since)
+    /// <summary>The first switch to Live: every shift <b>closed</b> before <paramref name="since"/> with something still to upload
+    /// is excluded (with its bills and approvals of before then), and so is every approval of before then that names no shift.
+    /// Nothing created at or after <paramref name="since"/> is excluded. Returns how many shifts were excluded.</summary>
+    public int ExcludeClosedBefore(DateTimeOffset since)
     {
         using var c = db.Open();
         using var tx = c.BeginTransaction();
@@ -177,7 +167,7 @@ public sealed class ShiftStore(TillDb db)
         {
             cmd.Transaction = tx;
             cmd.CommandText = """
-                SELECT client_id FROM shift WHERE opened_at < @at AND (opening_status IN ('Pending', 'Failed')
+                SELECT client_id FROM shift WHERE closed_at IS NOT NULL AND closed_at < @at AND (opening_status IN ('Pending', 'Failed')
                     OR closing_status IN ('Pending', 'Failed')
                     OR EXISTS (SELECT 1 FROM receipt WHERE receipt.shift_client_id = shift.client_id AND receipt.sync_status IN ('Pending', 'Failed')))
                 """;
@@ -185,7 +175,7 @@ public sealed class ShiftStore(TillDb db)
             using var r = cmd.ExecuteReader();
             while (r.Read()) ids.Add(r.GetString(0));
         }
-        foreach (var id in ids) ExcludeShift(c, tx, id);
+        foreach (var id in ids) ExcludeShift(c, tx, id, at!);
         c.Exec(tx, "UPDATE approval_log SET sync_status = 'Excluded' WHERE at < @at AND sync_status IN ('Pending', 'Failed')", ("@at", at));
         tx.Commit();
         return ids.Count;
@@ -219,7 +209,7 @@ public sealed class ShiftStore(TillDb db)
             : null;
     }
 
-    private static void ExcludeShift(SqliteConnection c, SqliteTransaction tx, string id)
+    private static void ExcludeShift(SqliteConnection c, SqliteTransaction tx, string id, string before)
     {
         c.Exec(tx, """
             UPDATE shift SET opening_status = CASE WHEN opening_status IN ('Pending', 'Failed') THEN 'Excluded' ELSE opening_status END,
@@ -227,11 +217,14 @@ public sealed class ShiftStore(TillDb db)
                 next_attempt_at = NULL
             WHERE client_id = @id
             """, ("@id", id));
-        c.Exec(tx, "UPDATE receipt SET sync_status = 'Excluded' WHERE shift_client_id = @id AND sync_status IN ('Pending', 'Failed')", ("@id", id));
+        c.Exec(tx, """
+            UPDATE receipt SET sync_status = 'Excluded'
+            WHERE shift_client_id = @id AND created_at < @before AND sync_status IN ('Pending', 'Failed')
+            """, ("@id", id), ("@before", before));
         c.Exec(tx, """
             UPDATE approval_log SET sync_status = 'Excluded'
-            WHERE json_extract(json, '$.ShiftClientId') = @id AND sync_status IN ('Pending', 'Failed')
-            """, ("@id", id));
+            WHERE json_extract(json, '$.ShiftClientId') = @id AND at < @before AND sync_status IN ('Pending', 'Failed')
+            """, ("@id", id), ("@before", before));
     }
 
     private static void IncludeWhere(SqliteConnection c, SqliteTransaction tx, string shiftWhere, string receiptWhere, string approvalWhere,
