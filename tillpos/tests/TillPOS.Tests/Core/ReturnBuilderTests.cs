@@ -378,6 +378,20 @@ public class ReturnBuilderTests
     }
 
     [Fact]
+    public void A_weighed_line_of_another_till_is_returned_in_part_and_pieces_stay_whole()
+    {
+        var kg = new ReceiptLine(2, "000089", "CUCUMBER/KIYAR", null, "kg", 1m, 2m, M("3.50"), M("3.50"), M("7.00"), null, null, false, null);
+        var original = RemoteSale("ACC-PSINV-2026-00044", 2m, daysAgo: 1) is var sale ? sale with { Lines = [.. sale.Lines, kg] } : null!;
+        var builder = new ReturnBuilder(store, ctx, 2, Modes, () => At, otherTills: new OtherTills());
+
+        var ret = builder.Build(original, [new ReturnLineRequest(2, M("0.5"))], TenderKind.Cash, "c", "S2", null);
+
+        Assert.Equal(M("-0.5"), Assert.Single(ret.Lines).Qty);
+        Assert.Equal(M("1.5"), builder.Returnable(original, 2));
+        Assert.Throws<ArgumentException>(() => builder.Build(original, [new ReturnLineRequest(1, M("0.5"))], TenderKind.Cash, "c", "S2", null));
+    }
+
+    [Fact]
     public void A_bill_from_another_till_follows_the_same_approval_rules()
     {
         var old = RemoteSale("ACC-PSINV-2026-00007", 2m, daysAgo: 8);

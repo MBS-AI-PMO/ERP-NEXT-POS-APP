@@ -26,11 +26,12 @@ public sealed record ReturnDone(Receipt Receipt, string Message, bool IsError, s
 /// returned, and how much to return now (whole numbers only for piece lines; a scale-label or weighed line takes any weight).</summary>
 public sealed class ReturnLine : ObservableObject
 {
-    public ReturnLine(ReceiptLine sold, decimal returned)
+    /// <param name="weighed">The line may be returned in part units (a scale-label line, or a weight unit such as Kg).</param>
+    public ReturnLine(ReceiptLine sold, decimal returned, bool weighed = false)
     {
         Sold = sold;
         Returnable = sold.Qty - returned;
-        IsWeighed = sold.FromScaleLabel || sold.Qty != decimal.Truncate(sold.Qty);
+        IsWeighed = weighed || sold.FromScaleLabel || sold.Qty != decimal.Truncate(sold.Qty);
         SoldText = Qty(sold.Qty);
         ReturnedText = Qty(returned);
         ReturnableText = Qty(Returnable);
@@ -44,7 +45,7 @@ public sealed class ReturnLine : ObservableObject
     public int LineNo => Sold.LineNo;
     public string ItemName => Sold.ItemName;
     public string Rate => Format.Money(Sold.Rate);
-    /// <summary>A scale-label line, or a line sold in part units: its return quantity may have decimals.</summary>
+    /// <summary>A scale-label line, a line in a weight unit (Kg) or a line sold in part units: its return quantity may have decimals.</summary>
     public bool IsWeighed { get; }
     public decimal Returnable { get; }
     public string SoldText { get; }
@@ -290,7 +291,7 @@ public sealed class ReturnViewModel : ObservableObject
         if (receipt.Kind != ReceiptKind.Sale) { Error($"{receipt.ClientId} is a credit note, not a sale — open the original sale."); return; }
         if (remote is not null && !CanReprice(remote, receipt)) { Error(CannotRepriceMessage); return; }
 
-        var lines = receipt.Lines.Select(l => new ReturnLine(l, Returned(returns, l.LineNo))).ToList();
+        var lines = receipt.Lines.Select(l => new ReturnLine(l, Returned(returns, l.LineNo), builder.IsWeighed(l))).ToList();
         if (lines.All(l => l.Returnable <= 0m)) { Error($"Everything on {receipt.ClientId} has already been returned."); return; }
 
         original = receipt;

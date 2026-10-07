@@ -214,6 +214,22 @@ public sealed class ReturnViewModelTests : IDisposable
     }
 
     [Fact]
+    public void A_weighed_line_of_another_till_takes_part_of_its_weight()
+    {
+        f.Ctx.RemoteReceipts!.Upsert(new RemoteReceipt(OtherTillName, OtherTillId, "TILL3", "Al Ain Counter 1", new DateTime(2026, 10, 6, 9, 0, 0),
+            "Walk-in Customer", 7m, 7m, 6.67m, 0.33m, false, null,
+            [new RemoteLine("1", "000089", "CUCUMBER/KIYAR", 2m, "Kg", 1m, 3.5m, 3.5m, 7m, null, null)], []), f.Clock.Now);
+        var vm = OpenReturns();
+        vm.Scan(OtherTillId);
+        var line = Assert.Single(vm.Lines);
+        Assert.False(line.ReturnQty.WholeNumbers);
+        Assert.Equal("2.000 Kg", line.SoldText);
+        line.ReturnQty.Set(0.5m);
+        Assert.NotNull(vm.Preview);
+        Assert.False(vm.MessageIsError, vm.Message);
+    }
+
+    [Fact]
     public void A_credit_note_of_another_till_cannot_be_opened()
     {
         OtherTillSale(returnedOnTill4: true);

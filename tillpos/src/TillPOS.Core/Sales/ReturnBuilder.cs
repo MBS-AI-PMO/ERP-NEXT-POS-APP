@@ -38,6 +38,11 @@ public sealed class ReturnBuilder(IReceiptStore store, SaleContext ctx, int till
     public IReadOnlyList<Receipt> ReturnsOf(Receipt original) =>
         [.. store.ReturnsAgainst(original.ClientId), .. otherTills?.ReturnsAgainst(original) ?? []];
 
+    /// <summary>A line that may be returned in part units: a scale-label line, or a line in a weight unit (e.g. Kg; a bill of
+    /// another till has no scale-label flag).</summary>
+    public bool IsWeighed(ReceiptLine line) =>
+        line.FromScaleLabel || ctx.WeightUoms.Any(u => string.Equals(u, line.Uom, StringComparison.OrdinalIgnoreCase));
+
     /// <summary>The bill's grand total as this till prices its lines (rates, item tax templates, the counter's tax template): a
     /// bill of another till whose own total differs was priced in a way the till cannot repeat (e.g. a different tax).</summary>
     public decimal RepricedGrandTotal(Receipt original) => Price(original.Lines).GrandTotal;
@@ -87,7 +92,7 @@ public sealed class ReturnBuilder(IReceiptStore store, SaleContext ctx, int till
         {
             var sold = original.Lines.SingleOrDefault(l => l.LineNo == request.LineNo)
                 ?? throw new ArgumentException($"Line {request.LineNo} is not on receipt {original.ClientId}.", nameof(requests));
-            if (!sold.FromScaleLabel && sold.Qty == decimal.Truncate(sold.Qty) && request.Qty != decimal.Truncate(request.Qty))
+            if (!IsWeighed(sold) && sold.Qty == decimal.Truncate(sold.Qty) && request.Qty != decimal.Truncate(request.Qty))
                 throw new ArgumentException($"{sold.ItemName} is returned in whole units.", nameof(requests));
             var left = sold.Qty - Returned(returns, request.LineNo);
             if (request.Qty > left) throw new InvalidOperationException($"Only {left} of {sold.ItemName} can still be returned.");
