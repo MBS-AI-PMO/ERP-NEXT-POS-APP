@@ -183,6 +183,17 @@ public partial class PayloadTests
     }
 
     [Fact]
+    public void Return_lines_carry_the_original_invoice_rows()
+    {
+        var payload = PosInvoicePayload.Build(Return("TILL2-20261006153005-000001"), "Al Ain Counter 1", Counter1, "POS-OPE-2026-00042",
+            "cashier1@shop.local", "TILL2", "ACC-PSINV-2026-01234", new Dictionary<int, string> { [1] = "a1b2c3d4e5" });
+
+        Assert.Equal("a1b2c3d4e5", Assert.Single(Rows(payload.Doc, "items"))["pos_invoice_item"]);
+        Assert.Contains("\"posa_row_id\":\"1\",\"pos_invoice_item\":\"a1b2c3d4e5\"", ErpFormat.Json(payload.Doc));
+        Assert.False(Assert.Single(Rows(Build(Return(null)).Doc, "items")).ContainsKey("pos_invoice_item"));
+    }
+
+    [Fact]
     public void Return_without_receipt_has_no_return_against()
     {
         var payload = Build(Return(null), returnAgainst: null);

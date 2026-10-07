@@ -59,9 +59,13 @@ public sealed class FakeErp : IErpClient, IErpWriter
 
     public List<(string Doctype, string Name)> DocCalls { get; } = [];
 
+    /// <summary>Return an exception to make reading a document fail.</summary>
+    public Func<string, string, Exception?>? FailDoc { get; set; }
+
     public Task<JsonElement> GetDocAsync(string doctype, string name, CancellationToken ct = default)
     {
         DocCalls.Add((doctype, name));
+        if (FailDoc?.Invoke(doctype, name) is { } failed) throw failed;
         return Docs.TryGetValue((doctype, name), out var d)
             ? Task.FromResult(JsonSerializer.SerializeToElement(d))
             : throw new ErpException(404, $"{doctype} {name} not found", "DoesNotExistError");
@@ -98,6 +102,13 @@ public sealed class FakeErp : IErpClient, IErpWriter
         foreach (var (key, value) in OnInsert?.Invoke(doctype, e) ?? []) answer[key] = value;
         AddRow(doctype, answer.Where(p => p.Value is not JsonElement { ValueKind: JsonValueKind.Array })
             .ToDictionary(p => p.Key, p => p.Value is JsonElement v ? Scalar(v) : p.Value));
+        // The whole document is readable by name too (GetDocAsync), its child rows named like ERPNext's ("{name}-items-1").
+        var full = System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(answer))!.AsObject();
+        foreach (var (table, rows) in full.ToList())
+            if (rows is System.Text.Json.Nodes.JsonArray array)
+                for (var i = 0; i < array.Count; i++)
+                    if (array[i] is System.Text.Json.Nodes.JsonObject row && !row.ContainsKey("name")) row["name"] = $"{answer["name"]}-{table}-{i + 1}";
+        Docs[(doctype, (string)answer["name"]!)] = full;
 
         if (LoseInsertAnswer?.Invoke(doctype, e) is { } lost) throw lost;
         return Task.FromResult(JsonSerializer.SerializeToElement(answer));

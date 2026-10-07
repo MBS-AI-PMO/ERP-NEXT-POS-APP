@@ -245,6 +245,7 @@ public sealed class UploaderTests : IDisposable
 
         var returned = InsertedInvoices.Single();
         Assert.Equal("ACC-PSINV-2026-00042", Str(returned, "return_against"));
+        Assert.Equal("ACC-PSINV-2026-00042-row-1", Str(returned.GetProperty("items")[0], "pos_invoice_item"));
         Assert.Equal(ReceiptSyncStatus.Synced, receipts.SyncInfo("TILL2-R").Status);
         Assert.Equal("ACC-PSINV-2026-00042", Str(erp.Inserted.Single(i => i.Doctype == "TillPOS Approval").Doc, "invoice"));
         Assert.Empty(report.Problems);
@@ -264,6 +265,11 @@ public sealed class UploaderTests : IDisposable
             ["grand_total"] = qty * 10.5m, ["rounded_total"] = 0, ["net_total"] = qty * 10m, ["total_taxes_and_charges"] = qty * 0.5m,
             ["is_return"] = returnAgainst is null ? 0 : 1, ["return_against"] = returnAgainst,
         });
+        erp.Docs[("POS Invoice", name)] = new Dictionary<string, object?>
+        {
+            ["name"] = name,
+            ["items"] = new[] { new Dictionary<string, object?> { ["name"] = $"{name}-row-1", ["item_code"] = "RICE5", ["posa_row_id"] = "1", ["qty"] = qty } },
+        };
         erpItems[name] = [new() { ["name"] = name, ["item_code"] = "RICE5", ["item_name"] = "RICE 5KG", ["qty"] = qty, ["uom"] = "Nos",
             ["conversion_factor"] = 1, ["rate"] = 10.5m, ["price_list_rate"] = 10.5m, ["amount"] = qty * 10.5m, ["posa_row_id"] = "1", ["idx"] = 1 }];
         erp.Override = q =>

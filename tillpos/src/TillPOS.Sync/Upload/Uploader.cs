@@ -247,14 +247,77 @@ public sealed class Uploader
             }
         }
 
-        var payload = PosInvoicePayload.Build(receipt, profile.PosProfile, profile, openingName, receipt.CashierUser, till, returnAgainst);
+        // ERPNext links each return line to its row on the original invoice (pos_invoice_item) and refuses the return otherwise:
+        // the original is read (read-only) and the lines matched. A line that is not there never goes (DryRun: reported).
+        IReadOnlyDictionary<int, string>? originalRows = null;
+        PayloadIssue? rowIssue = null;
+        if (returnAgainst is not null && !IsStandIn(returnAgainst)
+            && !(Mode == UploadMode.DryRun && previewed.Contains(InvoiceKey(receipt.ClientId))))
+        {
+            (originalRows, rowIssue) = await OriginalRowsAsync(receipt, returnAgainst, ct);
+            if (rowIssue is not null && Mode == UploadMode.Live)
+            {
+                receipts.MarkFailed(receipt.ClientId, rowIssue.Message, now() + Backoff(bill.Attempts + 1));
+                run.Add(receipt.ClientId, $"{label}: {rowIssue.Message}");
+                return null;
+            }
+        }
+
+        var payload = PosInvoicePayload.Build(receipt, profile.PosProfile, profile, openingName, receipt.CashierUser, till, returnAgainst,
+            originalRows);
         return await UploadAsync(
             new Doc(PosInvoicePayload.Doctype, InvoiceIdField, receipt.ClientId, InvoiceKey(receipt.ClientId), label, true, () => payload.Doc,
-                payload.Expected, profile.WriteOffLimit, (checks, body, ct) => checks.InvoiceAsync(receipt, body, ct)),
+                payload.Expected, profile.WriteOffLimit, async (checks, body, ct) =>
+                {
+                    var issues = await checks.InvoiceAsync(receipt, body, ct);
+                    if (rowIssue is not null) issues.Add(rowIssue);
+                    return issues;
+                }),
             new Marks(bill.Attempts, name => receipts.MarkSynced(receipt.ClientId, name),
                 (error, next, keep) => receipts.MarkFailed(receipt.ClientId, error, next, keep), until => receipts.MarkInFlight(receipt.ClientId, until),
                 bill.UnknownAttempts, bill.LastError, error => receipts.MarkUnknown(receipt.ClientId, error)),
             run, ct);
+    }
+
+    /// <summary>A DryRun stand-in for a document that would be created in this run (not in ERPNext).</summary>
+    private static bool IsStandIn(string name) => name.StartsWith("(new: ", StringComparison.Ordinal);
+
+    /// <summary>Each return line's row on the original invoice <paramref name="name"/> (its name, sent as pos_invoice_item): the
+    /// row with the line's number (POS Awesome's posa_row_id, the till's line number) and item, else the item's rows in order (a
+    /// row once per return). A line with no row, or an original ERPNext refuses to show (missing, no permission), is the issue.
+    /// Network errors propagate (the return stays pending).</summary>
+    private async Task<(IReadOnlyDictionary<int, string>? Rows, PayloadIssue? Issue)> OriginalRowsAsync(Receipt ret, string name,
+        CancellationToken ct)
+    {
+        JsonElement original;
+        try
+        {
+            original = await reader.GetDocAsync(PosInvoicePayload.Doctype, name, ct);
+        }
+        catch (ErpException ex) when (ex.StatusCode == 404 || ex.ExcType == "DoesNotExistError" || Classify(ex) == ErpOutcome.Refused)
+        {
+            return (null, new PayloadIssue("return_against", $"Original {name} could not be read in ERPNext ({Short(ex.Message)}) — check before retrying"));
+        }
+        var rows = original.Rows("items")
+            .Select(r => (Name: r.StrOrNull("name"), RowId: r.StrOrNull("posa_row_id"), Item: r.StrOrNull("item_code")))
+            .Where(r => r.Name is not null)
+            .ToList();
+        var used = new HashSet<string>(StringComparer.Ordinal);
+        var map = new Dictionary<int, string>();
+        for (var i = 0; i < ret.Lines.Count; i++)
+        {
+            var line = ret.Lines[i];
+            var rowId = line.LineNo.ToString(CultureInfo.InvariantCulture);
+            var match = rows.FirstOrDefault(r => r.RowId == rowId && r.Item == line.ItemCode && !used.Contains(r.Name!)).Name
+                ?? rows.FirstOrDefault(r => r.Item == line.ItemCode && !used.Contains(r.Name!)).Name
+                ?? rows.FirstOrDefault(r => r.Item == line.ItemCode).Name;
+            if (match is null)
+                return (null, new PayloadIssue($"items[{(i + 1).ToString(CultureInfo.InvariantCulture)}].pos_invoice_item",
+                    $"Line {line.LineNo.ToString(CultureInfo.InvariantCulture)} ({line.ItemCode}) is not on {name} in ERPNext — check before retrying"));
+            used.Add(match);
+            map[line.LineNo] = match;
+        }
+        return (map, null);
     }
 
     /// <summary>The ERPNext name of a sale on this till (DryRun: a stand-in when it would be uploaded in this run), or null. A

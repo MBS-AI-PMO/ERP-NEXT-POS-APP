@@ -30,8 +30,10 @@ public static class PosInvoicePayload
     /// <param name="cashierUser">The cashier's ERPNext user (posa_cashier), if known.</param>
     /// <param name="till">The till's name (custom_till), e.g. "TILL2".</param>
     /// <param name="returnAgainstErpName">The ERPNext name of the original sale, for a return with a receipt.</param>
+    /// <param name="originalRows">A return's lines matched to the original invoice's item rows (line number → the row's name in
+    /// ERPNext), sent as pos_invoice_item: ERPNext refuses a return line it cannot link to its original row.</param>
     public static InvoicePayload Build(Receipt r, string posProfile, PosSettings profile, string openingShiftErpName, string? cashierUser,
-        string till, string? returnAgainstErpName)
+        string till, string? returnAgainstErpName, IReadOnlyDictionary<int, string>? originalRows = null)
     {
         var posProfileName = string.IsNullOrWhiteSpace(r.PosProfile) ? posProfile : r.PosProfile;
         var warehouse = string.IsNullOrWhiteSpace(r.Warehouse) ? profile.Warehouse : r.Warehouse;
@@ -52,7 +54,7 @@ public static class PosInvoicePayload
         if (!string.IsNullOrWhiteSpace(profile.TaxesAndCharges)) doc["taxes_and_charges"] = profile.TaxesAndCharges;
         // A profile that disabled the rounded total at sale time stays disabled; otherwise only cash-only bills use it.
         doc["disable_rounded_total"] = r.DisableRoundedTotal == true || !r.UsesErpRoundedTotal ? 1 : 0;
-        doc["items"] = r.Lines.Select(l => Item(l, warehouse)).ToList();
+        doc["items"] = r.Lines.Select(l => Item(l, warehouse, originalRows?.GetValueOrDefault(l.LineNo))).ToList();
         doc["payments"] = r.Payments
             .Select(p => new Dictionary<string, object?> { ["mode_of_payment"] = p.ModeOfPayment, ["amount"] = p.Amount })
             .ToList();
@@ -72,7 +74,7 @@ public static class PosInvoicePayload
         return new InvoicePayload(doc, expected);
     }
 
-    private static Dictionary<string, object?> Item(ReceiptLine l, string warehouse)
+    private static Dictionary<string, object?> Item(ReceiptLine l, string warehouse, string? originalRow)
     {
         var item = new Dictionary<string, object?>
         {
@@ -89,6 +91,7 @@ public static class PosInvoicePayload
         if (!string.IsNullOrWhiteSpace(l.ItemTaxTemplate)) item["item_tax_template"] = l.ItemTaxTemplate;
         // POS Awesome's row id is a text field; the till's line number is unique within the bill.
         item["posa_row_id"] = l.LineNo.ToString(CultureInfo.InvariantCulture);
+        if (!string.IsNullOrWhiteSpace(originalRow)) item["pos_invoice_item"] = originalRow;
         return item;
     }
 }
