@@ -163,6 +163,34 @@ public sealed class UploadStateStoreTests : IDisposable
     }
 
     [Fact]
+    public void Problems_list_failed_and_excluded_documents_and_handled_ones_leave_the_list()
+    {
+        Open("S1", 0);
+        Bill("B1", "S1");
+        Close("S1", 1);
+        approvals.Add(new ApprovalRecord("a1", ApprovalAction.LineVoid, "c", "s", "S1", null, null, 0m, null, At));
+        receipts.MarkFailed("B1", "Item disabled", null);
+        shifts.MarkFailed("S1", ShiftDocument.Closing, "bad closing", null);
+        approvals.MarkFailed("a1", "no doctype", null);
+
+        Assert.Equal([(OutboxKind.Closing, "S1", UploadStatus.Failed)], shifts.Problems().Select(p => (p.Kind, p.Id, p.Status)));
+        Assert.Equal([(OutboxKind.Bill, "B1", "S1", "Item disabled")], receipts.Problems().Select(p => (p.Kind, p.Id, p.ShiftId, p.Error)));
+        Assert.Equal([(OutboxKind.Approval, "a1", "S1")], approvals.Problems().Select(p => (p.Kind, p.Id, p.ShiftId)));
+
+        receipts.MarkHandled("B1");
+        shifts.MarkHandled("S1", ShiftDocument.Closing);
+        approvals.MarkHandled("a1");
+
+        Assert.Empty(receipts.Problems());
+        Assert.Empty(shifts.Problems());
+        Assert.Empty(approvals.Problems());
+        Assert.Equal(ReceiptSyncStatus.Handled, receipts.SyncInfo("B1").Status);
+        Assert.Equal(UploadStatus.Handled, shifts.SyncInfo("S1")!.ClosingStatus);
+        Assert.Equal(0, receipts.CountFailed() + shifts.CountFailed() + approvals.CountFailed());
+        Assert.Equal(1, shifts.CountPending());   // the opening is still to upload
+    }
+
+    [Fact]
     public void Saving_a_bill_or_opening_and_closing_a_shift_signals_the_upload()
     {
         var signals = 0;

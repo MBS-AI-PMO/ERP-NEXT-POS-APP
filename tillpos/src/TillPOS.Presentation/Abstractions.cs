@@ -30,6 +30,9 @@ public interface IDialogs
     /// <summary>A yes/no question (No is the default). Returns true for Yes.</summary>
     bool Confirm(string title, string message);
 
+    /// <summary>Shows a read-only text (e.g. a document's JSON) until closed.</summary>
+    void ShowText(string title, string text);
+
     /// <summary>Shows the price check (modal). Returns what "Add to bill" should add (<see cref="PriceCheckViewModel.AddToBill"/>),
     /// or null when it was closed without adding.</summary>
     PriceCheckPick? ShowPriceCheck(PriceCheckViewModel vm);

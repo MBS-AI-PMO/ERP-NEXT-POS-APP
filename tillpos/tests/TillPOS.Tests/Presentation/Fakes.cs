@@ -59,6 +59,9 @@ public sealed class FakeDialogs : IDialogs
     public Queue<bool> ConfirmAnswers { get; } = new();
     public List<string> Confirms { get; } = [];
 
+    public List<(string Title, string Text)> Texts { get; } = [];
+    public void ShowText(string title, string text) => Texts.Add((title, text));
+
     public bool Confirm(string title, string message)
     {
         Confirms.Add(message);

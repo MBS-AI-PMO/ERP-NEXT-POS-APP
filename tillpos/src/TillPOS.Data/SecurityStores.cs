@@ -79,6 +79,34 @@ public sealed class ApprovalStore(TillDb db)
             WHERE id = @id AND sync_status IN ('Pending', 'Failed')
             """, id, ("@e", error), ("@next", SqlExt.Instant(nextAttemptAt)));
 
+    /// <summary>Failed and excluded approvals, oldest first (the Upload problems screen).</summary>
+    public IReadOnlyList<OutboxProblem> Problems()
+    {
+        using var c = db.Open();
+        return c.Query("""
+            SELECT json, sync_status, last_error, attempts FROM approval_log
+            WHERE sync_status IN ('Failed', 'Excluded') ORDER BY at, id
+            """,
+            r =>
+            {
+                var record = JsonSerializer.Deserialize<ApprovalRecord>(r.GetString(0), Json)!;
+                return new OutboxProblem(OutboxKind.Approval, record.Id, record.ShiftClientId, record.At, Enum.Parse<UploadStatus>(r.GetString(1)),
+                    SqlExt.Str(r, 2), r.GetInt32(3));
+            });
+    }
+
+    /// <summary>The approval with this id, or null.</summary>
+    public ApprovalRecord? Get(string id)
+    {
+        using var c = db.Open();
+        return c.Query("SELECT json FROM approval_log WHERE id = @id", r => JsonSerializer.Deserialize<ApprovalRecord>(r.GetString(0), Json)!,
+            ("@id", id)).FirstOrDefault();
+    }
+
+    /// <summary>A supervisor dealt with a failed or excluded approval by hand: it is never uploaded.</summary>
+    public void MarkHandled(string id) =>
+        Update("UPDATE approval_log SET sync_status = 'Handled', next_attempt_at = NULL WHERE id = @id AND sync_status IN ('Failed', 'Excluded')", id);
+
     /// <summary>Puts an excluded approval back in the queue.</summary>
     public void Include(string id) =>
         Update("UPDATE approval_log SET sync_status = 'Pending', attempts = 0, next_attempt_at = NULL WHERE id = @id AND sync_status = 'Excluded'", id);

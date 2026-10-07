@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using TillPOS.Core.Security;
 using TillPOS.Core.Shifts;
+using TillPOS.Data;
 
 namespace TillPOS.Presentation;
 
@@ -88,6 +89,26 @@ public sealed class CloseShiftViewModel : ObservableObject
         CloseCommand = new AsyncRelayCommand(CloseAsync);
         RecountCommand = new RelayCommand(Recount, () => closing is not null && !closed && !busy);
         if (state.Confirmations > 0) Info("A count is already recorded for this shift — count again, then close the shift.");
+        UploadWarning = WaitingBillsWarning();
+    }
+
+    /// <summary>"N bill(s) of this shift are still waiting to upload…" while bills of the shift are not in ERPNext yet, else "".</summary>
+    public string UploadWarning { get; }
+
+    private string WaitingBillsWarning()
+    {
+        try
+        {
+            if (session.Shift is not { } shift) return "";
+            var waiting = ctx.Receipts.Outbox(shift.ClientId)
+                .Count(e => e.Sync.Status is ReceiptSyncStatus.Pending or ReceiptSyncStatus.Failed);
+            return waiting == 0 ? "" : string.Create(CultureInfo.InvariantCulture,
+                $"{waiting} bill(s) of this shift are still waiting to upload. They will upload automatically; the Closing Shift waits for them.");
+        }
+        catch (Exception)
+        {
+            return "";
+        }
     }
 
     /// <summary>The kv key holding a shift's <see cref="CloseCountState"/>.</summary>

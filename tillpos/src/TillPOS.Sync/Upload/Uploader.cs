@@ -141,6 +141,11 @@ public sealed class Uploader
             if (Mode == UploadMode.Live) shifts.Exclude(id);
             return;
         }
+        if (sync.OpeningStatus == UploadStatus.Handled)
+        {
+            run.Add(id, $"Opening of shift {id} was handled by hand: its other documents wait (they need its ERPNext name).");
+            return;
+        }
 
         // 1. POS Opening Shift.
         var openingName = sync.OpeningStatus == UploadStatus.Synced ? sync.ErpOpeningName : run.Planned(OpeningKey(id));
@@ -162,7 +167,7 @@ public sealed class Uploader
         var waiting = 0;
         foreach (var (receipt, bill) in receipts.Outbox(id).Select(e => (e.Receipt, e.Sync)))
         {
-            if (bill.Status == ReceiptSyncStatus.Excluded) continue;
+            if (bill.Status is ReceiptSyncStatus.Excluded or ReceiptSyncStatus.Handled) continue;   // never uploaded
             var name = bill.Status == ReceiptSyncStatus.Synced ? bill.ErpName : run.Planned(InvoiceKey(receipt.ClientId));
             name ??= await InvoiceAsync(receipt, bill, profile, openingName, run, ct);
             if (name is null) waiting++;

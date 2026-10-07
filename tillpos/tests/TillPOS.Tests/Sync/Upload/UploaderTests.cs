@@ -411,6 +411,39 @@ public sealed class UploaderTests : IDisposable
     }
 
     [Fact]
+    public async Task A_bill_handled_by_hand_is_skipped_and_the_closing_goes_without_it()
+    {
+        OpenShift();
+        Sale("TILL2-A", 1);
+        Sale("TILL2-B", 2);
+        CloseShift();
+        receipts.MarkFailed("TILL2-A", "Item disabled", clock.AddHours(1));
+        receipts.MarkHandled("TILL2-A");
+
+        var report = await New().RunOnceAsync();
+
+        Assert.Equal(["TILL2-B"], InsertedInvoices.Select(i => Str(i, "posa_client_request_id")));
+        var closing = erp.Inserted.Single(i => i.Doctype == "POS Closing Shift").Doc;
+        Assert.Equal(1, closing.GetProperty("pos_transactions").GetArrayLength());
+        Assert.Equal((0, 0), (report.Waiting, report.Failed));
+    }
+
+    [Fact]
+    public async Task A_shift_whose_opening_was_handled_by_hand_waits_and_says_why()
+    {
+        OpenShift();
+        Sale("TILL2-A", 1);
+        shifts.MarkFailed(ShiftId, ShiftDocument.Opening, "POS Profile not found", clock);
+        shifts.MarkHandled(ShiftId, ShiftDocument.Opening);
+
+        var report = await New().RunOnceAsync();
+
+        Assert.Empty(erp.Inserted);
+        Assert.Contains(report.Problems, p => p.Message.Contains("was handled by hand"));
+        Assert.Equal(1, report.Waiting);   // the bill
+    }
+
+    [Fact]
     public async Task Off_does_nothing_at_all()
     {
         OpenShift();

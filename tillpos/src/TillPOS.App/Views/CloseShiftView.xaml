@@ -38,6 +38,16 @@
           </StackPanel>
           <TextBlock Text="Enter how many of each note and coin (Enter moves to the next box). The expected amounts are shown only after you confirm the count."
                      Foreground="{StaticResource Muted}" TextWrapping="Wrap" />
+          <!-- Bills of this shift not in ERPNext yet: the Closing Shift waits for them. -->
+          <TextBlock Text="{Binding UploadWarning}" Foreground="{StaticResource Warn}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,4,0,0">
+            <TextBlock.Style>
+              <Style TargetType="TextBlock">
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding UploadWarning}" Value=""><Setter Property="Visibility" Value="Collapsed" /></DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </TextBlock.Style>
+          </TextBlock>
         </StackPanel>
   
         <!-- Denominations -->

@@ -95,6 +95,18 @@ public sealed class WpfDialogs(
         return true;
     }
 
+    public void ShowText(string title, string text)
+    {
+        var box = new System.Windows.Controls.TextBox
+        {
+            Text = text, IsReadOnly = true, FontFamily = new System.Windows.Media.FontFamily("Consolas"), FontSize = 13,
+            VerticalScrollBarVisibility = System.Windows.Controls.ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = System.Windows.Controls.ScrollBarVisibility.Auto,
+        };
+        new Window { Title = title, Content = box, Width = 900, Height = 620, Owner = Top(), WindowStartupLocation = WindowStartupLocation.CenterOwner }
+            .ShowDialog();
+    }
+
     public bool Confirm(string title, string message) =>
         MessageBox.Show(Top(), message, title, MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) == MessageBoxResult.Yes;
 

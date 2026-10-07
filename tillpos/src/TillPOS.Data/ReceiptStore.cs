@@ -7,7 +7,7 @@ using TillPOS.Core.Sales;
 namespace TillPOS.Data;
 
 /// <summary>See <see cref="UploadStatus"/> (same meanings).</summary>
-public enum ReceiptSyncStatus { Pending, Synced, Failed, Excluded }
+public enum ReceiptSyncStatus { Pending, Synced, Failed, Excluded, Handled }
 
 /// <param name="NextAttemptAt">After a failure: the uploader leaves the bill alone until then (backoff); null = due now.</param>
 public sealed record ReceiptSyncInfo(ReceiptSyncStatus Status, string? ErpName, string? LastError, int Attempts, DateTimeOffset? NextAttemptAt = null);
@@ -119,6 +119,23 @@ public sealed class ReceiptStore(TillDb db) : IReceiptStore
 
     /// <summary>The last_error of a document whose upload was started but not answered.</summary>
     public const string InFlight = "upload in progress";
+
+    /// <summary>Failed and excluded bills, oldest first (the Upload problems screen).</summary>
+    public IReadOnlyList<OutboxProblem> Problems()
+    {
+        using var c = db.Open();
+        return c.Query("""
+            SELECT client_id, shift_client_id, created_at, sync_status, last_error, attempts FROM receipt
+            WHERE sync_status IN ('Failed', 'Excluded') ORDER BY created_at, client_id
+            """,
+            r => new OutboxProblem(OutboxKind.Bill, r.GetString(0), r.GetString(1), SqlExt.Instant(r, 2)!.Value,
+                Enum.Parse<UploadStatus>(r.GetString(3)), SqlExt.Str(r, 4), r.GetInt32(5)));
+    }
+
+    /// <summary>A supervisor dealt with a failed or excluded bill by hand in ERPNext: it is never uploaded and no longer counted.</summary>
+    public void MarkHandled(string clientId) =>
+        Update("UPDATE receipt SET sync_status = 'Handled', next_attempt_at = NULL WHERE client_id = @id AND sync_status IN ('Failed', 'Excluded')",
+            clientId, true);
 
     /// <summary>A failed bill goes back to the queue at once, its backoff reset.</summary>
     public void Retry(string clientId) =>

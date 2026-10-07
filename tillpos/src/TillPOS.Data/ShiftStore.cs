@@ -114,6 +114,37 @@ public sealed class ShiftStore(TillDb db)
             """, clientId, ("@e", ReceiptStore.InFlight), ("@u", SqlExt.Instant(until)));
     }
 
+    /// <summary>Failed and excluded openings and closings, oldest shift first (the Upload problems screen).</summary>
+    public IReadOnlyList<OutboxProblem> Problems()
+    {
+        using var c = db.Open();
+        var rows = c.Query("""
+            SELECT client_id, opened_at, closed_at, opening_status, closing_status, last_error, attempts FROM shift
+            WHERE opening_status IN ('Failed', 'Excluded') OR (closed_at IS NOT NULL AND closing_status IN ('Failed', 'Excluded'))
+            ORDER BY opened_at, client_id
+            """,
+            r => (Id: r.GetString(0), Opened: SqlExt.Instant(r, 1)!.Value, Closed: SqlExt.Instant(r, 2),
+                Opening: Enum.Parse<UploadStatus>(r.GetString(3)), Closing: Enum.Parse<UploadStatus>(r.GetString(4)), Error: SqlExt.Str(r, 5),
+                Attempts: r.GetInt32(6)));
+        var problems = new List<OutboxProblem>();
+        foreach (var s in rows)
+        {
+            if (s.Opening is UploadStatus.Failed or UploadStatus.Excluded)
+                problems.Add(new OutboxProblem(OutboxKind.Opening, s.Id, s.Id, s.Opened, s.Opening, s.Error, s.Attempts));
+            if (s.Closed is { } closed && s.Closing is UploadStatus.Failed or UploadStatus.Excluded)
+                problems.Add(new OutboxProblem(OutboxKind.Closing, s.Id, s.Id, closed, s.Closing, s.Error, s.Attempts));
+        }
+        return problems;
+    }
+
+    /// <summary>A supervisor dealt with a failed or excluded shift document by hand in ERPNext: it is never uploaded.</summary>
+    public void MarkHandled(string clientId, ShiftDocument document)
+    {
+        var (status, _) = Columns(document);
+        Update($"UPDATE shift SET {status} = 'Handled', next_attempt_at = NULL WHERE client_id = @id AND {status} IN ('Failed', 'Excluded')",
+            clientId);
+    }
+
     /// <summary>A failed shift document goes back to the queue at once, its backoff reset.</summary>
     public void Retry(string clientId) =>
         Update("""

@@ -25,6 +25,8 @@ public sealed class LoginViewModel : ObservableObject
         ClearCommand = new RelayCommand(() => Pin = "");
         LoginCommand = new RelayCommand(Login);
         SettingsCommand = new AsyncRelayCommand(OpenSettingsAsync);
+        UploadProblemsCommand = new AsyncRelayCommand(OpenUploadProblemsAsync);
+        UploadProblemsCount = UploadProblemsViewModel.Count(ctx);
         ShiftInfo = OpenShiftInfo();
     }
 
@@ -35,6 +37,14 @@ public sealed class LoginViewModel : ObservableObject
     /// <summary>Till setup (printer, paper, till number), supervisor only. Nobody is logged in here, so the approval is
     /// logged without a cashier or shift.</summary>
     public AsyncRelayCommand SettingsCommand { get; }
+
+    /// <summary>Upload problems (supervisor): documents ERPNext refused, or left out from before Live.</summary>
+    public AsyncRelayCommand UploadProblemsCommand { get; }
+
+    /// <summary>How many documents are on the Upload problems screen (the button shows when there are any).</summary>
+    public int UploadProblemsCount { get; }
+
+    public string UploadProblemsLabel => $"Upload problems ({UploadProblemsCount.ToString(CultureInfo.InvariantCulture)})";
 
     public string Pin
     {
@@ -48,6 +58,14 @@ public sealed class LoginViewModel : ObservableObject
     public RelayCommand BackspaceCommand { get; }
     public RelayCommand ClearCommand { get; }
     public RelayCommand LoginCommand { get; }
+
+    private async Task OpenUploadProblemsAsync()
+    {
+        Pin = "";
+        var gate = new SupervisorGate(ctx, new SessionState());
+        if (await gate.ApproveAsync(ApprovalAction.SettingsChange, "Open Upload problems") is null) return;
+        ctx.Navigator.Show(new UploadProblemsViewModel(ctx, gate, () => new LoginViewModel(ctx, session, newSale)));
+    }
 
     private async Task OpenSettingsAsync()
     {
