@@ -73,6 +73,12 @@ public static class ClientIds
     public static string Shift(int till, DateTimeOffset at) =>
         $"TILL{till.ToString(CultureInfo.InvariantCulture)}-SHIFT-{Stamp(at)}";
 
+    /// <summary>True for a TillPOS client id ("TILL{n}-…"). Any other number a return refers to is the ERPNext name of a bill
+    /// from another till (downloaded from ERPNext).</summary>
+    public static bool IsTillId(string id) =>
+        id.StartsWith("TILL", StringComparison.OrdinalIgnoreCase) && id.IndexOf('-', StringComparison.Ordinal) is > 4 and var dash
+        && !id.AsSpan(4, dash - 4).ContainsAnyExceptInRange('0', '9');
+
     private static string Stamp(DateTimeOffset at) => at.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture);
 }
 

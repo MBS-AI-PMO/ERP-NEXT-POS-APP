@@ -321,4 +321,64 @@ public class ReturnBuilderTests
         var noReceipt = Builder().BuildWithoutReceipt(cart, TenderKind.Cash, "c", "S2", "SUP-1", "Expired", "s@x", "Simran K");
         Assert.Equal("Simran K", noReceipt.CashierName);
     }
+
+    // ---- Bills and returns from other tills (downloaded from ERPNext) ----
+
+    private sealed class OtherTills(params Receipt[] returns) : IOtherTillReturns
+    {
+        public IReadOnlyList<Receipt> ReturnsAgainst(Receipt original) => returns.Where(r => r.ReturnAgainst == original.ClientId).ToList();
+    }
+
+    /// <summary>A return taken on another till against <paramref name="against"/>: <paramref name="qty"/> of line 1 (milk).</summary>
+    private static Receipt OtherTillReturn(string name, string against, decimal qty) => new(
+        name, ReceiptKind.Return, against, "", "", At.AddHours(-2),
+        [new ReceiptLine(1, "MILK", "Full Cream Milk 1L", "111", "PCS", 1m, -qty, M("6.79"), M("6.79"), -qty * M("6.79"), null, null, false, null)],
+        -qty * M("6.79"), 0m, 0m, -qty * M("6.79"), false, 0m, 0m, [], 0m, 0m, null);
+
+    /// <summary>A sale of another till as downloaded from ERPNext: its ERPNext name stands for its number.</summary>
+    private static Receipt RemoteSale(string erpName, decimal qty, int daysAgo) => new(
+        erpName, ReceiptKind.Sale, null, "", "", At.AddDays(-daysAgo),
+        [new ReceiptLine(1, "MILK", "Full Cream Milk 1L", "111", "PCS", 1m, qty, M("6.79"), M("6.79"), qty * M("6.79"), null, null, false, null)],
+        qty * M("6.79"), 0m, 0m, qty * M("6.79"), false, 0m, 0m, [new ReceiptPayment("Cash Counter 1", qty * M("6.79"))], 0m, 0m, null);
+
+    [Fact]
+    public void Returns_taken_on_other_tills_count_against_what_is_left()
+    {
+        var sale = SellMilk(3);
+        var builder = new ReturnBuilder(store, ctx, 2, Modes, () => At, otherTills: new OtherTills(OtherTillReturn("ACC-PSINV-RET-1", sale.ClientId, 2m)));
+
+        Assert.Equal(1m, builder.Returnable(sale, 1));
+        Assert.Equal(2m, builder.Returned(sale, 1));
+        Assert.Throws<InvalidOperationException>(() => builder.Build(sale, [new ReturnLineRequest(1, 2m)], TenderKind.Cash, "c", "S2", null));
+        builder.Build(sale, [new ReturnLineRequest(1, 1m)], TenderKind.Cash, "c", "S2", null);
+        Assert.Equal(0m, builder.Returnable(sale, 1));
+    }
+
+    [Fact]
+    public void A_bill_from_another_till_is_returned_against_its_erpnext_name()
+    {
+        var original = RemoteSale("ACC-PSINV-2026-00042", 2m, daysAgo: 1);
+        var builder = new ReturnBuilder(store, ctx, 2, Modes, () => At, otherTills: new OtherTills());
+
+        var ret = builder.Build(original, [new ReturnLineRequest(1, 1m)], TenderKind.Cash, "c", "S2", null);
+
+        Assert.Equal("ACC-PSINV-2026-00042", ret.ReturnAgainst);
+        Assert.Equal(ret, Assert.Single(store.ReturnsAgainst("ACC-PSINV-2026-00042")));
+        Assert.Equal(1m, builder.Returnable(original, 1));
+    }
+
+    [Fact]
+    public void A_bill_from_another_till_follows_the_same_approval_rules()
+    {
+        var old = RemoteSale("ACC-PSINV-2026-00007", 2m, daysAgo: 8);
+        var builder = new ReturnBuilder(store, ctx, 2, Modes, () => At, otherTills: new OtherTills());
+        Assert.Equal(new[] { ApprovalAction.ReturnOldReceipt }, builder.Preview(old, [new ReturnLineRequest(1, 1m)]).Needs);
+
+        // 7 of 8 already refunded on other tills (47.53): one more (7.13 with VAT) goes over the 50 limit.
+        var recent = RemoteSale("ACC-PSINV-2026-00008", 8m, daysAgo: 0);
+        var refunded = new ReturnBuilder(store, ctx, 2, Modes, () => At,
+            otherTills: new OtherTills(OtherTillReturn("ACC-PSINV-RET-2", "ACC-PSINV-2026-00008", 7m)));
+        Assert.Equal(new[] { ApprovalAction.ReturnOverLimit }, refunded.Preview(recent, [new ReturnLineRequest(1, 1m)]).Needs);
+        Assert.Empty(builder.Preview(recent, [new ReturnLineRequest(1, 1m)]).Needs);
+    }
 }

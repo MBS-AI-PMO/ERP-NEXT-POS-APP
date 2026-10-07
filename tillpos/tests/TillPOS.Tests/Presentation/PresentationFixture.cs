@@ -72,7 +72,10 @@ public sealed class PresentationFixture : IDisposable
             text => Catalog.Items.Where(i => i.ItemName.Contains(text, StringComparison.OrdinalIgnoreCase)).ToList(),
             new Authenticator(() => [Simran, Sup]), new PinAttemptLimiter(() => Clock.Now), new PinAttemptLimiter(() => Clock.Now),
             new ShiftStore(db), new ReceiptStore(db), new ApprovalStore(db), new CatalogStore(db),
-            Clock, Output, Navigator, Dialogs, ShowReceiptPreview: true, new HeldCartStore(db));
+            Clock, Output, Navigator, Dialogs, ShowReceiptPreview: true, new HeldCartStore(db))
+        {
+            RemoteReceipts = new RemoteReceiptStore(db),
+        };
     }
 
     /// <summary>A shift opened at 08:00 with a 200 float at <paramref name="counter"/> (default: Counter 2), joined by Simran.</summary>

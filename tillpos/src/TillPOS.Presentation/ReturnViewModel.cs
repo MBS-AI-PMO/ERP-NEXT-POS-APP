@@ -6,6 +6,7 @@ using TillPOS.Core.Catalog;
 using TillPOS.Core.Payments;
 using TillPOS.Core.Sales;
 using TillPOS.Core.Security;
+using TillPOS.Data;
 
 namespace TillPOS.Presentation;
 
@@ -88,6 +89,8 @@ public sealed class ReturnLine : ObservableObject
 /// quantities and a reason, then confirm: one supervisor PIN covers every reason the return needs (one approval row is
 /// logged per reason), the credit note is saved, then the drawer opens and it prints (a printer failure never loses it).
 /// A return without a receipt scans the items into a return list at today's prices and always needs a supervisor.
+/// A number that is not on this till is looked up in the bills of the other tills downloaded from ERPNext (by their number or
+/// ERPNext name): such a bill is returned against its ERPNext name, and the returns of every till count toward what is left.
 /// The refund is always cash.</summary>
 public sealed class ReturnViewModel : ObservableObject
 {
@@ -97,6 +100,7 @@ public sealed class ReturnViewModel : ObservableObject
     public const int MaxAgeDays = 7;
     public const int RecentCount = 50;
     public const string SomethingChangedMessage = "Something changed — confirm again";
+    public const string FromOtherTillMessage = "Bill from another till — found in ERPNext.";
 
     public static readonly IReadOnlyList<string> Reasons = ["Changed mind", "Damaged", "Expired", "Wrong item", "Other"];
 
@@ -109,6 +113,7 @@ public sealed class ReturnViewModel : ObservableObject
     private readonly ReturnBuilder builder;
     private ReturnStage stage = ReturnStage.Find;
     private Receipt? original;
+    private string? originalNumber;
     private Cart? returnCart;
     private ReturnPreview? preview;
     private string findText = "";
@@ -134,7 +139,7 @@ public sealed class ReturnViewModel : ObservableObject
         var counter = ctx.CounterOf(session);
         saleContext = ctx.NewSaleContextFor(counter.PosProfile);
         builder = new ReturnBuilder(ctx.Receipts, saleContext, ctx.TillNumber, counter.Modes, () => ctx.Clock.Now, ApprovalLimit, MaxAgeDays,
-            counter.DisplayName);
+            counter.DisplayName, ctx.RemoteReceipts);
 
         FindCommand = new RelayCommand(() => Find(FindText));
         OpenBillCommand = new RelayCommand<string>(id => { if (id is not null) Find(id); });
@@ -181,8 +186,10 @@ public sealed class ReturnViewModel : ObservableObject
 
     /// <summary>The receipt being returned against (null on the other stages).</summary>
     public Receipt? Original => original;
+    /// <summary>The receipt's number (a bill of another till: its ERPNext name, then its till number), time and total.</summary>
     public string OriginalText => original is null ? "" :
-        $"{original.ClientId} · {original.CreatedAt.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture)} · {Format.Money(original.GrandTotal)}";
+        $"{original.ClientId}{(originalNumber is { } number ? $" ({number})" : "")} · " +
+        $"{original.CreatedAt.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture)} · {Format.Money(original.GrandTotal)}";
     public ObservableCollection<ReturnLine> Lines { get; } = [];
     public RelayCommand ReturnAllCommand { get; }
 
@@ -251,18 +258,25 @@ public sealed class ReturnViewModel : ObservableObject
         }
     }
 
-    /// <summary>Opens a receipt of this till by its number.</summary>
+    /// <summary>Opens a receipt by its number: a bill of this till, else a bill of another till downloaded from ERPNext (by its
+    /// number or its ERPNext name).</summary>
     public void Find(string id)
     {
         if (busy || completed) return;
         id = id.Trim().ToUpperInvariant();
         if (id.Length == 0) { Error("Type or scan the receipt number."); return; }
         Receipt? receipt;
+        RemoteReceipt? remote = null;
         IReadOnlyList<Receipt> returns;
         try
         {
             receipt = ctx.Receipts.Get(id);
-            returns = receipt is null ? [] : ctx.Receipts.ReturnsAgainst(receipt.ClientId);
+            if (receipt is null && ctx.RemoteReceipts is { } remotes)
+            {
+                remote = remotes.FindByClientId(id) ?? remotes.FindByErpName(id);
+                receipt = remote?.ToReceipt();
+            }
+            returns = receipt is null ? [] : builder.ReturnsOf(receipt);
         }
         catch (Exception ex)
         {
@@ -276,6 +290,7 @@ public sealed class ReturnViewModel : ObservableObject
         if (lines.All(l => l.Returnable <= 0m)) { Error($"Everything on {receipt.ClientId} has already been returned."); return; }
 
         original = receipt;
+        originalNumber = remote?.ClientRequestId;
         returnCart = null;
         CartLines.Clear();
         Lines.Clear();
@@ -290,9 +305,9 @@ public sealed class ReturnViewModel : ObservableObject
         OnPropertyChanged(nameof(Original));
         OnPropertyChanged(nameof(OriginalText));
         Recompute();
-        Info(returns.Count > 0
+        Info((remote is null ? "" : $"{FromOtherTillMessage} ") + (returns.Count > 0
             ? $"Part of {receipt.ClientId} was already returned — only what is left is shown."
-            : $"Choose the items to return from {receipt.ClientId}.");
+            : $"Choose the items to return from {receipt.ClientId}."));
     }
 
     /// <summary>Every line to its whole returnable quantity.</summary>
@@ -469,6 +484,7 @@ public sealed class ReturnViewModel : ObservableObject
     {
         if (busy || completed) return;
         original = null;
+        originalNumber = null;
         Lines.Clear();
         returnCart = new Cart(saleContext);
         CartLines.Clear();
@@ -605,7 +621,7 @@ public sealed class ReturnViewModel : ObservableObject
         {
             foreach (var sale in ctx.Receipts.RecentSales(RecentCount))
             {
-                var returns = ctx.Receipts.ReturnsAgainst(sale.ClientId);
+                var returns = builder.ReturnsOf(sale);
                 var tag = returns.Count == 0 ? ""
                     : sale.Lines.All(l => l.Qty - Returned(returns, l.LineNo) <= 0m) ? "all returned" : "partly returned";
                 RecentBills.Add(new RecentBill(sale.ClientId, sale.CreatedAt.ToString("dd/MM HH:mm", CultureInfo.InvariantCulture),
@@ -629,6 +645,7 @@ public sealed class ReturnViewModel : ObservableObject
             return;
         }
         original = null;
+        originalNumber = null;
         returnCart = null;
         Lines.Clear();
         CartLines.Clear();

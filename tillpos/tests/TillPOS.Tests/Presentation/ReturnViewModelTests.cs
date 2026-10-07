@@ -1,6 +1,7 @@
 using TillPOS.Core.Payments;
 using TillPOS.Core.Sales;
 using TillPOS.Core.Security;
+using TillPOS.Data;
 using TillPOS.Presentation;
 
 namespace TillPOS.Tests.Presentation;
@@ -98,6 +99,95 @@ public sealed class ReturnViewModelTests : IDisposable
         Assert.True(vm.IsFind);
         Assert.True(vm.MessageIsError);
         Assert.Equal("Receipt TILL7-20261001100000-000001 not found on this till. Ask a supervisor for a return without receipt.", vm.Message);
+    }
+
+    // ---- Bills of other tills (downloaded from ERPNext) ----
+
+    private const string OtherTillId = "TILL3-20261006120000-000007";
+    private const string OtherTillName = "ACC-PSINV-2026-00042";
+
+    private static RemoteLine RemoteMilk(string rowId, decimal qty) =>
+        new(rowId, "MILK", "Full Cream Milk 1L", qty, "PCS", 1m, 6.79m, 6.79m, qty * 6.79m, "111", null);
+
+    /// <summary>A sale of till 3 posted <paramref name="daysAgo"/> days before the fixture's clock: 3 milk, and a TILL4 return of
+    /// one when <paramref name="returnedOnTill4"/>.</summary>
+    private void OtherTillSale(int daysAgo = 1, bool returnedOnTill4 = false)
+    {
+        var posting = new DateTime(2026, 10, 7, 9, 0, 0).AddDays(-daysAgo);
+        f.Ctx.RemoteReceipts!.Upsert(new RemoteReceipt(OtherTillName, OtherTillId, "TILL3", "Al Ain Counter 1", posting, "Walk-in Customer",
+            21.39m, 21.5m, 20.37m, 1.02m, false, null, [RemoteMilk("1", 3m)], [new RemotePayment("Cash Counter 1", 21.5m)]), f.Clock.Now);
+        if (returnedOnTill4)
+            f.Ctx.RemoteReceipts.Upsert(new RemoteReceipt("ACC-PSINV-2026-00050", "TILL4-20261006130000-000001", "TILL4", "Al Ain Counter 1",
+                posting.AddHours(1), "Walk-in Customer", -7.13m, -7.25m, -6.79m, -0.34m, true, OtherTillName, [RemoteMilk("1", -1m)],
+                [new RemotePayment("Cash Counter 1", -7.25m)]), f.Clock.Now);
+    }
+
+    [Fact]
+    public void A_bill_of_another_till_is_found_in_ERPNext_by_its_number_or_its_ERPNext_name()
+    {
+        OtherTillSale(returnedOnTill4: true);
+        var vm = OpenReturns();
+
+        vm.FindText = OtherTillId.ToLowerInvariant();
+        vm.FindCommand.Execute(null);
+
+        Assert.True(vm.IsChoose, vm.Message);
+        Assert.Equal(OtherTillName, vm.Original!.ClientId);
+        Assert.StartsWith($"{OtherTillName} ({OtherTillId}) · 06/10/2026 09:00", vm.OriginalText);
+        Assert.False(vm.MessageIsError);
+        Assert.Equal($"Bill from another till — found in ERPNext. Part of {OtherTillName} was already returned — only what is left is shown.",
+            vm.Message);
+        var milk = Assert.Single(vm.Lines);
+        Assert.Equal(("3", "1", "2"), (milk.SoldText, milk.ReturnedText, milk.ReturnableText));
+
+        var byName = OpenReturns();
+        byName.Scan(OtherTillName.ToLowerInvariant());               // the ERPNext name, scanned
+        Assert.True(byName.IsChoose, byName.Message);
+        Assert.Equal(OtherTillName, byName.Original!.ClientId);
+    }
+
+    [Fact]
+    public void A_bill_of_another_till_is_refunded_against_its_ERPNext_name()
+    {
+        OtherTillSale();
+        var vm = OpenReturns();
+        vm.Scan(OtherTillId);
+        Assert.Equal($"Bill from another till — found in ERPNext. Choose the items to return from {OtherTillName}.", vm.Message);
+        vm.Lines[0].IncrementCommand.Execute(null);
+        vm.SetReasonCommand.Execute("Damaged");
+        Assert.Equal("", vm.NeedsText);
+
+        vm.ConfirmCommand.Execute(null);
+
+        var credit = Assert.Single(Returns());
+        Assert.Equal(OtherTillName, credit.ReturnAgainst);           // printed as "Return of: ACC-PSINV-2026-00042"
+        Assert.Equal((1, -1m), (credit.Lines.Single().LineNo, credit.Lines.Single().Qty));
+        Assert.Equal(credit.ClientId, Assert.Single(f.Output.Printed).Receipt.ClientId);
+
+        var again = OpenReturns();
+        again.Scan(OtherTillId);
+        Assert.Equal(("1", "2"), (again.Lines[0].ReturnedText, again.Lines[0].ReturnableText));
+    }
+
+    [Fact]
+    public void An_old_bill_of_another_till_needs_a_supervisor_by_its_posting_date()
+    {
+        OtherTillSale(daysAgo: 8);
+        var vm = OpenReturns();
+        vm.Scan(OtherTillId);
+        vm.Lines[0].IncrementCommand.Execute(null);
+        Assert.Equal("Needs supervisor: receipt older than 7 days", vm.NeedsText);
+    }
+
+    [Fact]
+    public void A_credit_note_of_another_till_cannot_be_opened()
+    {
+        OtherTillSale(returnedOnTill4: true);
+        var vm = OpenReturns();
+        vm.Scan("TILL4-20261006130000-000001");
+        Assert.True(vm.IsFind);
+        Assert.True(vm.MessageIsError);
+        Assert.Equal("ACC-PSINV-2026-00050 is a credit note, not a sale — open the original sale.", vm.Message);
     }
 
     [Fact]

@@ -222,7 +222,8 @@ public sealed class Uploader
             run, ct);
     }
 
-    /// <summary>The ERPNext name of a sale on this till (DryRun: a stand-in when it would be uploaded in this run), or null.</summary>
+    /// <summary>The ERPNext name of a sale on this till (DryRun: a stand-in when it would be uploaded in this run), or null. A
+    /// bill of another till (downloaded from ERPNext) is known by its ERPNext name already: that name is used as it is.</summary>
     private string? OriginalName(string clientId, Run run)
     {
         ReceiptSyncInfo info;
@@ -232,7 +233,8 @@ public sealed class Uploader
         }
         catch (KeyNotFoundException)
         {
-            return null; // not on this till: cross-till returns come with Task 5
+            // A till number that is not on this till never goes without its original; anything else is an ERPNext name.
+            return ClientIds.IsTillId(clientId) ? null : clientId;
         }
         return info.Status == ReceiptSyncStatus.Synced ? info.ErpName : run.Planned(InvoiceKey(clientId));
     }
@@ -244,7 +246,7 @@ public sealed class Uploader
             var a = entry.Record;
             var label = $"Approval {a.Action} ({a.Id})";
             // Approvals go after the shift and the bill they mention; one that names neither (or a bill that was never
-            // saved, e.g. a voided line) goes without the link.
+            // saved, e.g. a voided line) goes without the link. A bill of another till is linked by its ERPNext name.
             string? shiftName = null;
             if (!string.IsNullOrEmpty(a.ShiftClientId) && shifts.SyncInfo(a.ShiftClientId) is { } shift)
             {
@@ -253,7 +255,7 @@ public sealed class Uploader
                 if (shiftName is null) continue;
             }
             string? invoiceName = null;
-            if (!string.IsNullOrEmpty(a.ReceiptClientId) && receipts.Get(a.ReceiptClientId) is not null)
+            if (!string.IsNullOrEmpty(a.ReceiptClientId) && (receipts.Get(a.ReceiptClientId) is not null || !ClientIds.IsTillId(a.ReceiptClientId)))
             {
                 invoiceName = OriginalName(a.ReceiptClientId, run);
                 if (invoiceName is null) continue;

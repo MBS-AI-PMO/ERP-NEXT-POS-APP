@@ -83,5 +83,25 @@ internal static class Migrations
         ALTER TABLE approval_log ADD COLUMN next_attempt_at TEXT;
         UPDATE approval_log SET sync_status = 'Synced' WHERE synced = 1;
         """,
+        // Plan 2b Task 5: recent POS Invoices of the other tills (read-only copies, for cross-till returns). posting is ERPNext's
+        // posting date and time ("yyyy-MM-dd HH:mm:ss", shop time); json holds the whole invoice (lines, payments).
+        """
+        CREATE TABLE remote_receipt (
+            erp_name TEXT PRIMARY KEY COLLATE NOCASE,
+            client_request_id TEXT,
+            till TEXT,
+            pos_profile TEXT,
+            posting TEXT NOT NULL,
+            customer TEXT,
+            grand_total TEXT NOT NULL,
+            rounded_total TEXT NOT NULL,
+            is_return INTEGER NOT NULL,
+            return_against TEXT,
+            json TEXT NOT NULL,
+            fetched_at TEXT NOT NULL);
+        CREATE INDEX ix_remote_receipt_client ON remote_receipt(client_request_id COLLATE NOCASE);
+        CREATE INDEX ix_remote_receipt_return_against ON remote_receipt(return_against COLLATE NOCASE);
+        CREATE INDEX ix_remote_receipt_posting ON remote_receipt(posting);
+        """,
     ];
 }

@@ -6,6 +6,14 @@ namespace TillPOS.Core.Sales;
 
 public sealed record ReturnLineRequest(int LineNo, decimal Qty);
 
+/// <summary>Returns taken on other tills against a sale (downloaded read-only from ERPNext), as read models whose lines carry
+/// the sale's line numbers and negative quantities. The sale may be this till's (then by its ERPNext name once uploaded) or
+/// another till's (whose <see cref="Receipt.ClientId"/> is its ERPNext name).</summary>
+public interface IOtherTillReturns
+{
+    IReadOnlyList<Receipt> ReturnsAgainst(Receipt original);
+}
+
 /// <summary>What a return would refund, before it is saved. RefundDue is the rounded cash refund (negative);
 /// Needs lists every supervisor approval the return requires (empty when none).</summary>
 public sealed record ReturnPreview(decimal GrandTotal, decimal TotalTaxes, decimal RefundDue, decimal RoundingDifference,
@@ -14,16 +22,24 @@ public sealed record ReturnPreview(decimal GrandTotal, decimal TotalTaxes, decim
 /// <summary>Builds and stores return receipts. Lines keep the original sale's line number and rate; quantities are negative.
 /// A return without a receipt, refunds on one receipt that add up to more than the limit, or a receipt older than
 /// maxAgeDays calendar days (till local time) need a supervisor. Refunds are paid in the modes of the shift's counter
-/// (<paramref name="modes"/>), whose label (<paramref name="counterName"/>) is printed on the credit note.</summary>
+/// (<paramref name="modes"/>), whose label (<paramref name="counterName"/>) is printed on the credit note.
+/// <para>A sale of another till (downloaded from ERPNext) is returned the same way: its <see cref="Receipt.ClientId"/> is its
+/// ERPNext name, which becomes the return's <see cref="Receipt.ReturnAgainst"/>. Returns taken on other tills
+/// (<paramref name="otherTills"/>) count toward what is left and toward the refund limit.</para></summary>
 public sealed class ReturnBuilder(IReceiptStore store, SaleContext ctx, int tillNumber, TenderModes modes, Func<DateTimeOffset> now,
-    decimal approvalLimit = 50m, int maxAgeDays = 7, string? counterName = null)
+    decimal approvalLimit = 50m, int maxAgeDays = 7, string? counterName = null, IOtherTillReturns? otherTills = null)
 {
-    public decimal Returnable(Receipt original, int lineNo)
-    {
-        var sold = original.Lines.Single(l => l.LineNo == lineNo);
-        var returned = store.ReturnsAgainst(original.ClientId).SelectMany(r => r.Lines).Where(l => l.LineNo == lineNo).Sum(l => -l.Qty);
-        return sold.Qty - returned;
-    }
+    public decimal Returnable(Receipt original, int lineNo) => original.Lines.Single(l => l.LineNo == lineNo).Qty - Returned(original, lineNo);
+
+    /// <summary>How much of the line was returned already, on this till and on the others.</summary>
+    public decimal Returned(Receipt original, int lineNo) => Returned(ReturnsOf(original), lineNo);
+
+    /// <summary>Every return against the sale: this till's, then the other tills' (when known).</summary>
+    public IReadOnlyList<Receipt> ReturnsOf(Receipt original) =>
+        [.. store.ReturnsAgainst(original.ClientId), .. otherTills?.ReturnsAgainst(original) ?? []];
+
+    private static decimal Returned(IReadOnlyList<Receipt> returns, int lineNo) =>
+        returns.SelectMany(r => r.Lines).Where(l => l.LineNo == lineNo).Sum(l => -l.Qty);
 
     /// <summary>The return <see cref="Build"/> would make, checked the same way, without saving anything.</summary>
     public ReturnPreview Preview(Receipt original, IReadOnlyList<ReturnLineRequest> requests) => ToPreview(Prepare(original, requests));
@@ -60,6 +76,7 @@ public sealed class ReturnBuilder(IReceiptStore store, SaleContext ctx, int till
         if (requests.Select(r => r.LineNo).Distinct().Count() != requests.Count)
             throw new ArgumentException("Each line can appear only once.", nameof(requests));
 
+        var returns = ReturnsOf(original);
         var lines = new List<ReceiptLine>();
         foreach (var request in requests)
         {
@@ -67,14 +84,14 @@ public sealed class ReturnBuilder(IReceiptStore store, SaleContext ctx, int till
                 ?? throw new ArgumentException($"Line {request.LineNo} is not on receipt {original.ClientId}.", nameof(requests));
             if (!sold.FromScaleLabel && sold.Qty == decimal.Truncate(sold.Qty) && request.Qty != decimal.Truncate(request.Qty))
                 throw new ArgumentException($"{sold.ItemName} is returned in whole units.", nameof(requests));
-            var left = Returnable(original, request.LineNo);
+            var left = sold.Qty - Returned(returns, request.LineNo);
             if (request.Qty > left) throw new InvalidOperationException($"Only {left} of {sold.ItemName} can still be returned.");
             lines.Add(sold with { Qty = -request.Qty, Amount = 0m });
         }
 
         var totals = Price(lines);
         var needs = new List<ApprovalAction>();
-        var alreadyRefunded = -store.ReturnsAgainst(original.ClientId).Sum(r => r.GrandTotal);
+        var alreadyRefunded = -returns.Sum(r => r.GrandTotal);
         if (alreadyRefunded - totals.GrandTotal > approvalLimit) needs.Add(ApprovalAction.ReturnOverLimit);
         if (DateOnly.FromDateTime(original.CreatedAt.LocalDateTime) < ctx.Today().AddDays(-maxAgeDays)) needs.Add(ApprovalAction.ReturnOldReceipt);
         return new Draft(WithAmounts(lines, totals), totals, original.ClientId, needs);

@@ -23,6 +23,7 @@ public sealed class AppHost
     private readonly CatalogStore store;
     private readonly SqliteCatalog catalog;
     private readonly CashierStore cashiers;
+    private readonly RemoteReceiptStore remoteReceipts;
     private readonly IErpClient erp;
     private readonly SyncContext syncContext;
     private readonly TillContext ctx;
@@ -41,6 +42,7 @@ public sealed class AppHost
         store = new CatalogStore(db);
         catalog = new SqliteCatalog(db);
         cashiers = new CashierStore(db);
+        remoteReceipts = new RemoteReceiptStore(db);
         // Everything reads through a read-only view of the client: its writer side is only handed out in Live upload mode.
         // 60 s per request: an upload whose answer does not come in time stays "in progress" for Uploader.InFlightHold (5 min),
         // longer than gunicorn's 120 s worker timeout, before it is looked up again, so a slow insert is never sent twice.
@@ -83,7 +85,10 @@ public sealed class AppHost
             text => catalog.Search(text),
             new Authenticator(LoginCashiers(cashiers, settings)), new PinAttemptLimiter(() => DateTimeOffset.Now), new PinAttemptLimiter(() => DateTimeOffset.Now),
             shifts, receipts, approvals, store,
-            new SystemClock(), Output, Shell, dialogs, settings.ShowReceiptPreview, new HeldCartStore(db));
+            new SystemClock(), Output, Shell, dialogs, settings.ShowReceiptPreview, new HeldCartStore(db))
+        {
+            RemoteReceipts = remoteReceipts,
+        };
     }
 
     public ShellViewModel Shell { get; } = new();
@@ -189,7 +194,9 @@ public sealed class AppHost
         return !string.IsNullOrEmpty(settings.ApiSecret) ? settings.ApiSecret : throw new InvalidOperationException("API secret missing in settings.json");
     }
 
-    private CatalogPuller NewPuller() => CatalogPuller.CreateDefault(syncContext, catalog.Reload, null, new CashierFeed(syncContext, cashiers));
+    /// <summary>The catalog feeds, the cashiers, then the other tills' recent bills (read-only, for cross-till returns).</summary>
+    private CatalogPuller NewPuller() => CatalogPuller.CreateDefault(syncContext, catalog.Reload, null, new CashierFeed(syncContext, cashiers),
+        new RecentInvoicesFeed(syncContext, remoteReceipts, settings.TillNumber, () => DateTimeOffset.Now));
 
     /// <summary>The synced ERPNext cashiers; while none have synced yet, the settings' local test cashiers (hashed once,
     /// kept in memory only and never written to the database). They stop working as soon as ERPNext cashiers sync.</summary>

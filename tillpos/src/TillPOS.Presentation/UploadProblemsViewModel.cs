@@ -3,6 +3,7 @@ using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using TillPOS.Core.Catalog;
+using TillPOS.Core.Sales;
 using TillPOS.Core.Security;
 using TillPOS.Data;
 using TillPOS.Sync.Upload;
@@ -216,6 +217,7 @@ public sealed class UploadProblemsViewModel : ObservableObject
 
     private string OpeningName(string shiftId) => ctx.Shifts.SyncInfo(shiftId)?.ErpOpeningName ?? $"(not uploaded yet: {shiftId})";
 
+    /// <summary>The ERPNext name of a bill of this till, or null; a bill of another till is known by its ERPNext name.</summary>
     private string? ErpNameOf(string receiptId)
     {
         try
@@ -224,7 +226,7 @@ public sealed class UploadProblemsViewModel : ObservableObject
         }
         catch (KeyNotFoundException)
         {
-            return null;
+            return ClientIds.IsTillId(receiptId) ? null : receiptId;
         }
     }
 }

@@ -232,6 +232,36 @@ public sealed class UploaderTests : IDisposable
     }
 
     [Fact]
+    public async Task A_return_of_another_tills_bill_goes_at_once_against_its_ERPNext_name()
+    {
+        OpenShift();
+        Return("TILL2-R", "ACC-PSINV-2026-00042", 5);                  // the original was downloaded from ERPNext (Task 5)
+        approvals.Add(new ApprovalRecord("ap1", ApprovalAction.ReturnOldReceipt, "cashier1", "sup1", ShiftId, "ACC-PSINV-2026-00042", null,
+            M("10.5"), "x", Morning.AddMinutes(65)));
+
+        var report = await New().RunOnceAsync();
+
+        var returned = InsertedInvoices.Single();
+        Assert.Equal("ACC-PSINV-2026-00042", Str(returned, "return_against"));
+        Assert.Equal(ReceiptSyncStatus.Synced, receipts.SyncInfo("TILL2-R").Status);
+        Assert.Equal("ACC-PSINV-2026-00042", Str(erp.Inserted.Single(i => i.Doctype == "TillPOS Approval").Doc, "invoice"));
+        Assert.Empty(report.Problems);
+    }
+
+    [Fact]
+    public async Task A_return_against_a_till_number_that_is_not_on_this_till_waits()
+    {
+        OpenShift();
+        Return("TILL2-R", "TILL7-20261001100000-000001", 5);
+
+        var report = await New().RunOnceAsync();
+
+        Assert.Empty(InsertedInvoices);
+        Assert.Equal(ReceiptSyncStatus.Pending, receipts.SyncInfo("TILL2-R").Status);
+        Assert.Contains(report.Problems, p => p.Message.Contains("Return TILL2-R waits for its original sale TILL7-20261001100000-000001"));
+    }
+
+    [Fact]
     public async Task A_return_without_a_receipt_does_not_wait()
     {
         OpenShift();
