@@ -13,8 +13,9 @@ public partial class SetupDialog : Window
     private const string NoPrinter = "(No printer — save receipts as files)";
     private readonly TillSettings settings;
 
-    /// <param name="firstRun">At the first start an empty printer means "not chosen yet", so the Windows default printer is
-    /// offered; later it means the till deliberately saves receipts as files.</param>
+    /// <param name="firstRun">At the first start an empty printer means "not chosen yet", so an installed receipt printer, else
+    /// the Windows default unless it only makes files (PDF, XPS…), is offered (PrinterNames.PickDefault); later it means the
+    /// till deliberately saves receipts as files.</param>
     public SetupDialog(TillSettings settings, bool firstRun)
     {
         InitializeComponent();
@@ -27,7 +28,7 @@ public partial class SetupDialog : Window
             printers.Insert(0, current); // keep a configured printer that is not installed (yet) visible
         PrinterBox.Items.Add(NoPrinter);
         foreach (var name in printers) PrinterBox.Items.Add(name);
-        var preselect = current.Length > 0 ? current : firstRun ? defaultPrinter : null;
+        var preselect = current.Length > 0 ? current : firstRun ? PrinterNames.PickDefault(printers, defaultPrinter) : null;
         var index = preselect is null ? -1 : printers.FindIndex(p => string.Equals(p, preselect, StringComparison.OrdinalIgnoreCase));
         PrinterBox.SelectedIndex = index + 1;
 
