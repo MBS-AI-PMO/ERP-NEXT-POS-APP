@@ -43,7 +43,10 @@ public sealed class ExcludedHistoryTests : IDisposable
     }
 
     private Uploader New() => new(erp, erp, UploadMode.Live, shifts, receipts, approvals, _ => PayloadTests.Counter1, "TILL2", "till2@shop.local",
-        () => goLive.AddHours(5), (_, _) => { });
+        () => goLive.AddHours(5), (_, _) => { })
+    {
+        LiveSince = () => UploadHistory.LiveSince(kv),
+    };
 
     private IEnumerable<string> SentIds => erp.Inserted.Select(i =>
         i.Doc.TryGetProperty("posa_client_request_id", out var c) ? c.GetString()! : i.Doc.GetProperty("custom_offline_id").GetString()!);
@@ -122,6 +125,42 @@ public sealed class ExcludedHistoryTests : IDisposable
         Assert.Equal(ReceiptSyncStatus.Excluded, receipts.SyncInfo("OLD2-BILL").Status);
         Assert.Equal(ReceiptSyncStatus.Pending, receipts.SyncInfo("OLD2-LATE").Status);
         Assert.Contains(approvals.Outbox(), a => a.Record.Id == "late");
+    }
+
+    [Fact]
+    public async Task Approvals_made_since_going_live_upload_even_when_their_shift_never_will()
+    {
+        UploadHistory.SwitchToLive(shifts, kv, goLive, includeHistory: false);
+        // Made after the switch but naming an excluded shift (and its excluded bill), e.g. a late supervisor action.
+        approvals.Add(new ApprovalRecord("late", ApprovalAction.ReturnOldReceipt, "cashier1", "sup1", "OLD1", "OLD1-BILL", null, 1m, null,
+            goLive.AddHours(1)));
+
+        await New().RunOnceAsync();
+
+        var sent = Assert.Single(erp.Inserted).Doc;
+        Assert.Equal("late", sent.GetProperty("custom_offline_id").GetString());
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, sent.GetProperty("shift").ValueKind);
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, sent.GetProperty("invoice").ValueKind);
+        Assert.Equal(UploadStatus.Excluded, Assert.Single(approvals.Problems(), p => p.Id == "OLD1-VOID").Status);   // older: stays out
+    }
+
+    [Fact]
+    public async Task Approvals_of_a_handled_shift_made_since_going_live_link_only_what_is_in_erpnext()
+    {
+        UploadHistory.SwitchToLive(shifts, kv, goLive, includeHistory: false);
+        Shift("NEW", goLive.AddHours(1), close: true);
+        shifts.MarkFailed("NEW", ShiftDocument.Opening, "bad", null);
+        shifts.MarkHandled("NEW", ShiftDocument.Opening, "Handled by sup: opened by hand");
+        receipts.MarkSynced("NEW-BILL", "ACC-SYNCED");
+        approvals.Add(new ApprovalRecord("late", ApprovalAction.ReturnOverLimit, "cashier1", "sup1", "NEW", "NEW-BILL", null, 1m, null,
+            goLive.AddHours(2)));
+
+        await New().RunOnceAsync();
+
+        var docs = erp.Inserted.Where(i => i.Doctype == "TillPOS Approval").Select(i => i.Doc).ToList();
+        var late = docs.Single(d => d.GetProperty("custom_offline_id").GetString() == "late");
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, late.GetProperty("shift").ValueKind);
+        Assert.Equal("ACC-SYNCED", late.GetProperty("invoice").GetString());
     }
 
     [Fact]

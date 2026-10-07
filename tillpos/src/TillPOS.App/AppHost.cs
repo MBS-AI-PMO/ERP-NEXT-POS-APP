@@ -82,6 +82,7 @@ public sealed class AppHost
         {
             TaxTemplates = catalog.FindSalesTaxTemplate,
             LogError = logError,
+            LiveSince = () => UploadHistory.LiveSince(store),
         };
         // Live set in settings.json: the first time, record the moment (history before it stays out) and log it.
         if (mode == UploadMode.Live && UploadHistory.SwitchToLive(shifts, store, now, includeHistory: false))

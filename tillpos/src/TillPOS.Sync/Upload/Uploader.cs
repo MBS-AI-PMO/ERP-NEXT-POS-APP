@@ -85,6 +85,10 @@ public sealed class Uploader
     /// <summary>The synced Sales Taxes and Charges Template by name (the Closing Shift's taxes); none by default.</summary>
     public Func<string, SalesTaxTemplate?> TaxTemplates { get; init; } = _ => null;
 
+    /// <summary>When the till first went Live (kv upload_live_since), or null; approvals made since then upload even when their
+    /// shift never will (excluded or handled).</summary>
+    public Func<DateTimeOffset?> LiveSince { get; init; } = () => null;
+
     /// <summary>Where unexpected exceptions go (errors.log); network errors and ERPNext's answers are not logged.</summary>
     public Action<Exception> LogError { get; init; } = _ => { };
 
@@ -239,6 +243,20 @@ public sealed class Uploader
         return info.Status == ReceiptSyncStatus.Synced ? info.ErpName : run.Planned(InvoiceKey(clientId));
     }
 
+    /// <summary>The ERPNext name of a bill only when it is already there (this till's synced bill, or another till's), else null.</summary>
+    private string? UploadedName(string clientId)
+    {
+        try
+        {
+            var info = receipts.SyncInfo(clientId);
+            return info.Status == ReceiptSyncStatus.Synced ? info.ErpName : null;
+        }
+        catch (KeyNotFoundException)
+        {
+            return ClientIds.IsTillId(clientId) ? null : clientId;
+        }
+    }
+
     private async Task ApprovalsAsync(Run run, CancellationToken ct)
     {
         foreach (var entry in approvals.Outbox())
@@ -248,14 +266,26 @@ public sealed class Uploader
             // Approvals go after the shift and the bill they mention; one that names neither (or a bill that was never
             // saved, e.g. a voided line) goes without the link. A bill of another till is linked by its ERPNext name.
             string? shiftName = null;
+            var detached = false;
             if (!string.IsNullOrEmpty(a.ShiftClientId) && shifts.SyncInfo(a.ShiftClientId) is { } shift)
             {
-                if (shift.OpeningStatus == UploadStatus.Excluded) continue;
-                shiftName = shift.OpeningStatus == UploadStatus.Synced ? shift.ErpOpeningName : run.Planned(OpeningKey(a.ShiftClientId));
-                if (shiftName is null) continue;
+                if (shift.OpeningStatus is UploadStatus.Excluded or UploadStatus.Handled)
+                {
+                    // Its shift will never be uploaded: an approval made since the till went Live still goes, without the shift
+                    // (and without the bill unless that is in ERPNext); older ones stay out with their shift.
+                    if (LiveSince() is not { } since || a.At < since) continue;
+                    detached = true;
+                }
+                else
+                {
+                    shiftName = shift.OpeningStatus == UploadStatus.Synced ? shift.ErpOpeningName : run.Planned(OpeningKey(a.ShiftClientId));
+                    if (shiftName is null) continue;
+                }
             }
             string? invoiceName = null;
-            if (!string.IsNullOrEmpty(a.ReceiptClientId) && (receipts.Get(a.ReceiptClientId) is not null || !ClientIds.IsTillId(a.ReceiptClientId)))
+            if (detached)
+                invoiceName = string.IsNullOrEmpty(a.ReceiptClientId) ? null : UploadedName(a.ReceiptClientId);
+            else if (!string.IsNullOrEmpty(a.ReceiptClientId) && (receipts.Get(a.ReceiptClientId) is not null || !ClientIds.IsTillId(a.ReceiptClientId)))
             {
                 invoiceName = OriginalName(a.ReceiptClientId, run);
                 if (invoiceName is null) continue;
