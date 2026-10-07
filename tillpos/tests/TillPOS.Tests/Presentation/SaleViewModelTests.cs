@@ -14,7 +14,8 @@ public sealed class SaleViewModelTests : IDisposable
     public void Dispose() => f.Dispose();
 
     private SaleViewModel NewSale() =>
-        new(f.Ctx, f.Session, new SupervisorGate(f.Ctx, f.Session), (sale, kind) => { payRequest = (sale, kind); return "payment"; });
+        new(f.Ctx, f.Session, new SupervisorGate(f.Ctx, f.Session), (sale, kind) => { payRequest = (sale, kind); return "payment"; },
+            () => "login");
 
     [Fact]
     public void Scanning_adds_a_line_and_updates_totals()

@@ -28,6 +28,7 @@ public sealed class SaleViewModel : ObservableObject
     private readonly SessionState session;
     private readonly SupervisorGate gate;
     private readonly Func<SaleViewModel, TenderKind, object> newPayment;
+    private readonly Func<object> newLogin;
     private readonly SaleContext saleContext;
     private SaleLine? selectedLine;
     private string scanText = "";
@@ -40,12 +41,15 @@ public sealed class SaleViewModel : ObservableObject
     private bool messageIsError;
     private int heldCount;
 
-    public SaleViewModel(TillContext ctx, SessionState session, SupervisorGate gate, Func<SaleViewModel, TenderKind, object> newPayment)
+    /// <param name="newLogin">The login screen, shown after Log out and after the shift is closed.</param>
+    public SaleViewModel(TillContext ctx, SessionState session, SupervisorGate gate, Func<SaleViewModel, TenderKind, object> newPayment,
+        Func<object> newLogin)
     {
         this.ctx = ctx;
         this.session = session;
         this.gate = gate;
         this.newPayment = newPayment;
+        this.newLogin = newLogin;
         saleContext = ctx.NewSaleContext();
         Cart = new Cart(saleContext);
 
@@ -64,6 +68,8 @@ public sealed class SaleViewModel : ObservableObject
         HoldCommand = new RelayCommand(Hold);
         RecallCommand = new RelayCommand(Recall);
         ReprintLastCommand = new RelayCommand(ReprintLast);
+        CloseShiftCommand = new RelayCommand(CloseShift);
+        LogOutCommand = new RelayCommand(LogOut);
 
         RestoreAutosave();
         Refresh();
@@ -112,6 +118,8 @@ public sealed class SaleViewModel : ObservableObject
     public RelayCommand HoldCommand { get; }
     public RelayCommand RecallCommand { get; }
     public RelayCommand ReprintLastCommand { get; }
+    public RelayCommand CloseShiftCommand { get; }
+    public RelayCommand LogOutCommand { get; }
 
     public void Scan(string code)
     {
@@ -290,6 +298,39 @@ public sealed class SaleViewModel : ObservableObject
             return;
         }
         MarkLastReceiptPrinted(true);
+    }
+
+    /// <summary>Starts closing the shift (blind count). Refused while the bill has lines or bills are on hold, so no bill is
+    /// left behind on a closed shift.</summary>
+    public void CloseShift()
+    {
+        if (Cart.Lines.Count > 0) { Error("Finish, hold or void the current bill first"); return; }
+        int held;
+        try
+        {
+            held = ctx.Held.List().Count;
+        }
+        catch (Exception ex)
+        {
+            Error($"Could not check the bills on hold: {ex.Message}");
+            return;
+        }
+        HeldCount = held;
+        if (held > 0)
+        {
+            Error($"{held.ToString(CultureInfo.InvariantCulture)} bill(s) are on hold — recall or delete them before closing the shift");
+            return;
+        }
+        ctx.Navigator.Show(new CloseShiftViewModel(ctx, session, gate,
+            back: () => ctx.Navigator.Show(this), done: () => ctx.Navigator.Show(newLogin())));
+    }
+
+    /// <summary>Logs the cashier out; the shift stays open for the next cashier.</summary>
+    public void LogOut()
+    {
+        if (Cart.Lines.Count > 0) { Error("Finish, hold or void the current bill first"); return; }
+        session.Cashier = null;
+        ctx.Navigator.Show(newLogin());
     }
 
     /// <summary>The recall could not restore the bill: it goes back on hold (same id, label and time) and the screen is left

@@ -4,10 +4,13 @@ using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace TillPOS.Presentation;
 
-/// <summary>An amount typed on the keypad or keyboard: digits, one dot, at most 3 decimals, at most 7 whole digits.</summary>
-public sealed partial class NumericEntry : ObservableObject
+/// <summary>An amount typed on the keypad or keyboard: digits, one dot, at most 3 decimals, at most 7 whole digits.
+/// A whole-number entry (a count) refuses the dot.</summary>
+public sealed partial class NumericEntry(bool wholeNumbers = false) : ObservableObject
 {
     private string text = "";
+
+    public bool WholeNumbers { get; } = wholeNumbers;
 
     public event Action? Changed;
 
@@ -16,7 +19,7 @@ public sealed partial class NumericEntry : ObservableObject
         get => text;
         set
         {
-            if (!Valid().IsMatch(value)) return;
+            if (!Valid().IsMatch(value) || (WholeNumbers && value.Contains('.'))) return;
             if (!SetProperty(ref text, value)) return;
             OnPropertyChanged(nameof(Value));
             Changed?.Invoke();
@@ -33,7 +36,7 @@ public sealed partial class NumericEntry : ObservableObject
 
     public void Dot()
     {
-        if (!text.Contains('.')) Text = text.Length == 0 ? "0." : text + ".";
+        if (!WholeNumbers && !text.Contains('.')) Text = text.Length == 0 ? "0." : text + ".";
     }
 
     public void Backspace()

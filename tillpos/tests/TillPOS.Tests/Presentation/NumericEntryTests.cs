@@ -50,4 +50,19 @@ public class NumericEntryTests
         Assert.Equal("50", e.Text);
         Assert.Equal(1, changes);
     }
+
+    [Fact]
+    public void A_whole_number_entry_refuses_the_dot()
+    {
+        var e = new NumericEntry(wholeNumbers: true);
+        e.Digit('1');
+        e.Dot();
+        e.Digit('2');
+        Assert.Equal("12", e.Text);
+        e.Text = "12.5";
+        Assert.Equal("12", e.Text);
+        e.Set(3.5m);
+        Assert.Equal("12", e.Text);
+        Assert.Equal(12m, e.Value);
+    }
 }

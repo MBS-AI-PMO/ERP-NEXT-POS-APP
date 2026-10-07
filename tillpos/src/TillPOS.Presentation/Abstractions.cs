@@ -1,6 +1,7 @@
 using TillPOS.Core.Catalog;
 using TillPOS.Core.Sales;
 using TillPOS.Core.Security;
+using TillPOS.Core.Shifts;
 using TillPOS.Data;
 
 namespace TillPOS.Presentation;
@@ -42,6 +43,10 @@ public interface IReceiptOutput
     /// <summary>Prints the receipt; throws if the printer fails (the bill is already saved). <paramref name="copy"/> marks a
     /// reprint ("*** COPY ***").</summary>
     void Print(Receipt receipt, bool openDrawer, bool copy = false);
+
+    /// <summary>Prints the shift (Z) report; throws if the printer fails (the shift is already closed). Never opens the drawer.
+    /// <paramref name="approvedBy"/> is the supervisor who approved a cash difference over the limit, if one was needed.</summary>
+    void PrintShiftReport(ShiftOpening opening, ShiftClosing closing, string cashierName, string? approvedBy);
 }
 
 /// <summary>Everything the view models need from the rest of the till, assembled once by the app.</summary>

@@ -1,4 +1,5 @@
 using TillPOS.Core.Sales;
+using TillPOS.Core.Shifts;
 using TillPOS.Presentation;
 
 namespace TillPOS.Tests.Presentation;
@@ -80,5 +81,13 @@ public sealed class FakeOutput : IReceiptOutput
         OnPrint?.Invoke();
         if (Fail) throw new InvalidOperationException("Printer offline");
         Printed.Add((receipt, openDrawer, copy));
+    }
+
+    public List<(ShiftOpening Opening, ShiftClosing Closing, string CashierName, string? ApprovedBy)> ShiftReports { get; } = [];
+
+    public void PrintShiftReport(ShiftOpening opening, ShiftClosing closing, string cashierName, string? approvedBy)
+    {
+        if (Fail) throw new InvalidOperationException("Printer offline");
+        ShiftReports.Add((opening, closing, cashierName, approvedBy));
     }
 }

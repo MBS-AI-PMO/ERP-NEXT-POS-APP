@@ -111,17 +111,25 @@ public static class ReceiptRenderer
     /// <summary>Plain text (receipt files). Title lines, whose text is bare, are centred across the full paper width here;
     /// a text file cannot hold the QR image, so a QR line becomes a centred "[QR code]".</summary>
     public static IReadOnlyList<string> TextLines(Receipt r, ReceiptHeader h, PaperWidth paper, bool copy = false) =>
-        Layout(r, h, paper, copy).Select(l => l.Style switch
+        PlainText(Layout(r, h, paper, copy), paper);
+
+    public static byte[] EscPosBytes(Receipt r, ReceiptHeader h, PaperWidth paper, bool openDrawer, bool copy = false) =>
+        StyledBytes(Layout(r, h, paper, copy), openDrawer);
+
+    /// <summary>Styled lines as plain text: Title lines are centred across the paper, a QR line becomes "[QR code]".</summary>
+    internal static IReadOnlyList<string> PlainText(IEnumerable<PrintLine> lines, PaperWidth paper) =>
+        lines.Select(l => l.Style switch
         {
             LineStyle.Title => Center(l.Text, (int)paper),
             LineStyle.Qr => Center(QrPlaceholder, (int)paper),
             _ => l.Text,
         }).ToList();
 
-    public static byte[] EscPosBytes(Receipt r, ReceiptHeader h, PaperWidth paper, bool openDrawer, bool copy = false)
+    /// <summary>Styled lines as ESC/POS bytes, then feed and cut (and the drawer kick when asked).</summary>
+    internal static byte[] StyledBytes(IEnumerable<PrintLine> lines, bool openDrawer)
     {
         var printer = new EscPos().Init().Style(LineStyle.Normal);
-        foreach (var line in Layout(r, h, paper, copy))
+        foreach (var line in lines)
         {
             if (line.Style == LineStyle.Qr) printer.Align(Alignment.Center).Qr(line.Text).Style(LineStyle.Normal);
             else if (line.Style == LineStyle.Normal) printer.Line(line.Text);
@@ -170,7 +178,7 @@ public static class ReceiptRenderer
         return rate > 0m ? $"VAT {rate.ToString("0", CultureInfo.InvariantCulture)}%" : "VAT";
     }
 
-    private static string Money(decimal value) => value.ToString("0.00#", CultureInfo.InvariantCulture);
+    internal static string Money(decimal value) => value.ToString("0.00#", CultureInfo.InvariantCulture);
 
     private static string Qty(ReceiptLine line) =>
         line.FromScaleLabel || line.Qty != decimal.Truncate(line.Qty)
@@ -178,9 +186,9 @@ public static class ReceiptRenderer
             : line.Qty.ToString("0", CultureInfo.InvariantCulture);
 
     /// <summary>"Label     : value". The value is never cut: if it does not fit beside the label it goes on the next lines.</summary>
-    private static IEnumerable<string> Field(string label, string value, int width)
+    internal static IEnumerable<string> Field(string label, string value, int width, int labelWidth = LabelWidth)
     {
-        var prefix = label.PadRight(LabelWidth) + ": ";
+        var prefix = label.PadRight(labelWidth) + ": ";
         if (prefix.Length + value.Length <= width)
         {
             yield return prefix + value;
@@ -190,7 +198,7 @@ public static class ReceiptRenderer
         foreach (var part in Wrap(value, width - 2)) yield return "  " + part;
     }
 
-    private static string Pair(string left, string right, int width)
+    internal static string Pair(string left, string right, int width)
     {
         if (right.Length >= width) return right[..width];
         var room = width - right.Length - 1;
@@ -198,13 +206,13 @@ public static class ReceiptRenderer
         return left + new string(' ', width - left.Length - right.Length) + right;
     }
 
-    private static string Fit(string text, int width) => text.Length > width ? text[..width] : text;
+    internal static string Fit(string text, int width) => text.Length > width ? text[..width] : text;
 
-    private static string Center(string text, int width) =>
+    internal static string Center(string text, int width) =>
         text.Length >= width ? text[..width] : new string(' ', (width - text.Length) / 2) + text;
 
     /// <summary>Word wrap; a word longer than the width is split rather than cut, so no text is lost.</summary>
-    private static IEnumerable<string> Wrap(string text, int width)
+    internal static IEnumerable<string> Wrap(string text, int width)
     {
         var line = "";
         foreach (var word in text.Split(' ', StringSplitOptions.RemoveEmptyEntries))

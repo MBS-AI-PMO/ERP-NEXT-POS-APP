@@ -122,7 +122,7 @@ public sealed class AppHost
 
     private object NewSale() =>
         new SaleViewModel(ctx, Shell.Session, new SupervisorGate(ctx, Shell.Session),
-            (sale, kind) => new PaymentViewModel(ctx, Shell.Session, sale, kind));
+            (sale, kind) => new PaymentViewModel(ctx, Shell.Session, sale, kind), NewLogin);
 
     /// <summary>SettingsStore has already replaced a plain secret with the protected one; the plain one is only used if
     /// that could not happen. DPAPI (machine scope) cannot decrypt a value protected on another PC, e.g. when a used TillPOS

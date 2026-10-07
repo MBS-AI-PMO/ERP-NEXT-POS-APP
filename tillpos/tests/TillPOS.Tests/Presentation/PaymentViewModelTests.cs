@@ -12,7 +12,7 @@ public sealed class PaymentViewModelTests : IDisposable
     {
         f.LogInWithOpenShift();
         sale = new SaleViewModel(f.Ctx, f.Session, new SupervisorGate(f.Ctx, f.Session),
-            (s, kind) => new PaymentViewModel(f.Ctx, f.Session, s, kind));
+            (s, kind) => new PaymentViewModel(f.Ctx, f.Session, s, kind), () => "login");
         sale.Scan("111");                                              // 6.79
     }
 
@@ -147,7 +147,8 @@ public sealed class PaymentViewModelTests : IDisposable
     public void No_popup_when_the_preview_is_turned_off()
     {
         var ctx = f.Ctx with { ShowReceiptPreview = false };
-        var quiet = new SaleViewModel(ctx, f.Session, new SupervisorGate(ctx, f.Session), (s, kind) => new PaymentViewModel(ctx, f.Session, s, kind));
+        var quiet = new SaleViewModel(ctx, f.Session, new SupervisorGate(ctx, f.Session), (s, kind) => new PaymentViewModel(ctx, f.Session, s, kind),
+            () => "login");
         quiet.Scan("111");
 
         new PaymentViewModel(ctx, f.Session, quiet, TenderKind.Card).CompleteCommand.Execute(null);
@@ -191,7 +192,7 @@ public sealed class PaymentViewModelTests : IDisposable
         f.Output.OnPrint = () =>
         {
             Assert.Equal("[]", f.Ctx.Kv.GetValue(SaleViewModel.AutosaveKey));
-            var fresh = new SaleViewModel(f.Ctx, f.Session, new SupervisorGate(f.Ctx, f.Session), (s, k) => "x");
+            var fresh = new SaleViewModel(f.Ctx, f.Session, new SupervisorGate(f.Ctx, f.Session), (s, k) => "x", () => "login");
             Assert.Empty(fresh.Lines);
             checkedInHook = true;
         };

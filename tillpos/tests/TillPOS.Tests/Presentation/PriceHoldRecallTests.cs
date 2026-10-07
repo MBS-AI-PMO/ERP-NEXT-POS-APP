@@ -28,7 +28,8 @@ public sealed class PriceHoldRecallTests : IDisposable
 
     private SupervisorGate Gate() => new(f.Ctx, f.Session);
 
-    private SaleViewModel NewSale() => new(f.Ctx, f.Session, Gate(), (sale, kind) => new PaymentViewModel(f.Ctx, f.Session, sale, kind));
+    private SaleViewModel NewSale() =>
+        new(f.Ctx, f.Session, Gate(), (sale, kind) => new PaymentViewModel(f.Ctx, f.Session, sale, kind), () => "login");
 
     // ---- Price check ----
 
