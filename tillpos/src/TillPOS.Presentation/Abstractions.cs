@@ -90,6 +90,10 @@ public sealed record TillContext(
     /// <summary>The recent bills of the other tills, downloaded from ERPNext (cross-till returns); null = none.</summary>
     public RemoteReceiptStore? RemoteReceipts { get; init; }
 
+    /// <summary>Re-reads from ERPNext what was returned against another till's bill, just before it is refunded here; null = the
+    /// check is not possible (treated as offline).</summary>
+    public TillPOS.Sync.IRemoteReturnsCheck? RemoteReturnsCheck { get; init; }
+
     /// <summary>The synced Sales Taxes and Charges Template by name (for previews built like the uploader's); none by default.</summary>
     public Func<string, SalesTaxTemplate?> TaxTemplates { get; init; } = _ => null;
 

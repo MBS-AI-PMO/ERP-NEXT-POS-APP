@@ -5,6 +5,20 @@ using TillPOS.Sync.Upload;
 
 namespace TillPOS.Tests.Presentation;
 
+/// <summary>The ERPNext check of another till's bill: succeeds (and changes nothing) unless <see cref="OnRefresh"/> says otherwise
+/// (return false = not in ERPNext; throw = offline).</summary>
+public sealed class FakeRemoteReturnsCheck : TillPOS.Sync.IRemoteReturnsCheck
+{
+    public Func<string, bool>? OnRefresh { get; set; }
+    public List<string> Checked { get; } = [];
+
+    public Task<bool> RefreshAsync(string erpName, CancellationToken ct)
+    {
+        Checked.Add(erpName);
+        return Task.FromResult(OnRefresh?.Invoke(erpName) ?? true);
+    }
+}
+
 public sealed class FakeDialogs : IDialogs
 {
     public Queue<string?> Pins { get; } = new();

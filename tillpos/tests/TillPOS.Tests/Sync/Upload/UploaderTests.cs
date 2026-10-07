@@ -248,6 +248,88 @@ public sealed class UploaderTests : IDisposable
         Assert.Empty(report.Problems);
     }
 
+    // ---- Returns of another till's bill: checked against ERPNext's returns before they go (double-refund protection) ----
+
+    private readonly Dictionary<string, List<Dictionary<string, object?>>> erpItems = [];
+
+    /// <summary>A submitted POS Invoice in ERPNext of <paramref name="qty"/> RICE5 (line 1); a return when it has an original.</summary>
+    private void ErpHas(string name, string clientId, decimal qty, string? returnAgainst = null)
+    {
+        erp.AddRow("POS Invoice", new()
+        {
+            ["name"] = name, ["modified"] = "2026-10-06 09:00:00.000000", ["docstatus"] = 1, ["posa_client_request_id"] = clientId,
+            ["pos_profile"] = "Al Ain Counter 1", ["posting_date"] = "2026-10-06", ["posting_time"] = "09:00:00", ["customer"] = "Walk-in Customer",
+            ["grand_total"] = qty * 10.5m, ["rounded_total"] = 0, ["net_total"] = qty * 10m, ["total_taxes_and_charges"] = qty * 0.5m,
+            ["is_return"] = returnAgainst is null ? 0 : 1, ["return_against"] = returnAgainst,
+        });
+        erpItems[name] = [new() { ["name"] = name, ["item_code"] = "RICE5", ["item_name"] = "RICE 5KG", ["qty"] = qty, ["uom"] = "Nos",
+            ["conversion_factor"] = 1, ["rate"] = 10.5m, ["price_list_rate"] = 10.5m, ["amount"] = qty * 10.5m, ["posa_row_id"] = "1", ["idx"] = 1 }];
+        erp.Override = q =>
+            q.Fields.Any(f => f.Contains("tabPOS Invoice Item", StringComparison.Ordinal))
+                ? ((IEnumerable<string>)q.Filters.Single(f => (string)f[0] == "name")[2]).SelectMany(n => erpItems.GetValueOrDefault(n) ?? []).Cast<object>().ToList()
+            : q.Fields.Any(f => f.Contains("tabSales Invoice Payment", StringComparison.Ordinal)) ? []
+            : null;
+    }
+
+    private Uploader WithCrossTillCheck()
+    {
+        var remote = new RemoteReceiptStore(temp.Db);
+        return new(erp, erp, UploadMode.Live, shifts, receipts, approvals,
+            profile => profile is "" or "Al Ain Counter 1" ? PayloadTests.Counter1 : null, "TILL2", "till2@shop.local", () => clock,
+            (name, json) => previews.Add((name, json)))
+        {
+            RemoteReceipts = remote,
+            RemoteReturns = new TillPOS.Sync.RemoteReturnsCheck(erp, remote, 2, () => clock),
+        };
+    }
+
+    [Fact]
+    public async Task A_return_of_another_tills_bill_goes_when_ERPNext_has_enough_left()
+    {
+        ErpHas("ACC-PSINV-2026-00042", "TILL3-1", 3m);
+        ErpHas("ACC-PSINV-2026-00050", "TILL4-1", -2m, "ACC-PSINV-2026-00042");     // till 4 took back 2 of the 3
+        OpenShift();
+        Return("TILL2-R", "ACC-PSINV-2026-00042", 5);
+
+        var report = await WithCrossTillCheck().RunOnceAsync();
+
+        Assert.Equal("ACC-PSINV-2026-00042", Str(InsertedInvoices.Single(), "return_against"));
+        Assert.Equal(ReceiptSyncStatus.Synced, receipts.SyncInfo("TILL2-R").Status);
+        Assert.Empty(report.Problems);
+    }
+
+    [Fact]
+    public async Task An_over_returned_bill_of_another_till_is_never_sent()
+    {
+        ErpHas("ACC-PSINV-2026-00042", "TILL3-1", 3m);
+        ErpHas("ACC-PSINV-2026-00050", "TILL4-1", -3m, "ACC-PSINV-2026-00042");     // till 4 refunded all 3 meanwhile
+        OpenShift();
+        Return("TILL2-R", "ACC-PSINV-2026-00042", 5);
+
+        var report = await WithCrossTillCheck().RunOnceAsync();
+
+        Assert.Empty(InsertedInvoices);
+        var info = receipts.SyncInfo("TILL2-R");
+        Assert.Equal(ReceiptSyncStatus.Failed, info.Status);
+        Assert.Equal("Over-returned: ERPNext already has returns against ACC-PSINV-2026-00042 — check before retrying", info.LastError);
+        Assert.Contains(report.Problems, p => p.DocId == "TILL2-R" && p.Message.Contains("Over-returned"));
+        Assert.DoesNotContain(erp.Submitted, s => s.Doctype == "POS Invoice");
+    }
+
+    [Fact]
+    public async Task A_return_whose_original_is_no_longer_submitted_in_ERPNext_is_never_sent()
+    {
+        OpenShift();
+        Return("TILL2-R", "ACC-PSINV-2026-00099", 5);
+        ErpHas("ACC-PSINV-2026-00042", "TILL3-1", 3m);                              // another bill; 00099 is not there
+
+        await WithCrossTillCheck().RunOnceAsync();
+
+        Assert.Empty(InsertedInvoices);
+        Assert.Equal("Original ACC-PSINV-2026-00099 is not a submitted bill in ERPNext — check before retrying",
+            receipts.SyncInfo("TILL2-R").LastError);
+    }
+
     [Fact]
     public async Task A_return_against_a_till_number_that_is_not_on_this_till_waits()
     {

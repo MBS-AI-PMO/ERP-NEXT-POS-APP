@@ -85,6 +85,19 @@ public sealed class RemoteReceiptStore(TillDb db) : IOtherTillReturns
         tx.Commit();
     }
 
+    /// <summary>What ERPNext has now for the sale <paramref name="erpName"/>, in one transaction: its return invoices of the other
+    /// tills are replaced by <paramref name="returns"/> (a cancelled one disappears), and the sale itself by
+    /// <paramref name="original"/> when it was read (null keeps the stored copy).</summary>
+    public void ReplaceReturnsAgainst(string erpName, RemoteReceipt? original, IEnumerable<RemoteReceipt> returns, DateTimeOffset fetchedAt)
+    {
+        using var c = db.Open();
+        using var tx = c.BeginTransaction();
+        c.Exec(tx, "DELETE FROM remote_receipt WHERE is_return = 1 AND return_against = @n COLLATE NOCASE", ("@n", erpName));
+        if (original is not null) Upsert(c, tx, original, fetchedAt);
+        foreach (var receipt in returns) Upsert(c, tx, receipt, fetchedAt);
+        tx.Commit();
+    }
+
     /// <summary>Removes invoices (cancelled in ERPNext) in one transaction.</summary>
     public void DeleteMany(IEnumerable<string> erpNames) => UpsertMany([], DateTimeOffset.MinValue, erpNames);
 

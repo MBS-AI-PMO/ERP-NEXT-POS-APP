@@ -24,6 +24,7 @@ public sealed class PresentationFixture : IDisposable
     public FakeClock Clock { get; } = new(new DateTimeOffset(2026, 10, 7, 10, 0, 0, TimeSpan.FromHours(4)));
     public FakeOutput Output { get; } = new();
     public SessionState Session { get; } = new();
+    public FakeRemoteReturnsCheck RemoteCheck { get; } = new();
     public TillContext Ctx { get; }
 
     /// <summary>The default counter (the fixture's usual one): rounded cash, "Cash Counter 2".</summary>
@@ -75,6 +76,7 @@ public sealed class PresentationFixture : IDisposable
             Clock, Output, Navigator, Dialogs, ShowReceiptPreview: true, new HeldCartStore(db))
         {
             RemoteReceipts = new RemoteReceiptStore(db),
+            RemoteReturnsCheck = RemoteCheck,
         };
     }
 

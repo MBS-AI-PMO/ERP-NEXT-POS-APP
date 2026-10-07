@@ -90,6 +90,12 @@ public sealed class Uploader
     /// shift never will (excluded or handled).</summary>
     public Func<DateTimeOffset?> LiveSince { get; init; } = () => null;
 
+    /// <summary>The downloaded bills of the other tills, and the ERPNext check of a bill's returns: with both, a return of another
+    /// till's bill is checked against what ERPNext has returned already before it is sent (Live).</summary>
+    public RemoteReceiptStore? RemoteReceipts { get; init; }
+
+    public IRemoteReturnsCheck? RemoteReturns { get; init; }
+
     /// <summary>Where unexpected exceptions go (errors.log); network errors and ERPNext's answers are not logged.</summary>
     public Action<Exception> LogError { get; init; } = _ => { };
 
@@ -217,6 +223,30 @@ public sealed class Uploader
             }
         }
 
+        if (Mode == UploadMode.Live && returnAgainst is not null && receipts.Get(receipt.ReturnAgainst!) is null
+            && RemoteReceipts is { } remote && RemoteReturns is { } check)
+        {
+            // Another till's bill: other tills may have refunded the same goods since this return was taken. Never sent then.
+            string? problem;
+            try
+            {
+                problem = await check.RefreshAsync(returnAgainst, ct)
+                    ? OverReturned(remote, returnAgainst, receipt)
+                    : $"Original {returnAgainst} is not a submitted bill in ERPNext — check before retrying";
+            }
+            catch (ErpException ex) when (Classify(ex) == ErpOutcome.Refused)
+            {
+                run.Add(receipt.ClientId, $"Return {receipt.ClientId} waits: the returns against {returnAgainst} could not be checked: {Short(ex.Message)}");
+                return null;
+            }
+            if (problem is not null)
+            {
+                receipts.MarkFailed(receipt.ClientId, problem, now() + Backoff(bill.Attempts + 1));
+                run.Add(receipt.ClientId, $"{label}: {problem}");
+                return null;
+            }
+        }
+
         var payload = PosInvoicePayload.Build(receipt, profile.PosProfile, profile, openingName, receipt.CashierUser, till, returnAgainst);
         return await UploadAsync(
             new Doc(PosInvoicePayload.Doctype, InvoiceIdField, receipt.ClientId, InvoiceKey(receipt.ClientId), label, true, () => payload.Doc,
@@ -242,6 +272,19 @@ public sealed class Uploader
             return ClientIds.IsTillId(clientId) ? null : clientId;
         }
         return info.Status == ReceiptSyncStatus.Synced ? info.ErpName : run.Planned(InvoiceKey(clientId));
+    }
+
+    /// <summary>Why a return of another till's bill <paramref name="name"/> cannot go (some line returned beyond what was sold,
+    /// counting every till's returns and this one), or null.</summary>
+    private static string? OverReturned(RemoteReceiptStore remote, string name, Receipt ret)
+    {
+        if (remote.FindByErpName(name) is not { IsReturn: false } sale)
+            return $"Original {name} is not a submitted bill in ERPNext — check before retrying";
+        var sold = sale.ToReceipt().Lines.ToDictionary(l => l.LineNo, l => l.Qty);
+        var returned = remote.ReturnedQtyByLine(name);
+        return ret.Lines.Any(l => !sold.TryGetValue(l.LineNo, out var qty) || returned.GetValueOrDefault(l.LineNo) > qty)
+            ? $"Over-returned: ERPNext already has returns against {name} — check before retrying"
+            : null;
     }
 
     /// <summary>The ERPNext name of a bill only when it is already there (this till's synced bill, or another till's), else null.</summary>

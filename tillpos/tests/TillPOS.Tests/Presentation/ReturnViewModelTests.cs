@@ -229,6 +229,97 @@ public sealed class ReturnViewModelTests : IDisposable
         Assert.False(vm.MessageIsError, vm.Message);
     }
 
+    private void ReturnOnTill4(decimal qty) =>
+        f.Ctx.RemoteReceipts!.Upsert(new RemoteReceipt("ACC-PSINV-2026-00061", "TILL4-20261007093000-000002", "TILL4", "Al Ain Counter 1",
+            new DateTime(2026, 10, 7, 9, 30, 0), "Walk-in Customer", -qty * 6.79m, 0m, 0m, 0m, true, OtherTillName, [RemoteMilk("1", -qty)], []),
+            f.Clock.Now);
+
+    private ReturnViewModel ChooseOnOtherTillsBill(int pieces)
+    {
+        var vm = OpenReturns();
+        vm.Scan(OtherTillId);
+        for (var i = 0; i < pieces; i++) vm.Lines[0].IncrementCommand.Execute(null);
+        vm.SetReasonCommand.Execute("Damaged");
+        return vm;
+    }
+
+    [Fact]
+    public async Task Returns_made_meanwhile_on_other_tills_are_read_from_ERPNext_before_refunding()
+    {
+        OtherTillSale();
+        var vm = ChooseOnOtherTillsBill(2);
+        f.RemoteCheck.OnRefresh = _ => { ReturnOnTill4(2m); return true; };   // till 4 refunded 2 of the 3 a minute ago
+
+        await vm.ConfirmAsync();
+
+        Assert.Equal(new[] { OtherTillName }, f.RemoteCheck.Checked);
+        Assert.Empty(Returns());
+        Assert.True(vm.MessageIsError);
+        Assert.StartsWith("Only 1 of Full Cream Milk 1L can still be returned", vm.Message);
+        Assert.Equal(("2", "1", "2"), (vm.Lines[0].ReturnedText, vm.Lines[0].ReturnableText, vm.Lines[0].ReturnQty.Text));
+        Assert.Equal(0, f.Dialogs.PinRequests);
+
+        vm.Lines[0].DecrementCommand.Execute(null);
+        await vm.ConfirmAsync();
+        Assert.Single(Returns());
+    }
+
+    [Fact]
+    public async Task Offline_a_bill_of_another_till_is_refunded_only_with_a_supervisor()
+    {
+        OtherTillSale();
+        var vm = ChooseOnOtherTillsBill(1);
+        f.RemoteCheck.OnRefresh = _ => throw new HttpRequestException("No route to host");
+        f.Dialogs.Pins.Enqueue("9999");
+
+        await vm.ConfirmAsync();
+
+        Assert.Equal(1, f.Dialogs.PinRequests);
+        var credit = Assert.Single(Returns());
+        Assert.Equal(("sup", OtherTillName), (credit.ApprovedBy, credit.ReturnAgainst));
+        var approval = Assert.Single(f.Ctx.Approvals.Unsynced());
+        Assert.Equal(ApprovalAction.ReturnCrossTillOffline, approval.Action);
+        Assert.Equal("Return: Offline: another till's bill — returns elsewhere can't be checked", approval.Reason);
+        Assert.Equal(OtherTillName, approval.ReceiptClientId);
+    }
+
+    [Fact]
+    public async Task Offline_a_cashier_PIN_is_refused_and_nothing_is_refunded()
+    {
+        OtherTillSale();
+        var vm = ChooseOnOtherTillsBill(1);
+        f.RemoteCheck.OnRefresh = _ => throw new TimeoutException();
+        f.Dialogs.Pins.Enqueue("1111");                                // Simran is a cashier
+
+        await vm.ConfirmAsync();
+
+        Assert.Empty(Returns());
+        Assert.True(vm.MessageIsError);
+        Assert.Equal("Not refunded: a supervisor must approve this return.", vm.Message);
+        Assert.True(vm.ConfirmCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task A_bill_of_another_till_no_longer_in_ERPNext_is_not_refunded_and_this_tills_bills_are_not_checked()
+    {
+        OtherTillSale();
+        var vm = ChooseOnOtherTillsBill(1);
+        f.RemoteCheck.OnRefresh = _ => false;                          // cancelled in ERPNext
+
+        await vm.ConfirmAsync();
+
+        Assert.Empty(Returns());
+        Assert.Equal($"{OtherTillName} is no longer a submitted bill in ERPNext — return it in ERPNext.", vm.Message);
+
+        f.RemoteCheck.Checked.Clear();
+        var local = Opened(Sell(0, "111"));
+        local.ReturnAllCommand.Execute(null);
+        local.SetReasonCommand.Execute("Damaged");
+        await local.ConfirmAsync();
+        Assert.Single(Returns());
+        Assert.Empty(f.RemoteCheck.Checked);
+    }
+
     [Fact]
     public void A_credit_note_of_another_till_cannot_be_opened()
     {

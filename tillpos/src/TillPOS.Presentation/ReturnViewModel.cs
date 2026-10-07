@@ -105,6 +105,9 @@ public sealed class ReturnViewModel : ObservableObject
     public const string CannotRepriceMessage = "This bill has a discount or tax the till can't re-price — return it in ERPNext.";
     /// <summary>How far the till's own pricing of another till's bill may be from ERPNext's grand total.</summary>
     public const decimal RepriceTolerance = 0.01m;
+    /// <summary>How long the check of another till's bill in ERPNext may take before the till treats it as offline.</summary>
+    public static readonly TimeSpan RemoteCheckTimeout = TimeSpan.FromSeconds(5);
+    public const string CrossTillOfflineReason = "Offline: another till's bill — returns elsewhere can't be checked";
 
     public static readonly IReadOnlyList<string> Reasons = ["Changed mind", "Damaged", "Expired", "Wrong item", "Other"];
 
@@ -118,6 +121,7 @@ public sealed class ReturnViewModel : ObservableObject
     private ReturnStage stage = ReturnStage.Find;
     private Receipt? original;
     private string? originalNumber;
+    private bool originalRemote;
     private Cart? returnCart;
     private ReturnPreview? preview;
     private string findText = "";
@@ -296,6 +300,7 @@ public sealed class ReturnViewModel : ObservableObject
 
         original = receipt;
         originalNumber = remote?.ClientRequestId;
+        originalRemote = remote is not null;
         returnCart = null;
         CartLines.Clear();
         Lines.Clear();
@@ -370,11 +375,39 @@ public sealed class ReturnViewModel : ObservableObject
         CommandsChanged();
         try
         {
-            string? approvedBy = null;
-            if (check.Needs.Count > 0)
+            var needs = check.Needs.ToList();
+            if (originalRemote && against is not null)
             {
-                var approvalReason = $"Return: {NeedsList(check.Needs)}";
-                approvedBy = await gate.ApproveAsync(check.Needs[0], approvalReason, against?.ClientId, null, -check.RefundDue);
+                // Another till's bill: what ERPNext has returned against it by now counts before refunding (no double refund).
+                switch (await CheckOtherTillsAsync(against.ClientId))
+                {
+                    case null:
+                        needs.Add(ApprovalAction.ReturnCrossTillOffline);
+                        break;
+                    case false:
+                        Error($"{against.ClientId} is no longer a submitted bill in ERPNext — return it in ERPNext.");
+                        return;
+                    case true:
+                        ReloadLines();
+                        try
+                        {
+                            check = builder.Preview(against, requests);
+                        }
+                        catch (Exception ex)
+                        {
+                            Error(Clean(ex));
+                            return;
+                        }
+                        needs = [.. check.Needs];
+                        break;
+                }
+            }
+
+            string? approvedBy = null;
+            if (needs.Count > 0)
+            {
+                var approvalReason = $"Return: {NeedsList(needs)}";
+                approvedBy = await gate.ApproveAsync(needs[0], approvalReason, against?.ClientId, null, -check.RefundDue);
                 if (approvedBy is null)
                 {
                     Error("Not refunded: a supervisor must approve this return.");
@@ -382,7 +415,7 @@ public sealed class ReturnViewModel : ObservableObject
                 }
                 try
                 {
-                    foreach (var need in check.Needs.Skip(1))
+                    foreach (var need in needs.Skip(1))
                         ctx.Approvals.Add(new ApprovalRecord(Guid.NewGuid().ToString("N"), need, cashier.Id, approvedBy, shift.ClientId,
                             against?.ClientId, null, -check.RefundDue, approvalReason, ctx.Clock.Now));
                 }
@@ -400,9 +433,9 @@ public sealed class ReturnViewModel : ObservableObject
                 // just turned too old), nothing is saved and the cashier confirms again.
                 receipt = against is not null
                     ? builder.Build(against, requests, TenderKind.Cash, cashier.Id, shift.ClientId, approvedBy, why, cashier.User, cashier.Name,
-                        check.Needs)
+                        needs)
                     : builder.BuildWithoutReceipt(cart!, TenderKind.Cash, cashier.Id, shift.ClientId, approvedBy, why, cashier.User,
-                        cashier.Name, check.Needs);
+                        cashier.Name, needs);
             }
             catch (ApprovalRequiredException)
             {
@@ -422,6 +455,39 @@ public sealed class ReturnViewModel : ObservableObject
         {
             busy = false;
             CommandsChanged();
+        }
+    }
+
+    /// <summary>Re-reads from ERPNext the returns against another till's bill (within <see cref="RemoteCheckTimeout"/>): true when
+    /// done, false when the bill is no longer a submitted one in ERPNext, null when the check could not be made (offline).</summary>
+    private async Task<bool?> CheckOtherTillsAsync(string erpName)
+    {
+        if (ctx.RemoteReturnsCheck is not { } remoteCheck) return null;
+        try
+        {
+            using var timeout = new CancellationTokenSource(RemoteCheckTimeout);
+            return await remoteCheck.RefreshAsync(erpName, timeout.Token).WaitAsync(RemoteCheckTimeout);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Rebuilds the lines of the open receipt with what is returnable now, keeping the quantities chosen.</summary>
+    private void ReloadLines()
+    {
+        if (original is not { } receipt) return;
+        var chosen = Lines.ToDictionary(l => l.LineNo, l => l.Chosen);
+        var returns = builder.ReturnsOf(receipt);
+        foreach (var line in Lines) line.ReturnQty.Changed -= Recompute;
+        Lines.Clear();
+        foreach (var sold in receipt.Lines)
+        {
+            var line = new ReturnLine(sold, Returned(returns, sold.LineNo), builder.IsWeighed(sold));
+            if (chosen.GetValueOrDefault(sold.LineNo) is > 0m and var qty) line.ReturnQty.Set(qty);
+            line.ReturnQty.Changed += Recompute;
+            Lines.Add(line);
         }
     }
 
@@ -505,6 +571,7 @@ public sealed class ReturnViewModel : ObservableObject
         if (busy || completed) return;
         original = null;
         originalNumber = null;
+        originalRemote = false;
         Lines.Clear();
         returnCart = new Cart(saleContext);
         CartLines.Clear();
@@ -666,6 +733,7 @@ public sealed class ReturnViewModel : ObservableObject
         }
         original = null;
         originalNumber = null;
+        originalRemote = false;
         returnCart = null;
         Lines.Clear();
         CartLines.Clear();
@@ -687,6 +755,7 @@ public sealed class ReturnViewModel : ObservableObject
         ApprovalAction.ReturnOverLimit => $"over AED {ApprovalLimit.ToString("0", CultureInfo.InvariantCulture)} on this receipt",
         ApprovalAction.ReturnOldReceipt => $"receipt older than {MaxAgeDays.ToString(CultureInfo.InvariantCulture)} days",
         ApprovalAction.ReturnWithoutReceipt => "return without receipt",
+        ApprovalAction.ReturnCrossTillOffline => CrossTillOfflineReason,
         _ => need.ToString(),
     }));
 

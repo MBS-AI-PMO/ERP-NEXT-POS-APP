@@ -75,6 +75,8 @@ public sealed class AppHost
                 "Live requested in settings.json while a shift was open — stayed Off", now));
         }
         Shell.Upload = mode;
+        // Read-only: what ERPNext has returned against another till's bill, checked before it is refunded or its return uploaded.
+        var remoteReturns = new RemoteReturnsCheck(erp, remoteReceipts, settings.TillNumber, () => DateTimeOffset.Now);
         uploader = new Uploader(erp, UploadPipeline.LiveWriter(mode, () => new ErpWriter(client), testBuild), mode,
             shifts, receipts, approvals,
             profile => store.LoadPosSettings(string.IsNullOrWhiteSpace(profile) ? counters[0].PosProfile : profile),
@@ -83,6 +85,8 @@ public sealed class AppHost
             TaxTemplates = catalog.FindSalesTaxTemplate,
             LogError = logError,
             LiveSince = () => UploadHistory.LiveSince(store),
+            RemoteReceipts = remoteReceipts,
+            RemoteReturns = remoteReturns,
         };
         // Live set in settings.json: the first time, record the moment (history before it stays out) and log it.
         if (mode == UploadMode.Live && UploadHistory.SwitchToLive(shifts, store, now, includeHistory: false))
@@ -102,6 +106,7 @@ public sealed class AppHost
             new SystemClock(), Output, Shell, dialogs, settings.ShowReceiptPreview, new HeldCartStore(db))
         {
             RemoteReceipts = remoteReceipts,
+            RemoteReturnsCheck = remoteReturns,
             TaxTemplates = catalog.FindSalesTaxTemplate,
         };
     }

@@ -135,6 +135,28 @@ public sealed class RecentInvoicesFeedTests : IDisposable
     }
 
     [Fact]
+    public async Task The_returns_check_replaces_a_bills_returns_with_what_ERPNext_has_now()
+    {
+        Invoice("SALE-1", "TILL3-1", "2026-10-06", "2026-10-06 09:00:00.000000", lines: [("MILK", 3m, "1")]);
+        Invoice("RET-NEW", "TILL4-1", "2026-10-07", "2026-10-07 09:00:00.000000", returnAgainst: "SALE-1", lines: [("MILK", -1m, "1")]);
+        Invoice("RET-OWN", "TILL2-20261007090000-000001", "2026-10-07", "2026-10-07 09:00:00.000000", returnAgainst: "SALE-1",
+            lines: [("MILK", -1m, "1")]);
+        remote.Upsert(RemoteReceiptStoreTests.Return("RET-GONE", "SALE-1", new DateTime(2026, 10, 6, 10, 0, 0),
+            new RemoteLine("1", "MILK", "MILK name", -2m, "PCS", 1m, 6.79m, 6.79m, -13.58m, null, null)), Now);   // cancelled since
+        var check = new RemoteReturnsCheck(erp, remote, 2, () => Now);
+
+        Assert.True(await check.RefreshAsync("SALE-1", default));
+
+        Assert.NotNull(remote.FindByErpName("SALE-1"));
+        Assert.NotNull(remote.FindByErpName("RET-NEW"));
+        Assert.Null(remote.FindByErpName("RET-GONE"));
+        Assert.Null(remote.FindByErpName("RET-OWN"));                        // this till's own: counted from its own bills
+        Assert.Equal(1m, remote.ReturnedQtyByLine("SALE-1")[1]);
+        Assert.False(await check.RefreshAsync("NOT-THERE", default));
+        Assert.Empty(erp.Inserted);
+    }
+
+    [Fact]
     public async Task Without_the_POS_settings_the_feed_fails_without_asking_ERPNext()
     {
         using var other = new TempDb();
