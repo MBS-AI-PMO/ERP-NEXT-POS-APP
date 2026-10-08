@@ -32,6 +32,11 @@ public sealed class PaymentViewModel : ObservableObject
         var counter = ctx.CounterOf(session);
         recorder = new SaleRecorder(ctx.Receipts, ctx.TillNumber, counter.Modes, () => ctx.Clock.Now, counter.DisplayName);
         grandTotal = sale.Cart.Totals().GrandTotal;
+        // The bill as it is paid (a copy: the sale's list empties when the bill is completed).
+        Lines = sale.Lines.ToList();
+        LineCount = sale.ItemCount;
+        Discount = sale.Discount;
+        Vat = sale.Vat;
         Cash.Changed += Recalculate;
         Card.Changed += Recalculate;
 
@@ -44,6 +49,13 @@ public sealed class PaymentViewModel : ObservableObject
         kind = initialKind;
         Recalculate();
     }
+
+    /// <summary>The bill's lines (read-only on this screen), its line count, offers and VAT, as the sale screen showed them.</summary>
+    public IReadOnlyList<SaleLine> Lines { get; }
+    public string LineCount { get; }
+    public string Discount { get; }
+    public string Vat { get; }
+    public bool HasOffers => Lines.Any(l => !string.IsNullOrEmpty(l.Offer));
 
     public NumericEntry Cash { get; } = new();
     public NumericEntry Card { get; } = new();

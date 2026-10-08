@@ -21,9 +21,55 @@
       <Setter Property="FontWeight" Value="SemiBold" />
     </Style>
   </UserControl.Resources>
-  <Grid MaxWidth="900">
-    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="320" /></Grid.ColumnDefinitions>
-    <StackPanel Grid.Column="0" Margin="0,0,16,0">
+  <Grid MaxWidth="1480">
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="*" MinWidth="280" /><ColumnDefinition Width="560" /><ColumnDefinition Width="320" />
+    </Grid.ColumnDefinitions>
+    <!-- The bill being paid (read-only): every line, then VAT and the bill total. Scrolls when it is long. -->
+    <Border Grid.Column="0" Style="{StaticResource Card}" Margin="0,0,16,0" Padding="16,12">
+      <DockPanel>
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+          <TextBlock Text="BILL ITEMS" Style="{StaticResource SectionTitle}" />
+          <TextBlock HorizontalAlignment="Right" Foreground="{StaticResource Muted}"><Run Text="Lines " /><Run Text="{Binding LineCount, Mode=OneWay}" /></TextBlock>
+        </DockPanel>
+        <StackPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+          <Separator Margin="0,0,0,6" />
+          <DockPanel Visibility="{Binding HasOffers, Converter={StaticResource BoolToVisibility}}">
+            <TextBlock Text="Offers &amp; discounts" Foreground="{StaticResource Warn}" />
+            <TextBlock Text="{Binding Discount}" HorizontalAlignment="Right" Foreground="{StaticResource Warn}" Style="{StaticResource Money}" />
+          </DockPanel>
+          <DockPanel>
+            <TextBlock Text="VAT 5% (included)" Foreground="{StaticResource Muted}" />
+            <TextBlock Text="{Binding Vat}" HorizontalAlignment="Right" Style="{StaticResource Money}" />
+          </DockPanel>
+          <DockPanel Margin="0,2,0,0">
+            <TextBlock Text="Bill total" FontWeight="Bold" FontSize="17" />
+            <TextBlock Text="{Binding GrandTotal, Mode=OneWay}" HorizontalAlignment="Right" FontWeight="Bold" FontSize="17" Style="{StaticResource Money}" />
+          </DockPanel>
+        </StackPanel>
+        <ScrollViewer Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+          <ItemsControl ItemsSource="{Binding Lines}" Focusable="False">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Border BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="0,7">
+                  <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                    <StackPanel Margin="0,0,10,0">
+                      <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                      <TextBlock FontSize="13" Foreground="{StaticResource Muted}">
+                        <Run Text="{Binding Qty, Mode=OneWay}" /><Run Text=" × " /><Run Text="{Binding Price, Mode=OneWay}" /><Run Text="   " /><Run Text="{Binding Offer, Mode=OneWay}" Foreground="{StaticResource Warn}" />
+                      </TextBlock>
+                    </StackPanel>
+                    <TextBlock Grid.Column="1" Text="{Binding Amount}" FontSize="17" VerticalAlignment="Center" Style="{StaticResource Money}" />
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </DockPanel>
+    </Border>
+    <StackPanel Grid.Column="1" Margin="0,0,16,0">
       <Border Style="{StaticResource InkCard}" Margin="4,0" Padding="20,12">
         <DockPanel>
           <Border DockPanel.Dock="Right" Background="{StaticResource InkRaised}" CornerRadius="28" Width="56" Height="56" VerticalAlignment="Center">
@@ -128,7 +174,7 @@
                 Command="{Binding CompleteCommand}" />
       </DockPanel>
     </StackPanel>
-    <UniformGrid Grid.Column="1" Columns="3" VerticalAlignment="Top">
+    <UniformGrid Grid.Column="2" Columns="3" VerticalAlignment="Top">
       <Button Focusable="False" Style="{StaticResource PadKey}" Content="1" Command="{Binding KeyCommand}" CommandParameter="1" />
       <Button Focusable="False" Style="{StaticResource PadKey}" Content="2" Command="{Binding KeyCommand}" CommandParameter="2" />
       <Button Focusable="False" Style="{StaticResource PadKey}" Content="3" Command="{Binding KeyCommand}" CommandParameter="3" />

@@ -47,6 +47,27 @@ public sealed class PaymentViewModelTests : IDisposable
     }
 
     [Fact]
+    public void The_payment_screen_lists_the_bills_items_and_keeps_them_after_completing()
+    {
+        sale.Scan("111");
+        var vm = Pay(TenderKind.Cash);
+
+        var line = Assert.Single(vm.Lines);                            // two scans of one item are one line
+        Assert.Equal(sale.Lines[0], line);
+        Assert.Equal("2", line.Qty);
+        Assert.Equal("13.58", line.Amount);
+        Assert.Equal(sale.ItemCount, vm.LineCount);
+        Assert.Equal(sale.Vat, vm.Vat);
+        Assert.False(vm.HasOffers);
+
+        vm.QuickCashCommand.Execute(20m);
+        vm.CompleteCommand.Execute(null);
+
+        Assert.Empty(sale.Lines);                                      // the sale screen starts a new bill…
+        Assert.Single(vm.Lines);                                       // …while the paid bill's list stays as it was
+    }
+
+    [Fact]
     public void Card_mode_shows_the_exact_amount_to_charge_and_no_cash_entry()
     {
         sale.Scan("111");                                              // 13.58: cash would round, the card is exact
