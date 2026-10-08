@@ -315,4 +315,78 @@ public sealed class SettingsStoreTests : IDisposable
         Write(programData, Json("\"ApiSecretProtected\": \"P(x)\", \"Upload\": \"DryRun\", \"LocalTestCashiers\": [{\"Id\":\"c\",\"Name\":\"C\",\"Pin\":\"1234\",\"IsSupervisor\":false}]"));
         Assert.Equal(UploadMode.DryRun, SettingsStore.Load(programData).Upload);
     }
+
+    // ---- Environments: a Dev build keeps its own data folder ----
+
+    private const string DevJson = """{ "BaseUrl": "https://dev.quickgroc.com/", "ApiKey": "k", "ApiSecret": "dev-secret", "Environment": "Dev", "Upload": "Live", "SampleQr": true }""";
+
+    [Fact]
+    public void The_settings_path_is_per_environment_and_tillpos_settings_overrides_it()
+    {
+        var common = Path.Combine(root, "PD");
+        Assert.Equal(Path.Combine(common, "TillPOS", "settings.json"), SettingsStore.SettingsPath(null, common, dev: false));
+        Assert.Equal(Path.Combine(common, "TillPOS-Dev", "settings.json"), SettingsStore.SettingsPath("", common, dev: true));
+        Assert.Equal(@"X:\custom\settings.json", SettingsStore.SettingsPath(@"X:\custom\settings.json", common, dev: true));
+        Assert.Equal(@"X:\custom\settings.json", SettingsStore.SettingsPath(@"X:\custom\settings.json", common, dev: false));
+    }
+
+    [Fact]
+    public void A_dev_package_beside_the_exe_or_built_in_is_recognised()
+    {
+        Assert.False(SettingsStore.PackagedIsDev(besideExe, () => embedded));
+
+        embedded = DevJson;
+        Assert.True(SettingsStore.PackagedIsDev(besideExe, () => embedded));
+
+        // The packaged file beside the exe comes first, as on import.
+        Write(besideExe, Json("\"ApiSecret\": \"x\""));
+        Assert.False(SettingsStore.PackagedIsDev(besideExe, () => embedded));
+
+        Write(besideExe, DevJson.Replace("\"Dev\"", "\"dev\""));
+        Assert.True(SettingsStore.PackagedIsDev(besideExe, () => null));
+    }
+
+    [Fact]
+    public void Unreadable_packaged_settings_are_not_dev()
+    {
+        Write(besideExe, "{ not json");
+        Assert.False(SettingsStore.PackagedIsDev(besideExe, () => DevJson));
+        File.Delete(besideExe);
+        Assert.False(SettingsStore.PackagedIsDev(besideExe, () => "{ broken"));
+        Assert.False(SettingsStore.PackagedIsDev(besideExe, () => throw new IOException("no resource")));
+    }
+
+    [Fact]
+    public void A_dev_build_keeps_its_database_next_to_its_own_settings()
+    {
+        var devSettings = Path.Combine(root, "ProgramData", "TillPOS-Dev", "settings.json");
+        embedded = DevJson;   // no DbPath at all: the record's default would be the production folder
+
+        var settings = SettingsStore.Resolve(devSettings, besideExe, () => embedded, Protect, (_, ex) => logged.Add(ex))!;
+
+        Assert.Equal(Path.Combine(root, "ProgramData", "TillPOS-Dev", "till.db"), settings.DbPath);
+        Assert.True(settings.IsDev);
+        Assert.Equal(UploadMode.Live, settings.Upload);
+        // The next start reads the saved file (no DbPath written for the default? either way it stays in the Dev folder).
+        Assert.Equal(Path.Combine(root, "ProgramData", "TillPOS-Dev", "till.db"),
+            SettingsStore.Resolve(devSettings, besideExe, () => embedded, Protect, (_, ex) => logged.Add(ex))!.DbPath);
+    }
+
+    [Fact]
+    public void A_dev_settings_file_pointing_at_the_production_database_is_moved_to_its_own_folder()
+    {
+        var devSettings = Path.Combine(root, "ProgramData", "TillPOS-Dev", "settings.json");
+        Write(devSettings, DevJson.Replace("\"ApiSecret\": \"dev-secret\"", "\"ApiSecretProtected\": \"P(x)\", \"DbPath\": \"c:\\\\programdata\\\\TillPOS\\\\till.db\""));
+
+        var settings = SettingsStore.Resolve(devSettings, besideExe, () => null, Protect, (_, ex) => logged.Add(ex))!;
+
+        Assert.Equal(Path.Combine(root, "ProgramData", "TillPOS-Dev", "till.db"), settings.DbPath);
+    }
+
+    [Fact]
+    public void A_production_build_keeps_its_configured_database()
+    {
+        Write(programData, Json("\"ApiSecretProtected\": \"P(x)\"", dbPath: "C:/ProgramData/TillPOS/till.db"));
+        Assert.Equal("C:/ProgramData/TillPOS/till.db", Resolve()!.DbPath);
+    }
 }

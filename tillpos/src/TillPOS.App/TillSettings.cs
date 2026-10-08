@@ -28,7 +28,9 @@ public sealed record LocalTestCashier(string Id, string Name, string Pin, bool I
 /// Counters are the counters (POS Profiles) a cashier can open a shift at; see <see cref="EffectiveCounters"/>. Without them,
 /// PosProfile / CashMode / CardMode are the only counter (settings from before counters keep working).
 /// Upload is the upload mode (Off | DryRun | Live, written as text): only Live may write to ERPNext. It is Off unless a
-/// supervisor changes it on the settings screen (logged as an UploadModeChange approval).</summary>
+/// supervisor changes it on the settings screen (logged as an UploadModeChange approval).
+/// Environment is "Production" (the default) or "Dev": a Dev build keeps its data in %ProgramData%\TillPOS-Dev and may only go
+/// Live against the dev ERPNext (<see cref="DevHost"/>); see <see cref="LiveAllowed"/>.</summary>
 public sealed record TillSettings(
     string BaseUrl,
     string ApiKey,
@@ -53,8 +55,33 @@ public sealed record TillSettings(
     bool SetupDone = false,
     bool SampleQr = false,
     IReadOnlyList<CounterSettings>? Counters = null,
-    UploadMode Upload = UploadMode.Off)
+    UploadMode Upload = UploadMode.Off,
+    string Environment = TillSettings.ProductionEnvironment)
 {
+    public const string ProductionEnvironment = "Production";
+    public const string DevEnvironment = "Dev";
+
+    /// <summary>The only ERPNext a Dev build may write to (exact host, no subdomains).</summary>
+    public const string DevHost = "dev.quickgroc.com";
+
+    /// <summary>A Dev build: test documents go to the dev ERPNext, data lives in its own folder.</summary>
+    public bool IsDev => string.Equals((Environment ?? "").Trim(), DevEnvironment, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>A Production build (blank counts as Production, as in settings from before environments).</summary>
+    public bool IsProduction => string.IsNullOrWhiteSpace(Environment)
+        || string.Equals(Environment.Trim(), ProductionEnvironment, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>BaseUrl is the dev ERPNext: an absolute URL whose host is exactly <see cref="DevHost"/>.</summary>
+    public bool PointsAtDevServer =>
+        Uri.TryCreate((BaseUrl ?? "").Trim(), UriKind.Absolute, out var uri)
+        && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp)
+        && string.Equals(uri.Host, DevHost, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The write guard's rule: Live is allowed for a Production build that is not a test build, or for a Dev build that
+    /// points at the dev ERPNext (a Dev build is a test build by design). Anything else (a test build against any other server,
+    /// a Dev build against another host, an unknown environment) never goes Live.</summary>
+    public bool LiveAllowed => IsDev ? PointsAtDevServer : IsProduction && !IsTestBuild;
+
     /// <summary>The counters to offer at Open Shift, the default first: the configured Counters with a POS Profile (each profile
     /// once, trimmed; a blank label, cash or card mode falls back to the profile name, CashMode or CardMode), or, when there are
     /// none, the single PosProfile / CashMode / CardMode counter.</summary>
@@ -112,11 +139,12 @@ public sealed record TillSettings(
     private static string OrDefault(string? value, string? fallback) =>
         !string.IsNullOrWhiteSpace(value) ? value.Trim() : (fallback ?? "").Trim();
 
-    /// <summary>A field-test build: it has local test cashiers or prints the sample QR. Test builds never upload Live.</summary>
+    /// <summary>A field-test build: it has local test cashiers or prints the sample QR. A test build only uploads Live as a Dev
+    /// build against the dev ERPNext (<see cref="LiveAllowed"/>).</summary>
     public bool IsTestBuild => (LocalTestCashiers?.Count ?? 0) > 0 || SampleQr;
 
-    /// <summary>The upload mode in force: Live is only possible in a production build (a test build runs Off instead).</summary>
-    public UploadMode EffectiveUpload => IsTestBuild && Upload == UploadMode.Live ? UploadMode.Off : Upload;
+    /// <summary>The upload mode in force: Live where <see cref="LiveAllowed"/>, otherwise Off instead of Live.</summary>
+    public UploadMode EffectiveUpload => Upload == UploadMode.Live && !LiveAllowed ? UploadMode.Off : Upload;
 
     /// <summary>"***" for a value that is set, so ToString (logs, exception text) never shows the key, the secrets or PINs.</summary>
     internal static string Mask(string? value) => string.IsNullOrEmpty(value) ? "" : "***";
@@ -124,6 +152,7 @@ public sealed record TillSettings(
     private bool PrintMembers(StringBuilder builder)
     {
         builder.Append("BaseUrl = ").Append(BaseUrl)
+            .Append(", Environment = ").Append(Environment)
             .Append(", ApiKey = ").Append(Mask(ApiKey))
             .Append(", ApiSecretProtected = ").Append(Mask(ApiSecretProtected))
             .Append(", ApiSecret = ").Append(Mask(ApiSecret))

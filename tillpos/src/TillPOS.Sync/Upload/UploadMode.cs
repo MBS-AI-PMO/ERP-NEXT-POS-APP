@@ -6,8 +6,9 @@ namespace TillPOS.Sync.Upload;
 /// written for inspection; nothing is written to ERPNext. Live: documents are inserted and submitted.</summary>
 public enum UploadMode { Off, DryRun, Live }
 
-/// <summary>The write guard: a real <see cref="IErpWriter"/> exists only in Live mode, and never in a test build (local test
-/// cashiers or the sample QR). Everything that could write takes its writer from here, so Off, DryRun and test builds cannot
+/// <summary>The write guard: a real <see cref="IErpWriter"/> exists only in Live mode, and never when the settings do not allow
+/// Live (testBuild: a test build with local test cashiers or the sample QR, unless it is a Dev build pointed at the dev ERPNext;
+/// see the app's TillSettings.LiveAllowed). Everything that could write takes its writer from here, so Off, DryRun and test builds cannot
 /// reach ERPNext even by mistake.</summary>
 public static class UploadPipeline
 {

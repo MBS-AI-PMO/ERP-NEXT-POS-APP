@@ -44,11 +44,12 @@ public partial class SetupDialog : Window
             .Select(c => new CounterRow { PosProfile = c.PosProfile, Label = c.Label, CashMode = c.CashMode, CardMode = c.CardMode }));
         CounterRows.ItemsSource = counters;
         (settings.EffectiveUpload switch { UploadMode.Live => UploadLive, UploadMode.DryRun => UploadDryRun, _ => UploadOff }).IsChecked = true;
-        // Field-test builds (local test cashiers or the sample QR) offer Off and Dry run only.
-        if (settings.IsTestBuild)
+        // Field-test builds (local test cashiers or the sample QR) offer Off and Dry run only, unless they are Dev builds
+        // pointed at the dev ERPNext; a Dev build pointed anywhere else never goes Live.
+        if (!settings.LiveAllowed)
         {
             UploadLive.IsEnabled = false;
-            UploadLive.Content = "Live (not available in test builds)";
+            UploadLive.Content = settings.IsDev ? $"Live (Dev builds upload only to {TillSettings.DevHost})" : "Live (not available in test builds)";
         }
         // At the first start nobody has approved anything yet, so the upload mode is shown but can only be changed later
         // (Settings on the login screen, behind the supervisor PIN).
@@ -63,7 +64,7 @@ public partial class SetupDialog : Window
     private PaperWidth SelectedPaper => Paper58.IsChecked == true ? PaperWidth.Mm58 : PaperWidth.Mm80;
     private UploadMode SelectedUpload =>
         !UploadPanel.IsEnabled ? settings.EffectiveUpload
-        : UploadLive.IsChecked == true && !settings.IsTestBuild ? UploadMode.Live
+        : UploadLive.IsChecked == true && settings.LiveAllowed ? UploadMode.Live
         : UploadDryRun.IsChecked == true ? UploadMode.DryRun
         : UploadMode.Off;
 

@@ -60,19 +60,21 @@ public sealed class AppHost
         var shifts = new ShiftStore(db);
         var receipts = new ReceiptStore(db);
         var approvals = new ApprovalStore(db);
-        // The write guard: a writer over the client is built only in Live mode of a production build (UploadPipeline.LiveWriter
-        // is null otherwise). Shifts saved before counters existed (blank counter) belong to the default counter.
-        var testBuild = settings.IsTestBuild;
+        // The write guard: a writer over the client is built only in Live mode where the settings allow Live (a production
+        // build, or a Dev build pointed at the dev ERPNext; UploadPipeline.LiveWriter is null otherwise). Shifts saved before
+        // counters existed (blank counter) belong to the default counter.
+        var liveBlocked = !settings.LiveAllowed;
         // Live set in settings.json: the first switch waits until no shift is open, like the Settings flow (the till stays Off
         // for now and says why at login, logged once); otherwise the first time records the moment and logs it.
         (var mode, startupNotice) = UploadHistory.ModeAtStart(settings.EffectiveUpload, shifts, store, approvals, DateTimeOffset.Now);
         Shell.Upload = mode;
+        Shell.IsDev = settings.IsDev;
         // Read-only: what ERPNext has returned against another till's bill, checked before it is refunded or its return uploaded.
         var remoteReturns = new RemoteReturnsCheck(erp, remoteReceipts, settings.TillNumber, () => DateTimeOffset.Now);
-        uploader = new Uploader(erp, UploadPipeline.LiveWriter(mode, () => new ErpWriter(client), testBuild), mode,
+        uploader = new Uploader(erp, UploadPipeline.LiveWriter(mode, () => new ErpWriter(client), liveBlocked), mode,
             shifts, receipts, approvals,
             profile => store.LoadPosSettings(string.IsNullOrWhiteSpace(profile) ? counters[0].PosProfile : profile),
-            $"TILL{settings.TillNumber}", null, () => DateTimeOffset.Now, WritePreview, testBuild)
+            $"TILL{settings.TillNumber}", null, () => DateTimeOffset.Now, WritePreview, liveBlocked)
         {
             TaxTemplates = catalog.FindSalesTaxTemplate,
             LogError = logError,

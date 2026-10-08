@@ -202,6 +202,19 @@ public sealed class ExcludedHistoryTests : IDisposable
     }
 
     [Fact]
+    public void A_fresh_install_with_live_in_its_settings_goes_live_at_the_first_start()
+    {
+        using var fresh = new TempDb();
+        var (freshShifts, freshKv, freshApprovals) = (new ShiftStore(fresh.Db), new CatalogStore(fresh.Db), new ApprovalStore(fresh.Db));
+
+        Assert.Equal((UploadMode.Live, (string?)null), UploadHistory.ModeAtStart(UploadMode.Live, freshShifts, freshKv, freshApprovals, goLive));
+
+        Assert.Equal(goLive, UploadHistory.LiveSince(freshKv));
+        var log = Assert.Single(freshApprovals.Outbox()).Record;
+        Assert.Equal((ApprovalAction.UploadModeChange, "from settings file"), (log.Action, log.Reason));
+    }
+
+    [Fact]
     public void The_refusal_is_logged_again_after_the_mode_changed()
     {
         Shift("OPEN", goLive.AddHours(-1), close: false);

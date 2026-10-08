@@ -1,10 +1,24 @@
-TILLPOS - FIELD TEST (version {{VERSION}}, {{PACKAGE_KIND}})
-==========================================
+#PROD#TILLPOS - FIELD TEST (version {{VERSION}}, {{PACKAGE_KIND}})
+#PROD#==========================================
+#DEV#TILLPOS - DEV TEST (version {{VERSION}}, {{PACKAGE_KIND}})
+#DEV#==========================================
+#DEV#This build uploads to the DEV ERPNext (https://dev.quickgroc.com),
+#DEV#NOT to the shop's real ERPNext.
 
 WHAT THIS IS
-This is a test version of the till. Bills you make stay on this PC.
-Nothing is sent to ERPNext yet. Items and prices are downloaded from
-ERPNext, so please use the Wi-Fi or network cable for the first start.
+#PROD#This is a test version of the till. Bills you make stay on this PC.
+#PROD#Nothing is sent to ERPNext yet. Items and prices are downloaded from
+#PROD#ERPNext, so please use the Wi-Fi or network cable for the first start.
+#DEV#This is a test version of the till that sends real test documents
+#DEV#(bills, returns, shift openings and closings, supervisor approvals) to
+#DEV#the DEV ERPNext at https://dev.quickgroc.com - a separate test copy of
+#DEV#ERPNext, not production. Nothing goes to the shop's real ERPNext.
+#DEV#Items, prices and cashiers are downloaded from the DEV ERPNext, so
+#DEV#please use the Wi-Fi or network cable.
+#DEV#The top bar shows a purple DEV badge and a red LIVE UPLOAD badge.
+#DEV#Everything this build keeps on the PC is in its own folder,
+#DEV#C:\ProgramData\TillPOS-Dev, so it never mixes with an older test
+#DEV#version's data in C:\ProgramData\TillPOS.
 
 WHAT YOU NEED
 - A Windows 10 or Windows 11 PC (64-bit).
@@ -21,17 +35,19 @@ HOW TO START
 #EXE#1. Copy TillPOS.exe anywhere (e.g. Desktop) and double-click it.
 #EXE#   It is one file with everything inside; nothing needs to be installed.
 #EXE#2. The first start needs internet. Settings are kept in
-#EXE#   C:\ProgramData\TillPOS
+#EXE#   {{DATA_FOLDER}}
 #EXE#3. Windows may say "Windows protected your PC". This is normal for a new
 #EXE#   program. Click "More info", then click "Run anyway".
 
 USED AN OLDER TEST VERSION ON THIS PC?
-The till keeps the settings it already has in C:\ProgramData\TillPOS.
+The till keeps the settings it already has in {{DATA_FOLDER}}.
 To start with this version's settings (and the sample QR code), close
-TillPOS, delete C:\ProgramData\TillPOS\settings.json, then start it again.
+TillPOS, delete {{DATA_FOLDER}}\settings.json, then start it again.
 The setup screen then opens again.
 A PC that already has settings gets this version's counters by itself (you
 do not need to delete settings.json for them).
+#DEV#Older test versions (without the DEV badge) keep their own data in
+#DEV#C:\ProgramData\TillPOS; this build never reads or changes it.
 
 FIRST-TIME SETUP
 The setup screen opens by itself the first time.
@@ -41,10 +57,17 @@ The setup screen opens by itself the first time.
 4. Press "Save and start".
 If the test print fails, check that the printer is on and try again. To start
 without a printer, choose "(No printer - save receipts as files)" in the list.
+#DEV#If more than one PC tests at the same time, give each PC its own till
+#DEV#number on the setup screen (Till 1, Till 2, ...).
 
-LOGIN PINs (for testing - made for this package only, keep them private)
-- Cashier:     {{CASHIER_PIN}}
-- Supervisor:  {{SUPERVISOR_PIN}}
+#PROD#LOGIN PINs (for testing - made for this package only, keep them private)
+#PROD#- Cashier:     {{CASHIER_PIN}}
+#PROD#- Supervisor:  {{SUPERVISOR_PIN}}
+#DEV#LOGIN PINs (the cashiers of the DEV ERPNext's POS Cashier list)
+#DEV#- Sandbox Cashier:     {{CASHIER_PIN}}
+#DEV#- Sandbox Supervisor:  {{SUPERVISOR_PIN}}
+#DEV#The cashiers are downloaded from the DEV ERPNext at the first start; the
+#DEV#PINs work once the download has finished.
 
 COUNTERS
 When you open a shift, first press the counter you are working at, then
@@ -56,6 +79,7 @@ read it), or it uses a different price list or company. Choose another one.
 At "Test Counter" cash is not rounded to 0.25 (its ERPNext profile turns
 rounding off), so amounts can show three decimals, for example 9.875.
 At "Counter 1" cash is rounded to 0.25 as usual.
+#DEV#"Counter 2" is the DEV ERPNext's "Al Ain Counter 2".
 The counters are set up on the setup screen (Settings on the Login screen).
 
 KEYS
@@ -82,25 +106,32 @@ under it. It is only there to check that the printer prints QR codes well
 that a phone camera can read it.
 
 NO PRINTER CHOSEN?
-Receipts are saved as files in C:\ProgramData\TillPOS\receipts
+Receipts are saved as files in {{DATA_FOLDER}}\receipts
 (the QR code shows there as "[QR code]").
 
 CHANGING THE PRINTER LATER
 On the Login screen press "Settings", enter the supervisor PIN, and choose
 the new printer.
+#DEV#
+#DEV#SEEING THE UPLOADS IN THE DEV ERPNEXT
+#DEV#Log in at https://dev.quickgroc.com and open the lists
+#DEV#  POS Invoice          (bills and returns; returns show "Is Return")
+#DEV#  POS Opening Shift    (one per shift, sent when the shift opens)
+#DEV#  POS Closing Shift    (sent after the shift is closed)
+#DEV#The newest are at the top.
 
 MORE THAN ONE TILL
 The simplest way is one Windows user per till. The till's settings are kept
-in C:\ProgramData\TillPOS.
+in {{DATA_FOLDER}}.
 #ZIP#Do not copy the TillPOS folder to another PC after it has been run. Unzip
 #ZIP#the original zip file again on the other PC instead.
 #EXE#You can copy TillPOS.exe to each till PC. Each PC keeps its own settings
-#EXE#and bills in its own C:\ProgramData\TillPOS.
+#EXE#and bills in its own {{DATA_FOLDER}}.
 
 WHAT TO SEND BACK
-- The file C:\ProgramData\TillPOS\errors.log (if it exists)
+- The file {{DATA_FOLDER}}\errors.log (if it exists)
 - Photos of the printed receipts (with the QR code)
 - The version number shown on the Login screen
-
-NOT IN THIS VERSION YET
-Uploading bills to ERPNext (bills stay on this PC until the sync is switched on by the shop).
+#PROD#
+#PROD#NOT IN THIS VERSION YET
+#PROD#Uploading bills to ERPNext (bills stay on this PC until the sync is switched on by the shop).

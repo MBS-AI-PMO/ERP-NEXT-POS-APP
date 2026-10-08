@@ -49,6 +49,56 @@ public class TillSettingsTests
         Assert.False((production with { LocalTestCashiers = [] }).IsTestBuild);
     }
 
+    [Theory]
+    // Production: Live unless it is a test build (any host).
+    [InlineData("Production", "https://erp.quickgroc.com/", false, true)]
+    [InlineData("Production", "https://erp.quickgroc.com/", true, false)]
+    [InlineData("Production", "https://dev.quickgroc.com/", true, false)]
+    [InlineData(null, "https://erp.quickgroc.com/", false, true)]
+    [InlineData("", "https://erp.quickgroc.com/", true, false)]
+    // Dev: Live only against the dev server (test build or not).
+    [InlineData("Dev", "https://dev.quickgroc.com/", true, true)]
+    [InlineData("dev", "https://DEV.quickgroc.com", false, true)]
+    [InlineData("Dev", "https://dev.quickgroc.com:443/api", true, true)]
+    [InlineData("Dev", "https://erp.quickgroc.com/", true, false)]
+    [InlineData("Dev", "https://erp.quickgroc.com/", false, false)]
+    [InlineData("Dev", "https://dev.quickgroc.com.evil.example/", true, false)]
+    [InlineData("Dev", "https://x.dev.quickgroc.com/", true, false)]
+    [InlineData("Dev", "https://dev.quickgroc.com@evil.example/", true, false)]
+    [InlineData("Dev", "not a url", true, false)]
+    // Anything else never goes Live.
+    [InlineData("Staging", "https://dev.quickgroc.com/", false, false)]
+    [InlineData("Staging", "https://erp.quickgroc.com/", false, false)]
+    public void Live_is_allowed_only_for_production_builds_and_dev_builds_on_the_dev_server(string? environment, string baseUrl, bool testBuild,
+        bool liveAllowed)
+    {
+        var settings = new TillSettings(baseUrl, "k", Upload: UploadMode.Live, SampleQr: testBuild, Environment: environment!);
+
+        Assert.Equal(liveAllowed, settings.LiveAllowed);
+        Assert.Equal(liveAllowed ? UploadMode.Live : UploadMode.Off, settings.EffectiveUpload);
+        Assert.Equal(UploadMode.DryRun, (settings with { Upload = UploadMode.DryRun }).EffectiveUpload);
+    }
+
+    [Fact]
+    public void A_dev_test_build_with_local_cashiers_on_another_host_is_refused()
+    {
+        var settings = new TillSettings("https://erp.quickgroc.com/", "k", Upload: UploadMode.Live, Environment: "Dev",
+            LocalTestCashiers: [new LocalTestCashier("c", "C", "1234", false)]);
+        Assert.False(settings.LiveAllowed);
+        Assert.Equal(UploadMode.Off, settings.EffectiveUpload);
+    }
+
+    [Fact]
+    public void Environment_is_production_by_default_and_dev_is_recognised()
+    {
+        var production = new TillSettings("https://erp.example", "k");
+        Assert.Equal("Production", production.Environment);
+        Assert.False(production.IsDev);
+        Assert.True((production with { Environment = " DEV " }).IsDev);
+        Assert.Equal("dev.quickgroc.com", TillSettings.DevHost);
+        Assert.Contains("Environment = Dev", (production with { Environment = "Dev" }).ToString());
+    }
+
     [Fact]
     public void Upload_is_off_by_default() => Assert.Equal(UploadMode.Off, new TillSettings("https://erp.example", "k").Upload);
 

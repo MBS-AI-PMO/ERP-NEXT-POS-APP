@@ -1,22 +1,33 @@
 <#
 Builds the TillPOS field-test package.
 Usage (from the tillpos folder):
-  powershell -File tools\publish-field.ps1 -Version 0.3.8 [-CashierPin 4821] [-SupervisorPin 7350]             -> ..\publish\TillPOS-field-<Version>.zip
-  powershell -File tools\publish-field.ps1 -Version 0.3.8 -SingleExe [-CashierPin 4821] [-SupervisorPin 7350]  -> ..\publish\TillPOS-exe-<Version>\TillPOS.exe
+  powershell -File tools\publish-field.ps1 -Version 0.3.8              -> ..\publish\TillPOS-field-<Version>-dev.zip      (Dev, the default)
+  powershell -File tools\publish-field.ps1 -Version 0.3.8 -SingleExe   -> ..\publish\TillPOS-exe-<Version>-dev\TillPOS.exe
+  powershell -File tools\publish-field.ps1 -Version 0.3.8 [-SingleExe] -Environment Production [-CashierPin 4821] [-SupervisorPin 7350]
+                                                                       -> ..\publish\TillPOS-field-<Version>.zip, ..\publish\TillPOS-exe-<Version>\
 Zip: TillPOS folder + settings.json beside the exe + START HERE.txt.
--SingleExe: one self-contained TillPOS.exe with settings.json built in (imported into C:\ProgramData\TillPOS on the first
-start) + "TillPOS <Version> - START HERE.txt". The built-in plain API secret cannot be removed from the exe, so treat the exe
-like the credentials (test PCs only).
+-SingleExe: one self-contained TillPOS.exe with settings.json built in (imported on the first start into C:\ProgramData\TillPOS,
+or C:\ProgramData\TillPOS-Dev for a Dev build) + "TillPOS <Version> - START HERE.txt". The built-in plain API secret cannot be
+removed from the exe, so treat the exe like the credentials (test PCs only).
 Both packages set SampleQr = true: receipts end with a QR code marked "SAMPLE QR - FOR TESTING ONLY" while there is no TRN.
-Credentials are read from ..\publish\TillPOS.SyncCli\tillpos.cli.json (local, git-ignored) and are never printed.
-Test PINs: without -CashierPin / -SupervisorPin, random 4-digit PINs are generated with a CSPRNG and printed at the end.
-They are written only into the package (settings and START HERE), never into the repo.
+
+-Environment Dev (the default): the package uploads Live to the DEV ERPNext (https://dev.quickgroc.com) from the first start;
+the till refuses Live for a Dev build pointed at any other host, and keeps its data in C:\ProgramData\TillPOS-Dev. Credentials
+are read from ..\publish\TillPOS.Sandbox\till-dev.json (BaseUrl, ApiKey, ApiSecret, PosProfile; local, git-ignored, never
+printed). Cashiers come from the dev ERPNext's POS Cashier list ("Sandbox Cashier" 1234, "Sandbox Supervisor" 9876, written
+into START HERE); the package has no local test cashiers. Folder and zip names get a "-dev" suffix.
+-Environment Production: the field package as before: Upload Off, credentials from ..\publish\TillPOS.SyncCli\tillpos.cli.json
+(local, git-ignored, never printed), local test cashiers. Without -CashierPin / -SupervisorPin, random 4-digit PINs are
+generated with a CSPRNG and printed at the end. They are written only into the package (settings and START HERE), never into
+the repo.
 #>
 param(
     [string]$Version = "0.3.8",
     [string]$CashierPin,
     [string]$SupervisorPin,
-    [switch]$SingleExe
+    [switch]$SingleExe,
+    [ValidateSet("Dev", "Production")]
+    [string]$Environment = "Dev"
 )
 $ErrorActionPreference = "Stop"
 
@@ -61,41 +72,59 @@ function Remove-AppReleaseBuild {
     }
 }
 
-$CashierPin    = Resolve-Pin $CashierPin "Cashier" $SupervisorPin
-$SupervisorPin = Resolve-Pin $SupervisorPin "Supervisor" $CashierPin
-if ($CashierPin -eq $SupervisorPin) { throw "The cashier and supervisor PINs must be different." }
+$isDev   = $Environment -eq "Dev"
+$devHost = "dev.quickgroc.com"   # TillSettings.DevHost: the only ERPNext a Dev build may write to
+if ($isDev) {
+    if ($CashierPin -or $SupervisorPin) { throw "-CashierPin / -SupervisorPin are for -Environment Production; a Dev build uses the dev ERPNext's cashiers." }
+    # Not secrets: the dev ERPNext's sandbox cashiers (its POS Cashier list), named in START HERE.
+    $CashierPin    = "1234"
+    $SupervisorPin = "9876"
+} else {
+    $CashierPin    = Resolve-Pin $CashierPin "Cashier" $SupervisorPin
+    $SupervisorPin = Resolve-Pin $SupervisorPin "Supervisor" $CashierPin
+    if ($CashierPin -eq $SupervisorPin) { throw "The cashier and supervisor PINs must be different." }
+}
+$suffix     = if ($isDev) { "-dev" } else { "" }
+$dataFolder = if ($isDev) { "C:\ProgramData\TillPOS-Dev" } else { "C:\ProgramData\TillPOS" }
 
 $tillposRoot = Split-Path -Parent $PSScriptRoot
 $repoRoot    = Split-Path -Parent $tillposRoot
 $publishRoot = Join-Path $repoRoot "publish"
-$fieldRoot   = Join-Path $publishRoot "TillPOS-field"
+$fieldRoot   = Join-Path $publishRoot "TillPOS-field$suffix"
 $appOut      = Join-Path $fieldRoot "TillPOS"
-$zipPath     = Join-Path $publishRoot ("TillPOS-field-{0}.zip" -f $Version)
-$exeRoot     = Join-Path $publishRoot ("TillPOS-exe-{0}" -f $Version)
-$exeGuide    = "TillPOS $Version - START HERE.txt"
+$zipPath     = Join-Path $publishRoot ("TillPOS-field-{0}{1}.zip" -f $Version, $suffix)
+$exeRoot     = Join-Path $publishRoot ("TillPOS-exe-{0}{1}" -f $Version, $suffix)
+$exeGuide    = "TillPOS $Version$suffix - START HERE.txt"
 $tempName    = "packaged-settings-{0}.json" -f [guid]::NewGuid().ToString("N")
 $tempSettings = Join-Path $publishRoot $tempName
-$cliJson     = Join-Path $publishRoot "TillPOS.SyncCli\tillpos.cli.json"
+$credJson    = if ($isDev) { Join-Path $publishRoot "TillPOS.Sandbox\till-dev.json" } else { Join-Path $publishRoot "TillPOS.SyncCli\tillpos.cli.json" }
+$credName    = Split-Path -Leaf $credJson
 $startHere   = Join-Path $PSScriptRoot "field\START HERE.txt"
 
 # Refuse to run unless the output paths are git-ignored (the package holds credentials).
 Push-Location $repoRoot
 try {
-    foreach ($path in "publish/TillPOS-field/TillPOS/settings.json", "publish/TillPOS-exe-$Version/TillPOS.exe", "publish/$tempName") {
+    foreach ($path in "publish/TillPOS-field$suffix/TillPOS/settings.json", "publish/TillPOS-exe-$Version$suffix/TillPOS.exe", "publish/$tempName") {
         & git check-ignore -q $path
         if ($LASTEXITCODE -ne 0) { throw "$path is not git-ignored; refusing to build a package that contains credentials." }
     }
 } finally { Pop-Location }
 
-if (-not (Test-Path $cliJson)) { throw "Missing $cliJson" }
+if (-not (Test-Path $credJson)) { throw "Missing $credJson" }
 if (-not (Test-Path $startHere)) { throw "Missing $startHere" }
-$cli = Get-Content -Raw -Path $cliJson -ErrorAction Stop | ConvertFrom-Json
+$cli = Get-Content -Raw -Path $credJson -ErrorAction Stop | ConvertFrom-Json
 foreach ($f in "BaseUrl","ApiKey","ApiSecret","PosProfile") {
-    if ([string]::IsNullOrWhiteSpace($cli.$f)) { throw "tillpos.cli.json has no $f" }
+    if ([string]::IsNullOrWhiteSpace($cli.$f)) { throw "$credName has no $f" }
+}
+if ($isDev) {
+    # The dev credentials must belong to the dev ERPNext (the till would refuse Live with any other host anyway).
+    $credHost = try { ([Uri]$cli.BaseUrl.Trim()).Host } catch { "" }
+    if ($credHost -ne $devHost) { throw "$credName is for '$credHost', not $devHost; refusing to build a Dev package with it." }
 }
 
 $settings = [ordered]@{
-    BaseUrl             = $cli.BaseUrl
+    Environment         = $Environment
+    BaseUrl             = $(if ($isDev) { "https://$devHost/" } else { $cli.BaseUrl })
     ApiKey              = $cli.ApiKey
     ApiSecret           = $cli.ApiSecret
     PosProfile          = $cli.PosProfile
@@ -112,14 +141,11 @@ $settings = [ordered]@{
     ShowReceiptPreview  = $true
     ShopAddress         = "Nuaimiya 1, Al Ain Market, Ajman, UAE"
     ShopPhone           = "+971 6 000 0000"
-    LocalTestCashiers   = @(
-        [ordered]@{ Id = "cashier1";    Name = "Test Cashier";    Pin = $CashierPin;    IsSupervisor = $false },
-        [ordered]@{ Id = "supervisor1"; Name = "Test Supervisor"; Pin = $SupervisorPin; IsSupervisor = $true }
-    )
     SetupDone           = $false
     SampleQr            = $true
-    # Field-test packages never write to ERPNext: a supervisor can switch a till to DryRun or Live in Settings.
-    Upload              = "Off"
+    # Production field packages never write to ERPNext (Off; the test build refuses Live). Dev packages upload Live from the
+    # first start, to the dev ERPNext only.
+    Upload              = $(if ($isDev) { "Live" } else { "Off" })
     # The counters a cashier can open a shift at (the first is the default). "Test Counter" rounds nothing (its POS Profile
     # disables the rounded total); "Al Ain Counter 1" rounds cash to 0.25. If the test API user cannot read a counter's
     # POS Profile, that counter shows as "Not available" on the Open Shift screen.
@@ -128,19 +154,33 @@ $settings = [ordered]@{
         [ordered]@{ PosProfile = "Al Ain Counter 1"; Label = "Counter 1";    CashMode = "Cash Counter 1"; CardMode = "Credit Card" }
     )
 }
+if ($isDev) {
+    # The dev ERPNext's third counter. Its cashiers come from its POS Cashier list: no local test cashiers.
+    $settings.Counters += [ordered]@{ PosProfile = "Al Ain Counter 2"; Label = "Counter 2"; CashMode = "Cash Counter 2"; CardMode = "Credit Card" }
+} else {
+    $settings.LocalTestCashiers = @(
+        [ordered]@{ Id = "cashier1";    Name = "Test Cashier";    Pin = $CashierPin;    IsSupervisor = $false },
+        [ordered]@{ Id = "supervisor1"; Name = "Test Supervisor"; Pin = $SupervisorPin; IsSupervisor = $true }
+    )
+}
 $json = $settings | ConvertTo-Json -Depth 5
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 
 # START HERE.txt in the repo is a template; the package gets the filled copy. Lines starting with #ZIP# / #EXE# belong to
-# one package kind only.
+# one package kind only, lines starting with #DEV# / #PROD# to one environment only (tags can be combined, e.g. #DEV##ZIP#).
 function Get-Guide([string]$kind, [string]$label, [string]$shownVersion) {
-    $keep = "#$kind#"
+    $allowed = @($kind, $(if ($isDev) { "DEV" } else { "PROD" }))
     $lines = foreach ($line in ([System.IO.File]::ReadAllText($startHere) -split "`r?`n")) {
-        if ($line.StartsWith($keep)) { $line.Substring($keep.Length) }
-        elseif ($line -notmatch '^#(ZIP|EXE)#') { $line }
+        $rest = $line
+        $keep = $true
+        while ($rest -match '^#(ZIP|EXE|DEV|PROD)#') {
+            if ($allowed -notcontains $Matches[1]) { $keep = $false }
+            $rest = $rest.Substring($Matches[0].Length)
+        }
+        if ($keep) { $rest }
     }
     $guide = ($lines -join "`r`n")   # Notepad-friendly line endings
-    $guide = $guide.Replace("{{VERSION}}", $shownVersion).Replace("{{PACKAGE_KIND}}", $label)
+    $guide = $guide.Replace("{{VERSION}}", $shownVersion).Replace("{{PACKAGE_KIND}}", $label).Replace("{{DATA_FOLDER}}", $dataFolder)
     $guide = $guide.Replace("{{CASHIER_PIN}}", $CashierPin).Replace("{{SUPERVISOR_PIN}}", $SupervisorPin)
     if ($guide -match '\{\{[A-Z_]+\}\}') { throw "START HERE.txt has a placeholder the script does not fill: $($Matches[0])" }
     return $guide
@@ -198,6 +238,13 @@ if ($SingleExe) {
     $size = [math]::Round((Get-Item $zipPath).Length / 1MB, 1)
     Write-Host "Field package: $zipPath ($size MB)"
 }
-Write-Host "Test PINs in this package (also in its START HERE):"
-Write-Host "  Cashier:    $CashierPin"
-Write-Host "  Supervisor: $SupervisorPin"
+if ($isDev) {
+    Write-Host "Dev package: uploads Live to https://$devHost/ only; data in $dataFolder."
+    Write-Host "Cashiers come from the dev ERPNext (also in its START HERE):"
+    Write-Host "  Sandbox Cashier:    $CashierPin"
+    Write-Host "  Sandbox Supervisor: $SupervisorPin"
+} else {
+    Write-Host "Test PINs in this package (also in its START HERE):"
+    Write-Host "  Cashier:    $CashierPin"
+    Write-Host "  Supervisor: $SupervisorPin"
+}

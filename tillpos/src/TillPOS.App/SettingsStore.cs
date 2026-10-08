@@ -40,11 +40,45 @@ public static partial class SettingsStore
         Converters = { new JsonStringEnumConverter() },
     };
 
-    /// <summary>The till's settings: %ProgramData%\TillPOS\settings.json, or the TILLPOS_SETTINGS path.</summary>
-    public static string ProgramDataPath =>
-        Environment.GetEnvironmentVariable("TILLPOS_SETTINGS") is { Length: > 0 } custom
-            ? custom
-            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "TillPOS", "settings.json");
+    /// <summary>The data folder of a Production build, and of a Dev build (so a dev build never mixes with production data).</summary>
+    public const string ProductionFolder = "TillPOS";
+    public const string DevFolder = "TillPOS-Dev";
+
+    /// <summary>The till's settings file: <paramref name="overridePath"/> (TILLPOS_SETTINGS) when set, otherwise settings.json in
+    /// the environment's folder under <paramref name="commonAppData"/> (%ProgramData%\TillPOS, or %ProgramData%\TillPOS-Dev for a
+    /// Dev build).</summary>
+    public static string SettingsPath(string? overridePath, string commonAppData, bool dev) =>
+        !string.IsNullOrEmpty(overridePath)
+            ? overridePath
+            : Path.Combine(commonAppData, dev ? DevFolder : ProductionFolder, "settings.json");
+
+    /// <summary>True when the package this exe came with is a Dev build: the settings.json beside the exe when there is one,
+    /// else the built-in settings (the same order as the import). Missing or unreadable settings are not Dev.</summary>
+    public static bool PackagedIsDev(string besideExePath, Func<string?> embedded)
+    {
+        try
+        {
+            if (File.Exists(besideExePath)) return IsDevJson(File.ReadAllText(besideExePath));
+            return embedded() is { } json && IsDevJson(json);
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    private static bool IsDevJson(string json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        if (doc.RootElement.ValueKind != JsonValueKind.Object) return false;
+        foreach (var property in doc.RootElement.EnumerateObject())
+        {
+            if (!string.Equals(property.Name, nameof(TillSettings.Environment), StringComparison.OrdinalIgnoreCase)) continue;
+            return property.Value.ValueKind == JsonValueKind.String
+                && string.Equals(property.Value.GetString()?.Trim(), TillSettings.DevEnvironment, StringComparison.OrdinalIgnoreCase);
+        }
+        return false;
+    }
 
     /// <summary>The packaged settings shipped in the zip next to TillPOS.exe.</summary>
     public static string BesideExePath => Path.Combine(AppContext.BaseDirectory, "settings.json");
@@ -119,6 +153,7 @@ public static partial class SettingsStore
             CardMode = s.CardMode ?? "",
             PrinterName = s.PrinterName ?? "",
             DbPath = s.DbPath ?? "",
+            Environment = string.IsNullOrWhiteSpace(s.Environment) ? TillSettings.ProductionEnvironment : s.Environment.Trim(),
             // A test build (local test cashiers or the sample QR) never runs Live.
             Upload = s.EffectiveUpload,
         };
@@ -218,11 +253,31 @@ public static partial class SettingsStore
     private static TillSettings ProtectSecret(TillSettings settings, Func<string, string> protect) =>
         HasPlainSecret(settings) ? settings with { ApiSecretProtected = protect(settings.ApiSecret!), ApiSecret = null } : settings;
 
-    /// <summary>A blank DbPath means "the default": till.db next to the till's settings file.</summary>
+    /// <summary>A blank DbPath means "the default": till.db next to the till's settings file. A Dev build whose DbPath is in the
+    /// production data folder (e.g. the record's default, when the file has no DbPath) also uses that default, so a dev build
+    /// never writes to production data.</summary>
     private static TillSettings WithDefaultDbPath(TillSettings settings, string programDataPath) =>
-        string.IsNullOrWhiteSpace(settings.DbPath)
+        string.IsNullOrWhiteSpace(settings.DbPath) || (settings.IsDev && InProductionFolder(settings.DbPath))
             ? settings with { DbPath = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(programDataPath))!, "till.db") }
             : settings;
+
+    /// <summary>The path is directly in the production data folder (C:\ProgramData\TillPOS or %ProgramData%\TillPOS).</summary>
+    private static bool InProductionFolder(string path)
+    {
+        try
+        {
+            var folder = Path.GetDirectoryName(Path.GetFullPath(path.Trim()));
+            return new[]
+            {
+                Path.Combine(@"C:\ProgramData", ProductionFolder),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), ProductionFolder),
+            }.Any(production => string.Equals(folder, Path.GetFullPath(production), StringComparison.OrdinalIgnoreCase));
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
 
     /// <summary>The packaged file keeps its own secret, protected. The zip folder may be read-only (e.g. under Program Files);
     /// the till still works, so failures are only logged (the message never contains the secret).</summary>

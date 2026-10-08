@@ -18,6 +18,7 @@ public sealed class ShellViewModel : ObservableObject, INavigator
     private UploadMode upload;
     private int failedUploads;
     private IReadOnlyList<string> uploadProblems = [];
+    private bool isDev;
 
     public ShellViewModel()
     {
@@ -84,6 +85,9 @@ public sealed class ShellViewModel : ObservableObject, INavigator
         UploadMode.DryRun => "DRY RUN",
         _ => "",
     };
+
+    /// <summary>A Dev build (test documents go to the dev ERPNext): the header shows a "DEV" badge next to the upload badge.</summary>
+    public bool IsDev { get => isDev; set => SetProperty(ref isDev, value); }
 
     /// <summary>Shows a screen; the login screen's upload problem counts are read again whenever it is shown.</summary>
     public void Show(object viewModel)

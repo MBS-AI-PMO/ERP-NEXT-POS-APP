@@ -28,6 +28,19 @@ public class ShellUploadTests
     }
 
     [Fact]
+    public void The_dev_badge_follows_the_environment()
+    {
+        var shell = new ShellViewModel();
+        Assert.False(shell.IsDev);
+        var changed = new List<string?>();
+        shell.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+        shell.IsDev = true;
+
+        Assert.Contains(nameof(ShellViewModel.IsDev), changed);
+    }
+
+    [Fact]
     public void Changing_the_mode_updates_the_badge()
     {
         var shell = new ShellViewModel();
