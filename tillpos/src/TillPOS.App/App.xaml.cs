@@ -38,6 +38,12 @@ public partial class App : Application
         {
             resolved = SettingsStore.Resolve(LogError);
         }
+        catch (SettingsRefusedException ex)
+        {
+            MessageBox.Show(ex.Message, "TillPOS");
+            Shutdown(1);
+            return;
+        }
         catch (Exception ex)
         {
             MessageBox.Show($"Settings could not be read from {SettingsStore.ProgramDataPath}:\n{ex.Message}", "TillPOS");

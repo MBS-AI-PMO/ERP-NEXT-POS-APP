@@ -389,4 +389,86 @@ public sealed class SettingsStoreTests : IDisposable
         Write(programData, Json("\"ApiSecretProtected\": \"P(x)\"", dbPath: "C:/ProgramData/TillPOS/till.db"));
         Assert.Equal("C:/ProgramData/TillPOS/till.db", Resolve()!.DbPath);
     }
+
+    // ---- A Dev build never runs on Production settings, or the other way round ----
+
+    private static string EnvJson(string? environment, string secretField = "\"ApiSecretProtected\": \"P(installed)\"") =>
+        $$"""{ "BaseUrl": "https://erp.example", "ApiKey": "key1", {{secretField}}, "PosProfile": "Till 1"{{(environment is null ? "" : $", \"Environment\": \"{environment}\"")}} }""";
+
+    [Theory]
+    [InlineData("Dev", "Production")]
+    [InlineData("Production", "Dev")]
+    [InlineData(null, "Dev")]                 // no Environment = Production
+    public void A_package_beside_the_exe_of_the_other_environment_refuses_to_start(string? installed, string packaged)
+    {
+        Write(programData, EnvJson(installed));
+        Write(besideExe, EnvJson(packaged, "\"ApiSecret\": \"package-secret\""));
+        var before = File.ReadAllText(programData);
+
+        var ex = Assert.Throws<SettingsRefusedException>(Resolve);
+
+        Assert.Equal($"This TillPOS is a {packaged} build but its settings at {programData} are for {installed ?? "Production"}. " +
+            "Use the matching build, or remove that settings file.", ex.Message);
+        Assert.Equal(before, File.ReadAllText(programData));            // no secret or counters adopted
+        Assert.DoesNotContain("package-secret", ex.Message);
+    }
+
+    [Fact]
+    public void A_built_in_package_of_the_other_environment_refuses_to_start()
+    {
+        Write(programData, EnvJson("Production", "\"ApiSecretProtected\": \"\""));
+        embedded = EnvJson("Dev", "\"ApiSecret\": \"built-in\", \"Counters\": [ { \"PosProfile\": \"Test Counter\", \"CashMode\": \"Cash Counter 2\" } ]");
+        var before = File.ReadAllText(programData);
+
+        var ex = Assert.Throws<SettingsRefusedException>(Resolve);
+
+        Assert.StartsWith("This TillPOS is a Dev build but its settings at ", ex.Message);
+        Assert.Equal(before, File.ReadAllText(programData));
+    }
+
+    [Fact]
+    public void Importing_a_package_beside_the_exe_that_disagrees_with_the_built_in_one_refuses()
+    {
+        Write(besideExe, EnvJson("Production", "\"ApiSecret\": \"x\""));
+        embedded = EnvJson("Dev", "\"ApiSecret\": \"y\"");
+
+        Assert.Throws<SettingsRefusedException>(Resolve);
+        Assert.False(File.Exists(programData));
+    }
+
+    [Theory]
+    [InlineData("dev", "Dev")]
+    [InlineData("PRODUCTION", "Production")]
+    [InlineData(" Dev ", "Dev")]
+    public void The_environment_is_read_in_any_case_and_matching_packages_start(string written, string expected)
+    {
+        Write(programData, EnvJson(written));
+        Write(besideExe, EnvJson(expected.ToUpperInvariant()));
+        embedded = EnvJson(expected.ToLowerInvariant());
+
+        Assert.Equal(expected, Resolve()!.Environment);
+    }
+
+    [Theory]
+    [InlineData("Staging")]
+    [InlineData("")]
+    [InlineData("Development")]
+    public void An_unknown_environment_refuses_to_start(string environment)
+    {
+        Write(programData, EnvJson(environment));
+        var ex = Assert.Throws<SettingsRefusedException>(Resolve);
+        Assert.Contains("\"Dev\" or \"Production\"", ex.Message);
+
+        File.Delete(programData);
+        Write(besideExe, EnvJson("Production", "\"ApiSecret\": \"x\""));
+        embedded = EnvJson(environment);
+        Assert.Throws<SettingsRefusedException>(Resolve);
+    }
+
+    [Fact]
+    public void A_json_null_environment_is_production()
+    {
+        Write(programData, EnvJson(null).Replace(" }", ", \"Environment\": null }"));
+        Assert.Equal("Production", Resolve()!.Environment);
+    }
 }

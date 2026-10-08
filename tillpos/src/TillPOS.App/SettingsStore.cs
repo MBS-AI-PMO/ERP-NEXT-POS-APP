@@ -6,6 +6,10 @@ using TillPOS.Core.Shifts;
 
 namespace TillPOS.App;
 
+/// <summary>The till must not start with these settings (e.g. a Dev build on Production settings); the message says why and what
+/// to do, and is shown as it is.</summary>
+public sealed class SettingsRefusedException(string message) : Exception(message);
+
 /// <summary>Finds, imports and saves settings.json. The till's own copy lives in ProgramData; a packaged copy next to the
 /// exe (zip package), else the copy built into a single-file exe (publish-field.ps1 -SingleExe), is imported on the first
 /// start. A plain API secret is protected before any file is written, and is removed from every settings file the till can
@@ -88,13 +92,19 @@ public static partial class SettingsStore
     /// none. A plain secret is replaced by <paramref name="protect"/>(secret) before the settings are saved; the packaged file
     /// is then cleaned too, and a failure there is only logged. The built-in copy cannot be cleaned: it is part of the exe,
     /// so its plain secret stays readable to anyone who has the exe file (test builds only; never ship one to customers).</summary>
+    /// <exception cref="SettingsRefusedException">A packaged settings file (beside the exe, or built in) is for the other
+    /// environment than the settings in use (Dev vs Production), or an Environment is neither "Dev" nor "Production". Nothing is
+    /// adopted or written then.</exception>
     public static TillSettings? Resolve(string programDataPath, string besideExePath, Func<string?> embedded, Func<string, string> protect,
         Action<TillSettings, Exception> logError)
     {
+        var packages = PackagedEnvironments(besideExePath, programDataPath, embedded);
         TillSettings settings;
         if (File.Exists(programDataPath))
         {
             settings = WithDefaultDbPath(Load(programDataPath), programDataPath);
+            // Before anything is adopted from a package: a package of the other environment never lends its secret or counters.
+            RefuseOtherEnvironment(packages, settings, programDataPath);
             // A plain secret beside the exe only exists in a freshly unzipped package, so it is the newest key (key rotation,
             // or recovering after a used folder was copied from another PC): adopt it.
             if (!HasPlainSecret(settings) && PackagedPlainSecret(besideExePath, programDataPath) is { } fresh)
@@ -118,7 +128,9 @@ public static partial class SettingsStore
         }
         else if (File.Exists(besideExePath))
         {
-            settings = ProtectSecret(WithDefaultDbPath(Load(besideExePath), programDataPath), protect);
+            var packaged = Load(besideExePath);
+            RefuseOtherEnvironment(packages, packaged, besideExePath);
+            settings = ProtectSecret(WithDefaultDbPath(packaged, programDataPath), protect);
             Save(settings, programDataPath);
         }
         else if (embedded() is { } builtInJson)
@@ -134,6 +146,66 @@ public static partial class SettingsStore
 
         RemovePlainSecret(besideExePath, programDataPath, protect, settings, logError);
         return settings;
+    }
+
+    /// <summary>The environment of each packaged settings file there is: the one beside the exe (unless it is the till's own file)
+    /// and the built-in one. An unreadable package counts as none (as everywhere else); an unknown Environment refuses.</summary>
+    private static List<(string Environment, string Source)> PackagedEnvironments(string besideExePath, string programDataPath,
+        Func<string?> embedded)
+    {
+        var found = new List<(string, string)>();
+        if (File.Exists(besideExePath) && !IsSameFile(besideExePath, programDataPath)
+            && RawEnvironment(() => File.ReadAllText(besideExePath)) is { } beside)
+            found.Add((Canonical(beside.Value, besideExePath), besideExePath));
+        if (RawEnvironment(embedded) is { } builtIn) found.Add((Canonical(builtIn.Value, BuiltInName), BuiltInName));
+        return found;
+    }
+
+    /// <summary>The Environment written in the settings JSON (Value null when missing or JSON null), or null when there is no JSON
+    /// or it cannot be read.</summary>
+    private static (string? Value, bool Found)? RawEnvironment(Func<string?> json)
+    {
+        try
+        {
+            if (json() is not { } text) return null;
+            using var doc = JsonDocument.Parse(text);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) return null;
+            foreach (var property in doc.RootElement.EnumerateObject())
+            {
+                if (!string.Equals(property.Name, nameof(TillSettings.Environment), StringComparison.OrdinalIgnoreCase)) continue;
+                return property.Value.ValueKind switch
+                {
+                    JsonValueKind.Null => (null, true),
+                    JsonValueKind.String => (property.Value.GetString(), true),
+                    _ => (property.Value.GetRawText(), true),
+                };
+            }
+            return (null, false);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>"Dev" or "Production" (any case, spaces ignored); missing (null) is Production, settings from before environments.</summary>
+    /// <exception cref="SettingsRefusedException">Any other value.</exception>
+    private static string Canonical(string? environment, string source)
+    {
+        if (environment is null) return TillSettings.ProductionEnvironment;
+        var trimmed = environment.Trim();
+        if (string.Equals(trimmed, TillSettings.DevEnvironment, StringComparison.OrdinalIgnoreCase)) return TillSettings.DevEnvironment;
+        if (string.Equals(trimmed, TillSettings.ProductionEnvironment, StringComparison.OrdinalIgnoreCase)) return TillSettings.ProductionEnvironment;
+        throw new SettingsRefusedException(
+            $"{source} has Environment \"{environment}\"; it must be \"Dev\" or \"Production\". Use the matching TillPOS build, or correct that settings file.");
+    }
+
+    private static void RefuseOtherEnvironment(List<(string Environment, string Source)> packages, TillSettings settings, string path)
+    {
+        foreach (var (environment, _) in packages)
+            if (environment != settings.Environment)
+                throw new SettingsRefusedException($"This TillPOS is a {environment} build but its settings at {path} are for " +
+                    $"{settings.Environment}. Use the matching build, or remove that settings file.");
     }
 
     /// <summary>Reads settings.json. JSON nulls in the text settings become "" (the till treats blank as "not set").</summary>
@@ -153,7 +225,7 @@ public static partial class SettingsStore
             CardMode = s.CardMode ?? "",
             PrinterName = s.PrinterName ?? "",
             DbPath = s.DbPath ?? "",
-            Environment = string.IsNullOrWhiteSpace(s.Environment) ? TillSettings.ProductionEnvironment : s.Environment.Trim(),
+            Environment = Canonical(s.Environment, source),
             // A test build (local test cashiers or the sample QR) never runs Live.
             Upload = s.EffectiveUpload,
         };
