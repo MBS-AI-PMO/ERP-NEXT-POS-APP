@@ -180,6 +180,43 @@ public sealed class ReturnViewModelTests : IDisposable
     }
 
     [Fact]
+    public void A_bill_of_another_till_with_lines_without_an_item_code_is_refused()
+    {
+        OtherTillSale();
+        var bill = f.Ctx.RemoteReceipts!.FindByErpName(OtherTillName)!;
+        f.Ctx.RemoteReceipts.Upsert(bill with { LinesWithoutItemCode = 1 }, f.Clock.Now);
+        var vm = OpenReturns();
+
+        vm.Scan(OtherTillId);
+
+        Assert.True(vm.IsFind);
+        Assert.True(vm.MessageIsError);
+        Assert.Equal(ReturnViewModel.MissingItemCodeMessage, vm.Message);
+        Assert.Equal("This bill has lines without an item code in ERPNext — return it in ERPNext.", ReturnViewModel.MissingItemCodeMessage);
+    }
+
+    [Fact]
+    public void A_bill_that_gets_lines_without_an_item_code_in_ERPNext_meanwhile_is_not_refunded()
+    {
+        OtherTillSale();
+        var vm = OpenReturns();
+        vm.Scan(OtherTillId);
+        vm.Lines[0].IncrementCommand.Execute(null);
+        vm.SetReasonCommand.Execute("Damaged");
+        f.RemoteCheck.OnRefresh = name =>
+        {
+            var bill = f.Ctx.RemoteReceipts!.FindByErpName(name)!;
+            f.Ctx.RemoteReceipts.Upsert(bill with { LinesWithoutItemCode = 2 }, f.Clock.Now);
+            return true;
+        };
+
+        vm.ConfirmCommand.Execute(null);
+
+        Assert.Empty(Returns());
+        Assert.Equal(ReturnViewModel.MissingItemCodeMessage, vm.Message);
+    }
+
+    [Fact]
     public void A_bill_of_another_till_with_a_discount_is_refused()
     {
         OtherTillSale();

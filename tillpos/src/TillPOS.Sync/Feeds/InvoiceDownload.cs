@@ -40,14 +40,19 @@ public static class InvoiceDownload
         row.StrOrNull("posa_client_request_id") is { } id
         && id.StartsWith($"TILL{tillNumber.ToString(CultureInfo.InvariantCulture)}-", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>One invoice. Item rows without an item code (null or blank: a deleted item, or the null row the child join gives
+    /// for an invoice with no item rows) are left out and counted in <see cref="RemoteReceipt.LinesWithoutItemCode"/>; payment
+    /// rows without a mode or amount are left out. Never throws for such rows.</summary>
     private static RemoteReceipt Map(JsonElement row, IEnumerable<JsonElement> items, IEnumerable<JsonElement> payments)
     {
         var clientId = row.StrOrNull("posa_client_request_id");
-        var lines = items.OrderBy(i => i.Int("idx")).Select(i => new RemoteLine(
+        var all = items.ToList();
+        var withCode = all.Where(i => i.StrOrNull("item_code") is not null).ToList();
+        var lines = withCode.OrderBy(i => i.Int("idx")).Select(i => new RemoteLine(
             i.StrOrNull("posa_row_id"), i.Str("item_code"), i.StrOrNull("item_name") ?? i.Str("item_code"), i.Dec("qty"),
             i.StrOrNull("uom") ?? "", i.Dec("conversion_factor") is var cf && cf != 0m ? cf : 1m, i.Dec("rate"), i.Dec("price_list_rate"),
             i.Dec("amount"), i.StrOrNull("barcode"), i.StrOrNull("item_tax_template"))).ToList();
-        var paid = payments.OrderBy(p => p.Int("idx")).Where(p => p.Dec("amount") != 0m)
+        var paid = payments.OrderBy(p => p.Int("idx")).Where(p => p.Dec("amount") != 0m && p.StrOrNull("mode_of_payment") is not null)
             .Select(p => new RemotePayment(p.Str("mode_of_payment"), p.Dec("amount"))).ToList();
         return new RemoteReceipt(row.Str("name"), clientId, TillOf(clientId), row.StrOrNull("pos_profile"), Posting(row),
             row.StrOrNull("customer"), row.Dec("grand_total"), row.Dec("rounded_total"), row.Dec("net_total"), row.Dec("total_taxes_and_charges"),
@@ -55,6 +60,7 @@ public static class InvoiceDownload
         {
             DiscountAmount = row.Dec("discount_amount"),
             AdditionalDiscountPercentage = row.Dec("additional_discount_percentage"),
+            LinesWithoutItemCode = all.Count - withCode.Count,
         };
     }
 

@@ -156,6 +156,76 @@ public sealed class RecentInvoicesFeedTests : IDisposable
         Assert.Empty(erp.Inserted);
     }
 
+    /// <summary>A POS Invoice Item row as ERPNext answers it for a line whose item was removed (item_code null), or the null row
+    /// the child join yields for an invoice without item rows.</summary>
+    private void AddNullItemRow(string name, bool emptyJoinRow = false) =>
+        items[name].Add(emptyJoinRow
+            ? new Dictionary<string, object?>
+            {
+                ["name"] = name, ["item_code"] = null, ["item_name"] = null, ["qty"] = null, ["uom"] = null, ["conversion_factor"] = null,
+                ["rate"] = null, ["price_list_rate"] = null, ["amount"] = null, ["barcode"] = null, ["item_tax_template"] = null,
+                ["posa_row_id"] = null, ["idx"] = null,
+            }
+            : new Dictionary<string, object?>
+            {
+                ["name"] = name, ["item_code"] = null, ["item_name"] = "Deleted item", ["qty"] = 1, ["uom"] = "PCS", ["conversion_factor"] = 1,
+                ["rate"] = "2.00", ["price_list_rate"] = "2.00", ["amount"] = "2.00", ["barcode"] = null, ["item_tax_template"] = null,
+                ["posa_row_id"] = null, ["idx"] = 9,
+            });
+
+    [Fact]
+    public async Task Lines_without_an_item_code_are_skipped_and_their_bills_marked_not_returnable_with_a_note()
+    {
+        Invoice("ACC-PSINV-2026-00604", "TILL3-1", "2026-10-06", "2026-10-06 09:00:00.000000", lines: [("MILK", 1m, "1")]);
+        AddNullItemRow("ACC-PSINV-2026-00604");
+        Invoice("ACC-PSINV-2026-01669", null, "2026-10-06", "2026-10-06 09:01:00.000000");
+        AddNullItemRow("ACC-PSINV-2026-01669", emptyJoinRow: true);                      // no item rows at all
+        Invoice("ACC-PSINV-2026-01948", "TILL3-2", "2026-10-06", "2026-10-06 09:02:00.000000", lines: [("MILK", 1m, "1")]);
+        items["ACC-PSINV-2026-01948"][0]["item_code"] = "";                               // blank counts as missing too
+        Invoice("ACC-PSINV-2026-02000", "TILL3-3", "2026-10-06", "2026-10-06 09:03:00.000000", lines: [("MILK", 2m, "1")]);
+        var feed = Feed();
+
+        Assert.Equal(4, await feed.RunAsync(default));                                     // no exception: the pull goes on
+
+        var partly = remote.FindByErpName("ACC-PSINV-2026-00604")!;
+        Assert.Equal(("MILK", 1), (Assert.Single(partly.Lines).ItemCode, partly.LinesWithoutItemCode));
+        Assert.Equal((0, 1), (remote.FindByErpName("ACC-PSINV-2026-01669")!.Lines.Count, remote.FindByErpName("ACC-PSINV-2026-01669")!.LinesWithoutItemCode));
+        Assert.Equal(1, remote.FindByErpName("ACC-PSINV-2026-01948")!.LinesWithoutItemCode);
+        Assert.Equal(0, remote.FindByErpName("ACC-PSINV-2026-02000")!.LinesWithoutItemCode);
+        Assert.Equal("3 bill(s) have lines without an item code in ERPNext; they can only be returned in ERPNext.", feed.LastNote);
+
+        // Fixed in ERPNext: the next run has no note.
+        foreach (var rows in items.Values) rows.RemoveAll(r => string.IsNullOrEmpty((string?)r["item_code"]));
+        await feed.RunAsync(default);
+        Assert.Null(feed.LastNote);
+    }
+
+    [Fact]
+    public async Task The_pull_reports_lines_without_an_item_code_as_a_note_not_a_problem()
+    {
+        Invoice("ACC-PSINV-2026-00604", "TILL3-1", "2026-10-06", "2026-10-06 09:00:00.000000", lines: [("MILK", 1m, "1")]);
+        AddNullItemRow("ACC-PSINV-2026-00604");
+
+        var report = await new CatalogPuller([Feed()], () => { }).RunAsync();
+
+        Assert.True(report.Ok);
+        Assert.Equal(["1 bill(s) have lines without an item code in ERPNext; they can only be returned in ERPNext."], report.Notes);
+    }
+
+    [Fact]
+    public async Task The_returns_check_tolerates_lines_without_an_item_code()
+    {
+        Invoice("SALE-1", "TILL3-1", "2026-10-06", "2026-10-06 09:00:00.000000", lines: [("MILK", 3m, "1")]);
+        AddNullItemRow("SALE-1");
+        Invoice("RET-NEW", "TILL4-1", "2026-10-07", "2026-10-07 09:00:00.000000", returnAgainst: "SALE-1", lines: [("MILK", -1m, "1")]);
+        AddNullItemRow("RET-NEW", emptyJoinRow: true);
+
+        Assert.True(await new RemoteReturnsCheck(erp, remote, 2, () => Now).RefreshAsync("SALE-1", default));
+
+        Assert.Equal(1, remote.FindByErpName("SALE-1")!.LinesWithoutItemCode);
+        Assert.Equal(1m, remote.ReturnedQtyByLine("SALE-1")[1]);
+    }
+
     [Fact]
     public async Task Without_the_POS_settings_the_feed_fails_without_asking_ERPNext()
     {

@@ -102,6 +102,7 @@ public sealed class ReturnViewModel : ObservableObject
     public const int RecentCount = 50;
     public const string SomethingChangedMessage = "Something changed — confirm again";
     public const string FromOtherTillMessage = "Bill from another till — found in ERPNext.";
+    public const string MissingItemCodeMessage = "This bill has lines without an item code in ERPNext — return it in ERPNext.";
     public const string CannotRepriceMessage = "This bill has a discount or tax the till can't re-price — return it in ERPNext.";
     /// <summary>How far the till's own pricing of another till's bill may be from ERPNext's grand total.</summary>
     public const decimal RepriceTolerance = 0.01m;
@@ -293,6 +294,7 @@ public sealed class ReturnViewModel : ObservableObject
         }
         if (receipt is null) { Error($"Receipt {id} not found on this till. Ask a supervisor for a return without receipt."); return; }
         if (receipt.Kind != ReceiptKind.Sale) { Error($"{receipt.ClientId} is a credit note, not a sale — open the original sale."); return; }
+        if (remote is { LinesWithoutItemCode: > 0 }) { Error(MissingItemCodeMessage); return; }
         if (remote is not null && !CanReprice(remote, receipt)) { Error(CannotRepriceMessage); return; }
 
         var lines = receipt.Lines.Select(l => new ReturnLine(l, Returned(returns, l.LineNo), builder.IsWeighed(l))).ToList();
@@ -388,6 +390,11 @@ public sealed class ReturnViewModel : ObservableObject
                         Error($"{against.ClientId} is no longer a submitted bill in ERPNext — return it in ERPNext.");
                         return;
                     case true:
+                        if (ctx.RemoteReceipts?.FindByErpName(against.ClientId) is { LinesWithoutItemCode: > 0 })
+                        {
+                            Error(MissingItemCodeMessage);
+                            return;
+                        }
                         ReloadLines();
                         try
                         {

@@ -37,6 +37,10 @@ public sealed record RemoteReceipt(
 
     public decimal AdditionalDiscountPercentage { get; init; }
 
+    /// <summary>Item rows ERPNext has without an item code (e.g. the item was deleted, or the null row of an invoice without
+    /// items): left out of <see cref="Lines"/>. Such a bill cannot be returned at the till (it would not add up).</summary>
+    public int LinesWithoutItemCode { get; init; }
+
     /// <summary>The line numbers given to <see cref="Lines"/>: their posa_row_id when every one is a distinct positive number
     /// (a TillPOS bill keeps its own line numbers), otherwise their position (1, 2, …).</summary>
     public IReadOnlyList<int> LineNumbers()
