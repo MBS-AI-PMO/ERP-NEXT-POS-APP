@@ -109,6 +109,19 @@ show what the till expected. Press "Close shift & print Z report": a
 supervisor must enter their PIN. The Z report then prints with the expected,
 counted and difference amounts for cash and card, for the supervisor.
 
+DELIVERIES
+Scan the order's items, then press "Delivery (F9)" and confirm. A
+DELIVERY INVOICE - NOT PAID prints with the amount to collect (cash
+rounded, or the exact card amount). Give it to the driver; the bill waits
+under "Deliveries" (the badge shows how many are out).
+When the driver is back, press "Deliveries" (or scan the slip's barcode),
+choose the delivery and press Pay cash / Pay card / Split. Cash is filled in
+with the exact amount (no change). It then prints the normal invoice
+marked "DELIVERY - PAID" and counts in the current shift.
+If the customer kept only some items, reduce or remove lines there first
+(supervisor PIN). If the customer refused it, press Cancel (supervisor PIN).
+Deliveries still out are listed on the Z report and stay for the next shift.
+
 BARCODE SCANNER
 The scanner must press Enter after the code. Most USB scanners do this
 already. If a scan does not add the item, check this setting.

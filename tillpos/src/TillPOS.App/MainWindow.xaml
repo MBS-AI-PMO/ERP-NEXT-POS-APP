@@ -14,6 +14,7 @@
     <DataTemplate DataType="{x:Type vm:PaymentViewModel}"><views:PaymentView /></DataTemplate>
     <DataTemplate DataType="{x:Type vm:CloseShiftViewModel}"><views:CloseShiftView /></DataTemplate>
     <DataTemplate DataType="{x:Type vm:ReturnViewModel}"><views:ReturnView /></DataTemplate>
+    <DataTemplate DataType="{x:Type vm:DeliveriesViewModel}"><views:DeliveriesView /></DataTemplate>
     <DataTemplate DataType="{x:Type vm:UploadProblemsViewModel}"><views:UploadProblemsView /></DataTemplate>
   </Window.Resources>
   <DockPanel>

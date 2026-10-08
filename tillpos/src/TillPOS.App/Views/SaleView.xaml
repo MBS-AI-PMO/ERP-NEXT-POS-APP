@@ -9,6 +9,7 @@
     <KeyBinding Key="F6" Command="{Binding ReturnCommand}" />
     <KeyBinding Key="F7" Command="{Binding RecallCommand}" />
     <KeyBinding Key="F8" Command="{Binding VoidBillCommand}" />
+    <KeyBinding Key="F9" Command="{Binding MakeDeliveryCommand}" />
     <KeyBinding Key="F11" Command="{Binding PayCardCommand}" />
     <KeyBinding Key="F12" Command="{Binding PayCashCommand}" />
     <KeyBinding Key="Delete" Command="{Binding RemoveSelectedCommand}" />
@@ -135,7 +136,7 @@
         </Button>
         <Grid Margin="0,4,0,0">
           <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition /></Grid.ColumnDefinitions>
-          <Grid.RowDefinitions><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /></Grid.RowDefinitions>
+          <Grid.RowDefinitions><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /></Grid.RowDefinitions>
           <Grid.Resources>
             <Style TargetType="Button" x:Key="PadButton" BasedOn="{StaticResource KeyButton}">
               <Setter Property="Focusable" Value="False" />
@@ -166,6 +167,18 @@
           <Button Grid.Row="3" Grid.Column="1" Focusable="False" Style="{StaticResource DangerButton}" MinHeight="52" Height="52" FontSize="16"
                   HorizontalContentAlignment="Left" Padding="14,0" local:ButtonIcon.Glyph="&#xE74D;"
                   Content="Void bill (F8)" Command="{Binding VoidBillCommand}" />
+          <Button Grid.Row="4" Grid.Column="0" Style="{StaticResource PadButton}" local:ButtonIcon.Glyph="&#xE806;" Content="Delivery (F9)" Command="{Binding MakeDeliveryCommand}" />
+          <Button Grid.Row="4" Grid.Column="1" Style="{StaticResource PadButton}" local:ButtonIcon.Glyph="&#xE7BF;" Command="{Binding OpenDeliveriesCommand}">
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Text="Deliveries" VerticalAlignment="Center" />
+              <!-- How many deliveries are out (not paid yet); hidden when none. -->
+              <Border Background="{StaticResource Warn}" CornerRadius="11" MinWidth="24" Height="22" Padding="6,0" Margin="8,0,0,0"
+                      VerticalAlignment="Center" Visibility="{Binding DeliveryCount, Converter={StaticResource CountToVisibility}}">
+                <TextBlock Text="{Binding DeliveryCount}" Foreground="White" FontSize="14" FontWeight="Bold"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+              </Border>
+            </StackPanel>
+          </Button>
         </Grid>
         <UniformGrid Columns="3" Margin="0,4,0,0">
           <UniformGrid.Resources>
