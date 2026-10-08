@@ -16,8 +16,12 @@ namespace TillPOS.Sync.Upload;
 public sealed record UploadReport(int Uploaded, int Waiting, int Failed, IReadOnlyList<UploadProblem> Problems);
 
 /// <summary>One problem: the document's client id (or "" for the whole run), the payload field when a check names one, and the
-/// readable line (it names the document).</summary>
-public sealed record UploadProblem(string DocId, string? Field, string Message);
+/// readable line (it names the document). Kind tells a shift's opening from its closing (they share the shift's id); null when
+/// the problem is not about one kind of document.</summary>
+public sealed record UploadProblem(string DocId, string? Field, string Message)
+{
+    public OutboxKind? Kind { get; init; }
+}
 
 /// <summary>Uploads the till's outbox to ERPNext, oldest shift first: its POS Opening Shift, then its bills oldest first (a return
 /// waits until its original sale is in ERPNext), then its POS Closing Shift once the shift is closed and every bill is in;
@@ -172,10 +176,10 @@ public sealed class Uploader
                 if (sync.OpeningStatus == UploadStatus.Failed
                     && (sync.OpeningError ?? sync.LastError)?.Contains("already has an open POS shift", StringComparison.OrdinalIgnoreCase) == true)
                     shifts.MarkWaiting(id, ShiftDocument.Opening, note);
-                run.Add(id, note);
+                run.Add(id, note, OutboxKind.Opening);
                 return;
             }
-            if (!Due(sync.NextAttemptAt, id, $"Opening of shift {id}", sync.OpeningError ?? sync.LastError, run)) return;
+            if (!Due(sync.NextAttemptAt, id, $"Opening of shift {id}", sync.OpeningError ?? sync.LastError, run, OutboxKind.Opening)) return;
             openingName = await UploadAsync(
                 new Doc(OpeningShiftPayload.Doctype, OfflineIdField, id, OpeningKey(id), $"Opening of shift {id}", true,
                     () => OpeningShiftPayload.Build(opening, profile.PosProfile, profile.Company, user),
@@ -205,10 +209,11 @@ public sealed class Uploader
         if (sync.ClosingStatus is not (UploadStatus.Pending or UploadStatus.Failed)) return;   // synced, excluded or handled: final
         if (waiting > 0)
         {
-            run.Add(id, $"Closing of shift {id} waits: {waiting.ToString(CultureInfo.InvariantCulture)} bill(s) of the shift are not uploaded yet.");
+            run.Add(id, $"Closing of shift {id} waits: {waiting.ToString(CultureInfo.InvariantCulture)} bill(s) of the shift are not uploaded yet.",
+                OutboxKind.Closing);
             return;
         }
-        if (!Due(sync.NextAttemptAt, id, $"Closing of shift {id}", sync.ClosingError ?? sync.LastError, run)) return;
+        if (!Due(sync.NextAttemptAt, id, $"Closing of shift {id}", sync.ClosingError ?? sync.LastError, run, OutboxKind.Closing)) return;
         await UploadAsync(
             new Doc(ClosingShiftPayload.Doctype, OfflineIdField, id, ClosingKey(id), $"Closing of shift {id}", true,
                 () => ClosingShiftPayload.Build(opening, closing, openingName, uploaded, profile.PosProfile, profile.Company, user,
@@ -225,7 +230,7 @@ public sealed class Uploader
         CancellationToken ct)
     {
         var label = $"Bill {receipt.ClientId}";
-        if (!Due(bill.NextAttemptAt, receipt.ClientId, label, bill.LastError, run)) return null;
+        if (!Due(bill.NextAttemptAt, receipt.ClientId, label, bill.LastError, run, OutboxKind.Bill)) return null;
 
         string? returnAgainst = null;
         if (receipt.Kind == ReceiptKind.Return && receipt.ReturnAgainst is { Length: > 0 } originalId)
@@ -437,7 +442,7 @@ public sealed class Uploader
             }
             else if (!string.IsNullOrEmpty(a.ReceiptClientId))
                 invoiceName = KnownRemoteName(a.ReceiptClientId);           // another till's bill when downloaded, else no link
-            if (!Due(entry.NextAttemptAt, a.Id, label, entry.LastError, run)) continue;
+            if (!Due(entry.NextAttemptAt, a.Id, label, entry.LastError, run, OutboxKind.Approval)) continue;
             await UploadAsync(
                 new Doc(ApprovalPayload.Doctype, OfflineIdField, a.Id, $"APPROVAL-{a.Id}", label, false,
                     () => ApprovalPayload.Build(a, till, shiftName, invoiceName)),
@@ -509,20 +514,20 @@ public sealed class Uploader
         {
             // ERPNext crashed on this document (and rolled back). It waits under its in-flight marker and unknown count (escalated
             // after 3); the other documents of the run go on, except those that depend on it (its shift's closing, returns of it).
-            run.Add(doc.ClientId, $"{doc.Label}: ERPNext error, tried again later: {Short(ex.Message)}");
+            run.Add(doc.ClientId, $"{doc.Label}: ERPNext error, tried again later: {Short(ex.Message)}", KindOf(doc));
             return null;
         }
         catch (DocumentSkipped)
         {
             // Marked handled (or otherwise changed) on the till since this run read it: that decision stands.
-            run.Add(doc.ClientId, $"{doc.Label}: changed on the till meanwhile; not sent.");
+            run.Add(doc.ClientId, $"{doc.Label}: changed on the till meanwhile; not sent.", KindOf(doc));
             return null;
         }
         catch (Exception ex) when (ex is DocumentFailure || Classify(ex) == ErpOutcome.Refused)
         {
             var error = Short(ex.Message);
             marks.Failed(error, now() + Backoff(marks.Attempts + 1), ex is DocumentFailure { KeepUnknown: true });
-            run.Add(doc.ClientId, $"{doc.Label}: {error}");
+            run.Add(doc.ClientId, $"{doc.Label}: {error}", KindOf(doc));
             return null;
         }
     }
@@ -545,7 +550,7 @@ public sealed class Uploader
         }
         catch (Exception ex) when (ex is DocumentFailure or ErpException)
         {
-            problems.Add(new UploadProblem(doc.ClientId, null, $"{doc.Label}: lookup failed: {Short(ex.Message)}"));
+            problems.Add(new UploadProblem(doc.ClientId, null, $"{doc.Label}: lookup failed: {Short(ex.Message)}") { Kind = KindOf(doc) });
         }
 
         var body = doc.Build();
@@ -555,11 +560,11 @@ public sealed class Uploader
             try
             {
                 foreach (var issue in await check(run.Checks(reader), body, ct))
-                    problems.Add(new UploadProblem(doc.ClientId, issue.Field, $"{doc.Label}: {issue.Field}: {issue.Message}"));
+                    problems.Add(new UploadProblem(doc.ClientId, issue.Field, $"{doc.Label}: {issue.Field}: {issue.Message}") { Kind = KindOf(doc) });
             }
             catch (ErpException ex)
             {
-                problems.Add(new UploadProblem(doc.ClientId, null, $"{doc.Label}: could not be checked: {Short(ex.Message)}"));
+                problems.Add(new UploadProblem(doc.ClientId, null, $"{doc.Label}: could not be checked: {Short(ex.Message)}") { Kind = KindOf(doc) });
             }
         }
         preview(doc.Key + ".json", ErpFormat.Json(body, indented: true));
@@ -711,11 +716,11 @@ public sealed class Uploader
     }
 
     /// <summary>False (and noted) while a failed document waits for its backoff.</summary>
-    private bool Due(DateTimeOffset? nextAttemptAt, string docId, string label, string? lastError, Run run)
+    private bool Due(DateTimeOffset? nextAttemptAt, string docId, string label, string? lastError, Run run, OutboxKind kind)
     {
         // DryRun writes nothing, so it does not wait for a backoff either.
         if (Mode == UploadMode.DryRun || nextAttemptAt is not { } next || next <= now()) return true;
-        run.Add(docId, $"{label}: {lastError ?? "failed"} (next try {next.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture)})");
+        run.Add(docId, $"{label}: {lastError ?? "failed"} (next try {next.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture)})", kind);
         return false;
     }
 
@@ -728,6 +733,15 @@ public sealed class Uploader
         return text.Length <= MaxErrorLength ? text : text[..MaxErrorLength];
     }
 
+    /// <summary>Which kind of till document <paramref name="doc"/> uploads.</summary>
+    private static OutboxKind KindOf(Doc doc) => doc.Doctype switch
+    {
+        OpeningShiftPayload.Doctype => OutboxKind.Opening,
+        ClosingShiftPayload.Doctype => OutboxKind.Closing,
+        ApprovalPayload.Doctype => OutboxKind.Approval,
+        _ => OutboxKind.Bill,
+    };
+
     private static string OpeningKey(string shiftId) => $"{shiftId}-opening";
     private static string ClosingKey(string shiftId) => $"{shiftId}-closing";
     private static string InvoiceKey(string clientId) => clientId;
@@ -739,7 +753,7 @@ public sealed class Uploader
         private readonly Dictionary<string, string> planned = [];
         public int Uploaded { get; set; }
         public List<UploadProblem> Problems { get; } = [];
-        public void Add(string docId, string message) => Problems.Add(new UploadProblem(docId, null, message));
+        public void Add(string docId, string message, OutboxKind? kind = null) => Problems.Add(new UploadProblem(docId, null, message) { Kind = kind });
         public string? Planned(string key) => planned.GetValueOrDefault(key);
         public string Plan(string key, string clientId) => planned[key] = $"(new: {clientId})";
         private DryRunChecks? checks;

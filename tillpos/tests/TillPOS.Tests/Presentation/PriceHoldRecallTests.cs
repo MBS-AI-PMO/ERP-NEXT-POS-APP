@@ -683,6 +683,25 @@ public sealed class PriceHoldRecallTests : IDisposable
     }
 
     [Fact]
+    public void Print_again_in_the_reprint_popup_matches_the_popups_copy_mark()
+    {
+        var sale = NewSale();
+        f.Output.Fail = true;
+        CompleteCashSale(sale);                                       // the original never printed
+        f.Output.Fail = false;
+
+        sale.ReprintLast();                                           // its first print: not a copy, and the popup says so
+        Assert.Equal((false, true), f.Dialogs.ReceiptPopups[^1]);
+        Assert.Null(f.Dialogs.LastReprint!());
+
+        Assert.Equal(new[] { false, false }, f.Output.Printed.Select(p => p.Copy));
+        sale.ReprintLast();                                           // the next reprint is a copy, popup and paper alike
+        Assert.Null(f.Dialogs.LastReprint!());
+        Assert.Equal(new[] { false, false, true, true }, f.Output.Printed.Select(p => p.Copy));
+        Assert.Equal((true, true), f.Dialogs.ReceiptPopups[^1]);
+    }
+
+    [Fact]
     public void A_barcode_scanned_on_the_reprint_popup_goes_on_the_next_bill()
     {
         var sale = NewSale();

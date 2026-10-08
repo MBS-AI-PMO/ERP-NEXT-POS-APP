@@ -66,6 +66,8 @@ public class TillSettingsTests
     [InlineData("Dev", "https://x.dev.quickgroc.com/", true, false)]
     [InlineData("Dev", "https://dev.quickgroc.com@evil.example/", true, false)]
     [InlineData("Dev", "not a url", true, false)]
+    [InlineData("Dev", "http://dev.quickgroc.com/", true, false)]                 // https only
+    [InlineData("Dev", "https://dev.quickgroc.com:8443/", true, false)]           // the default port only
     // Anything else never goes Live.
     [InlineData("Staging", "https://dev.quickgroc.com/", false, false)]
     [InlineData("Staging", "https://erp.quickgroc.com/", false, false)]

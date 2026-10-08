@@ -71,10 +71,11 @@ public sealed record TillSettings(
     public bool IsProduction => string.IsNullOrWhiteSpace(Environment)
         || string.Equals(Environment.Trim(), ProductionEnvironment, StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>BaseUrl is the dev ERPNext: an absolute URL whose host is exactly <see cref="DevHost"/>.</summary>
+    /// <summary>BaseUrl is the dev ERPNext: an https URL on the default port whose host is exactly <see cref="DevHost"/>.</summary>
     public bool PointsAtDevServer =>
         Uri.TryCreate((BaseUrl ?? "").Trim(), UriKind.Absolute, out var uri)
-        && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp)
+        && uri.Scheme == Uri.UriSchemeHttps
+        && uri.IsDefaultPort
         && string.Equals(uri.Host, DevHost, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The write guard's rule: Live is allowed for a Production build that is not a test build, or for a Dev build that

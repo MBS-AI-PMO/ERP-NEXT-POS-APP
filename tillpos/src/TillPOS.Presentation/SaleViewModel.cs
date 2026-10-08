@@ -317,7 +317,6 @@ public sealed class SaleViewModel : ObservableObject
         try
         {
             ctx.Output.Print(receipt, openDrawer: false, copy: copy);
-            printed = true;
             WriteLastReceipt(ctx.Kv, receipt.ClientId, printed: true);
             Info($"Reprinted {receipt.ClientId}");
         }
@@ -327,12 +326,12 @@ public sealed class SaleViewModel : ObservableObject
             Error($"Reprint of {receipt.ClientId} failed: {ex.Message}");
         }
 
+        // "Print again" prints exactly what the popup shows: marked COPY when (and only when) its title says "(copy)".
         var code = ctx.Dialogs.ShowReceipt(receipt, printError, () =>
         {
             try
             {
-                ctx.Output.Print(receipt, openDrawer: false, copy: printed);
-                printed = true;
+                ctx.Output.Print(receipt, openDrawer: false, copy: copy);
                 WriteLastReceipt(ctx.Kv, receipt.ClientId, printed: true);
                 return null;
             }

@@ -64,7 +64,8 @@ public sealed class ShiftOrderTests : IDisposable
         Assert.Equal(1, Openings("S1"));
         Assert.Equal(0, Openings("S2"));
         Assert.Equal(new ShiftSyncInfo(UploadStatus.Pending, null, UploadStatus.Pending, null, null, 0, null), shifts.SyncInfo("S2"));
-        Assert.Contains(report.Problems, p => p.DocId == "S2" && p.Message == "Opening of shift S2 waits for S1 to close in ERPNext.");
+        Assert.Contains(report.Problems, p => p.DocId == "S2" && p.Message == "Opening of shift S2 waits for S1 to close in ERPNext."
+            && p.Kind == OutboxKind.Opening);                      // told apart from the closing of S2
 
         // Once S1's closing goes in (in the same run, before S2), S2's opening follows.
         erp.RejectInsert = null;

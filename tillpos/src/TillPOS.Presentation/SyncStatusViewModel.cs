@@ -65,10 +65,7 @@ public sealed class SyncStatusViewModel
                         d.Amount is { } amount ? Format.Money(amount) : "")),
             ];
             UploadedTodayCount = ctx.Receipts.CountSyncedSince(since) + ctx.Shifts.CountSyncedSince(since) + ctx.Approvals.CountSyncedSince(since);
-            var runProblems = shell.UploadProblemDetails
-                .Where(p => p.DocId.Length > 0)
-                .GroupBy(p => p.DocId)
-                .ToDictionary(g => g.Key, g => g.First().Message);
+            var runProblems = shell.UploadProblemDetails.Where(p => p.DocId.Length > 0).ToList();
             Waiting =
             [
                 .. Newest(ctx.Shifts.Waiting(MaxRows), ctx.Receipts.Waiting(MaxRows), ctx.Approvals.Waiting(MaxRows))
@@ -163,12 +160,15 @@ public sealed class SyncStatusViewModel
             ? new SyncFeedRow(f.Feed, Count(f.Rows), false, $"{PlainFeedError(error)}. ({Short(error)})")
             : new SyncFeedRow(f.Feed, Count(f.Rows), true, f.Note is { Length: > 0 } note ? $"OK - {note}" : "OK");
 
-    private static string WaitingReason(OutboxProblem p, Dictionary<string, string> runProblems, UploadMode mode) =>
+    /// <summary>Why a document waits: the last upload run's problem for that very document (a shift's opening and closing share the
+    /// shift's id, so the problem's kind must match too; a problem without a kind is about every document of that id), else its own
+    /// note.</summary>
+    private static string WaitingReason(OutboxProblem p, List<UploadProblem> runProblems, UploadMode mode) =>
         mode switch
         {
             UploadMode.Off => "Upload is off on this till",
             UploadMode.DryRun => "Dry run: checked and previewed only, never sent",
-            _ when runProblems.TryGetValue(p.Id, out var message) => message,
+            _ when runProblems.FirstOrDefault(r => r.DocId == p.Id && (r.Kind is null || r.Kind == p.Kind)) is { } problem => problem.Message,
             _ when !string.IsNullOrWhiteSpace(p.Error) => p.Error!,
             _ => "Waiting for the next upload",
         };

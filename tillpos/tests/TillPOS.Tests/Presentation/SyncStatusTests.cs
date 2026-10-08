@@ -87,6 +87,25 @@ public sealed class SyncStatusTests : IDisposable
     }
 
     [Fact]
+    public void A_shifts_opening_and_closing_each_show_their_own_reason()
+    {
+        f.Ctx.Shifts.Close(new ShiftClosing(Shift, f.Clock.Now, [], 0, 0, 0m, 0m, 0m));
+        shell.UploadProblemDetails =
+        [
+            new UploadProblem(Shift, null, $"Closing of shift {Shift} waits: 1 bill(s) of the shift are not uploaded yet.") { Kind = OutboxKind.Closing },
+            new UploadProblem(Shift, null, $"Opening of shift {Shift} waits for TILL2-SHIFT-1 to close in ERPNext.") { Kind = OutboxKind.Opening },
+        ];
+
+        var vm = Vm();
+
+        Assert.Equal(
+        [
+            ("Shift closing", $"Closing of shift {Shift} waits: 1 bill(s) of the shift are not uploaded yet."),
+            ("Shift opening", $"Opening of shift {Shift} waits for TILL2-SHIFT-1 to close in ERPNext."),
+        ], vm.Waiting.Select(r => (r.Kind, r.Reason)));
+    }
+
+    [Fact]
     public void Each_list_shows_the_newest_200_and_counts_the_rest()
     {
         f.Ctx.Shifts.MarkSynced(Shift, ShiftDocument.Opening, "POSA-OS-1", midnight.AddHours(8));

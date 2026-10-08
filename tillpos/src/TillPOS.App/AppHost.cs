@@ -101,7 +101,14 @@ public sealed class AppHost
         };
         // The header's sync pill: the Sync status window, on any screen.
         Shell.OpenSyncStatus = () => SyncStatusViewModel.OpenAsync(ctx, Shell);
-        Shell.UploadedToday = uploader.UploadedSince(SyncStatusViewModel.StartOfDay(DateTimeOffset.Now));
+        try
+        {
+            Shell.UploadedToday = uploader.UploadedSince(SyncStatusViewModel.StartOfDay(DateTimeOffset.Now));
+        }
+        catch (Exception ex)
+        {
+            logError(ex);                                  // only the header count; the first sync sets it again
+        }
     }
 
     public ShellViewModel Shell { get; } = new();

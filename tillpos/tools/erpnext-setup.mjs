@@ -1,7 +1,10 @@
 // Creates the ERPNext metadata TillPOS needs (idempotent). Run by an admin:
 //   node erpnext-setup.mjs <config.json>
 // config.json: { "BaseUrl": "https://…/", "ApiKey": "…", "ApiSecret": "…" }  (the user needs System Manager)
-// It never touches transactions: only Custom Fields and the "TillPOS Approval" DocType.
+// It never touches transactions. It creates (only when missing) the Custom Fields, the "TillPOS Approval" and "POS Cashier"
+// DocTypes and the optional cashiers from the config, and adds the till role's permission rows on POS Cashier and TillPOS
+// Approval (existing permission rows are kept exactly as they are; rows are only appended). Then it reports, read-only, what is
+// still to be done by hand.
 import { readFileSync } from 'node:fs';
 
 const cfg = JSON.parse(readFileSync(process.argv[2], 'utf8'));
@@ -90,8 +93,9 @@ for (const c of cfg.Cashiers ?? []) {
 const tillRole = cfg.TillRole ?? 'TillPOS Device';
 async function ensurePerms(doctype, rows) {
   const dt = (await call('GET', '/api/resource/DocType/' + encodeURIComponent(doctype))).data;
-  const perms = dt.permissions.map(({ role, permlevel, read, write, create, delete: del, report, export: exp, submit }) =>
-    ({ role, permlevel, read, write, create, delete: del, report, export: exp, submit }));
+  // Every existing row is sent back whole (all its fields: if_owner, print, email, share, amend, cancel, select, …, and its
+  // name, so ERPNext keeps the row as it is); new rows are only appended.
+  const perms = dt.permissions.map(row => ({ ...row }));
   let changed = false;
   for (const want of rows) {
     if (perms.some(x => x.role === want.role && (x.permlevel ?? 0) === (want.permlevel ?? 0))) continue;
