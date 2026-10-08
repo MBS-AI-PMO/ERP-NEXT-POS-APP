@@ -86,6 +86,26 @@ for (const c of cfg.Cashiers ?? []) {
   console.log(`made POS Cashier ${c.cashier_name}`);
 }
 
+// The till role needs: POS Cashier read (incl. the PIN at permission level 1), TillPOS Approval read + create.
+const tillRole = cfg.TillRole ?? 'TillPOS Device';
+async function ensurePerms(doctype, rows) {
+  const dt = (await call('GET', '/api/resource/DocType/' + encodeURIComponent(doctype))).data;
+  const perms = dt.permissions.map(({ role, permlevel, read, write, create, delete: del, report, export: exp, submit }) =>
+    ({ role, permlevel, read, write, create, delete: del, report, export: exp, submit }));
+  let changed = false;
+  for (const want of rows) {
+    if (perms.some(x => x.role === want.role && (x.permlevel ?? 0) === (want.permlevel ?? 0))) continue;
+    perms.push(want); changed = true;
+  }
+  if (!changed) { console.log(`ok   ${doctype} permissions for ${tillRole}`); return; }
+  await call('PUT', '/api/resource/DocType/' + encodeURIComponent(doctype), { permissions: perms });
+  console.log(`made ${doctype} permissions for ${tillRole}`);
+}
+if (await exists('Role', tillRole)) {
+  await ensurePerms('POS Cashier', [{ role: tillRole, permlevel: 0, read: 1 }, { role: tillRole, permlevel: 1, read: 1 }]);
+  await ensurePerms('TillPOS Approval', [{ role: tillRole, permlevel: 0, read: 1, create: 1 }]);
+} else console.log(`!!   Role ${tillRole} does not exist — create it (see docs/erpnext-production-setup.md step 2)`);
+
 // Report, read-only: things the admin still has to do by hand.
 const profiles = await call('GET', '/api/resource/POS Profile?fields=["name","disable_rounded_total","write_off_limit","write_off_account","account_for_change_amount","customer"]');
 console.log('POS Profiles:', JSON.stringify(profiles.data));
