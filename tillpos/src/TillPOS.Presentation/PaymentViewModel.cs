@@ -13,9 +13,8 @@ public sealed class PaymentViewModel : ObservableObject
 {
     private readonly TillContext ctx;
     private readonly SessionState session;
-    private readonly SaleViewModel sale;
+    private readonly IPaymentHost host;
     private readonly PaymentCalculator calculator;
-    private readonly SaleRecorder recorder;
     private readonly decimal grandTotal;
     private TenderKind kind;
     private bool editCard;
@@ -23,20 +22,18 @@ public sealed class PaymentViewModel : ObservableObject
     private PaymentPlan? plan;
     private string message = "";
 
-    public PaymentViewModel(TillContext ctx, SessionState session, SaleViewModel sale, TenderKind initialKind)
+    public PaymentViewModel(TillContext ctx, SessionState session, IPaymentHost host, TenderKind initialKind)
     {
         this.ctx = ctx;
         this.session = session;
-        this.sale = sale;
-        calculator = new PaymentCalculator(sale.Money);
-        var counter = ctx.CounterOf(session);
-        recorder = new SaleRecorder(ctx.Receipts, ctx.TillNumber, counter.Modes, () => ctx.Clock.Now, counter.DisplayName);
-        grandTotal = sale.Cart.Totals().GrandTotal;
+        this.host = host;
+        calculator = new PaymentCalculator(host.Money);
+        grandTotal = host.Cart.Totals().GrandTotal;
         // The bill as it is paid (a copy: the sale's list empties when the bill is completed).
-        Lines = sale.Lines.ToList();
-        LineCount = sale.ItemCount;
-        Discount = sale.Discount;
-        Vat = sale.Vat;
+        Lines = host.Lines.ToList();
+        LineCount = host.ItemCount;
+        Discount = host.Discount;
+        Vat = host.Vat;
         Cash.Changed += Recalculate;
         Card.Changed += Recalculate;
 
@@ -44,10 +41,18 @@ public sealed class PaymentViewModel : ObservableObject
         QuickCashCommand = new RelayCommand<decimal>(amount => { if (!IsCard) Cash.Set(amount); });
         KeyCommand = new RelayCommand<string>(Key);
         CompleteCommand = new RelayCommand(Complete, () => !completed);
-        BackCommand = new RelayCommand(() => ctx.Navigator.Show(sale));
+        BackCommand = new RelayCommand(host.BackFromPayment);
 
         kind = initialKind;
         Recalculate();
+        PrefillCash();
+    }
+
+    /// <summary>Deliveries: the cash box gets the exact amount due when Cash is chosen and nothing was typed yet.</summary>
+    private void PrefillCash()
+    {
+        if (!host.PrefillExactCash || kind != TenderKind.Cash || Cash.Value is not null) return;
+        Cash.Set(calculator.Plan(grandTotal, Tender.Cash(0m)).AmountDue);
     }
 
     /// <summary>The bill's lines (read-only on this screen), its line count, offers and VAT, as the sale screen showed them.</summary>
@@ -73,6 +78,7 @@ public sealed class PaymentViewModel : ObservableObject
             OnPropertyChanged(nameof(ShowsCashEntry));
             OnPropertyChanged(nameof(CardAmountText));
             Recalculate();
+            PrefillCash();
         }
     }
 
@@ -117,7 +123,7 @@ public sealed class PaymentViewModel : ObservableObject
         Receipt receipt;
         try
         {
-            receipt = recorder.CompleteSale(sale.Cart, p, cashier.Id, shift.ClientId, cashier.User, cashier.Name);
+            receipt = host.Record(p, cashier, shift);
         }
         catch (Exception ex)
         {
@@ -126,14 +132,6 @@ public sealed class PaymentViewModel : ObservableObject
         }
         completed = true;
         CompleteCommand.NotifyCanExecuteChanged();
-        try
-        {
-            sale.ClearAutosave();
-        }
-        catch (Exception)
-        {
-            // The bill is saved and the cart is empty; the next change on the sale screen rewrites the autosave.
-        }
         string? printError = null;
         try
         {
@@ -143,7 +141,7 @@ public sealed class PaymentViewModel : ObservableObject
         {
             printError = ex.Message;
         }
-        sale.SaleCompleted(receipt, printError);
+        host.Completed(receipt, printError);
     }
 
     private void Key(string? key)

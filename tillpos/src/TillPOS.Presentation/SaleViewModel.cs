@@ -8,6 +8,7 @@ using TillPOS.Core.Money;
 using TillPOS.Core.Payments;
 using TillPOS.Core.Sales;
 using TillPOS.Core.Security;
+using TillPOS.Core.Shifts;
 using TillPOS.Data;
 
 namespace TillPOS.Presentation;
@@ -16,7 +17,7 @@ public sealed record SaleLine(Guid Id, int No, string Name, string? Barcode, str
 
 /// <summary>The main sale screen. Removing a line, lowering a quantity and voiding the bill need a supervisor.
 /// The cart is saved after every change and restored on start (power cut / crash).</summary>
-public sealed class SaleViewModel : ObservableObject
+public sealed class SaleViewModel : ObservableObject, IPaymentHost
 {
     public const string AutosaveKey = "current_cart";
     /// <summary>The kv key holding the last completed bill as "{client id}|{1 or 0}" (Ctrl+P reprints it, also after a
@@ -438,6 +439,42 @@ public sealed class SaleViewModel : ObservableObject
 
     public void ClearAutosave() => ctx.Kv.SetValue(AutosaveKey, "[]");
 
+    IReadOnlyList<SaleLine> IPaymentHost.Lines => Lines;
+
+    public bool PrefillExactCash => false;
+
+    /// <summary>Saves the sale (next bill number) and clears the cart and its autosave.</summary>
+    public Receipt Record(PaymentPlan plan, Cashier cashier, ShiftOpening shift)
+    {
+        var counter = ctx.CounterOf(session);
+        var receipt = new SaleRecorder(ctx.Receipts, ctx.TillNumber, counter.Modes, () => ctx.Clock.Now, counter.DisplayName)
+            .CompleteSale(Cart, plan, cashier.Id, shift.ClientId, cashier.User, cashier.Name);
+        try
+        {
+            ClearAutosave();
+        }
+        catch (Exception)
+        {
+            // The bill is saved and the cart is empty; the next change on the sale screen rewrites the autosave.
+        }
+        return receipt;
+    }
+
+    public void Completed(Receipt receipt, string? printError) => SaleCompleted(receipt, printError);
+
+    public void BackFromPayment() => ctx.Navigator.Show(this);
+
+    /// <summary>A cart's lines as the screens show them (also the payment screen's list).</summary>
+    public static IReadOnlyList<SaleLine> LinesOf(Cart cart)
+    {
+        var totals = cart.Totals();
+        return cart.Lines.Select((l, i) => new SaleLine(l.Id, i + 1, l.Item.ItemName, l.Barcode,
+            l.FromScaleLabel || l.Qty != decimal.Truncate(l.Qty)
+                ? $"{l.Qty.ToString("0.000", CultureInfo.InvariantCulture)} {l.Uom}"
+                : l.Qty.ToString("0", CultureInfo.InvariantCulture),
+            Format.Money(l.Rate), l.Rule?.Label ?? "", Format.Money(totals.Lines[i].Amount), l.FromScaleLabel)).ToList();
+    }
+
     /// <summary>Called by the payment screen after the bill was saved (the cart is already empty). Then shows the invoice
     /// popup (when enabled); a barcode scanned while it is open closes it and goes on the next bill.</summary>
     public void SaleCompleted(Receipt receipt, string? printError)
@@ -529,15 +566,7 @@ public sealed class SaleViewModel : ObservableObject
         var totals = Cart.Totals();
         var selectedId = SelectedLine?.Id;
         Lines.Clear();
-        for (var i = 0; i < Cart.Lines.Count; i++)
-        {
-            var l = Cart.Lines[i];
-            var qty = l.FromScaleLabel || l.Qty != decimal.Truncate(l.Qty)
-                ? $"{l.Qty.ToString("0.000", CultureInfo.InvariantCulture)} {l.Uom}"
-                : l.Qty.ToString("0", CultureInfo.InvariantCulture);
-            Lines.Add(new SaleLine(l.Id, i + 1, l.Item.ItemName, l.Barcode, qty, Format.Money(l.Rate), l.Rule?.Label ?? "",
-                Format.Money(totals.Lines[i].Amount), l.FromScaleLabel));
-        }
+        foreach (var line in LinesOf(Cart)) Lines.Add(line);
         SelectedLine = Lines.FirstOrDefault(l => l.Id == selectedId);
         ItemCount = Cart.Lines.Count.ToString(CultureInfo.InvariantCulture);
         Discount = Format.Money(Cart.DiscountSaved());
