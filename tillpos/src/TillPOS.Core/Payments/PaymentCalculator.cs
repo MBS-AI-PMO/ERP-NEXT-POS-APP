@@ -30,7 +30,7 @@ public sealed record PaymentPlan(
     public bool IsComplete => Shortfall == 0m;
 }
 
-/// <summary>Card exact; cash rounded to the currency's smallest fraction with ERPNext's rule; split = the whole bill rounded like
+/// <summary>Card exact (to the 2 decimals a card machine charges); cash rounded to the currency's smallest fraction with ERPNext's rule; split = the whole bill rounded like
 /// cash (ERPNext's rounded total, as POS Awesome does), the card part charged exactly as entered and the cash part the rest, so
 /// what is paid always equals ERPNext's rounded total. When rounding is disabled (MoneySettings.DisableRoundedTotal), ERPNext
 /// keeps the exact grand total, so cash is exact too (only rounded to the currency precision) and no bill uses a rounded
@@ -57,8 +57,16 @@ public sealed class PaymentCalculator(MoneySettings money)
         };
     }
 
-    private static PaymentPlan CardOnly(decimal grandTotal) =>
-        new(TenderKind.Card, grandTotal, false, grandTotal, grandTotal, 0m, 0m, 0m, 0m, 0m);
+    /// <summary>Card only: the bill total to 2 decimals (a card machine charges fils, 11.429 → 11.43), never rounded to the
+    /// cash fraction. With rounding disabled (old bills) the card is the exact grand total.</summary>
+    private PaymentPlan CardOnly(decimal grandTotal)
+    {
+        var card = money.DisableRoundedTotal ? grandTotal : CardRound(grandTotal);
+        return new(TenderKind.Card, grandTotal, false, card, card, 0m, 0m, 0m, 0m, Rounder.Round(card - grandTotal, money));
+    }
+
+    /// <summary>What a card machine can charge: 2 decimals, half away from zero.</summary>
+    public static decimal CardRound(decimal value) => decimal.Round(value, 2, MidpointRounding.AwayFromZero);
 
     private PaymentPlan Split(decimal grandTotal, Tender tender)
     {

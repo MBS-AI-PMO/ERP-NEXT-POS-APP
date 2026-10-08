@@ -130,7 +130,7 @@ public class ReceiptRendererTests
         Assert.Contains("TILL2-20261006120000-000000", all);
         Assert.Contains("EXTRA LARGE FAMILY PACK BASMATI RICE PREMIUM QUALITY 10KG BAG", all);
         Assert.Contains(lines, l => l.Contains("123.456 Kg"));
-        Assert.Contains(lines, l => l.EndsWith(" 432.096"));
+        Assert.Contains(lines, l => l.EndsWith(" 432.10"));                  // printed with 2 decimals
     }
 
     [Fact]
@@ -155,7 +155,7 @@ public class ReceiptRendererTests
     {
         var lines = Text(Long(), PaperWidth.Mm58);
         Assert.Contains(lines, l => l.Length == 32 && l.EndsWith(" 13.08") && l.Contains("2 x 6.54"));
-        Assert.Contains(lines, l => l.Length == 32 && l.EndsWith(" 432.096") && l.Contains("123.456 Kg x 3.50"));
+        Assert.Contains(lines, l => l.Length == 32 && l.EndsWith(" 432.10") && l.Contains("123.456 Kg x 3.50"));
     }
 
     [Fact]
@@ -219,7 +219,7 @@ public class ReceiptRendererTests
 
         Assert.Equal("TAX CREDIT NOTE", Assert.Single(layout, l => l.Style == LineStyle.Title).Text);
         Assert.All(layout.Where(l => l.Style != LineStyle.Qr), l => Assert.True(l.Text.Length <= width, $"[{l.Text}]"));
-        Assert.Contains(lines, l => l.StartsWith("VAT 5%") && l.EndsWith(" -0.746"));
+        Assert.Contains(lines, l => l.StartsWith("VAT 5%") && l.EndsWith(" -0.75"));
         Assert.Contains(lines, l => l.StartsWith("TOTAL AED") && l.EndsWith(" -15.67"));
         Assert.Contains(lines, l => l.StartsWith("Refund paid (cash)") && l.EndsWith(" -15.67"));
         Assert.DoesNotContain(lines, l => l.StartsWith("Cash Counter 2"));

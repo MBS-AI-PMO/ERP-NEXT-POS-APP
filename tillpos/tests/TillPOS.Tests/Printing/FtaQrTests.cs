@@ -29,8 +29,8 @@ public class FtaQrTests
         Assert.Equal("AL AIN MARKETING L.L.C", f[1]);
         Assert.Equal("100000000000003", f[2]);
         Assert.Equal("2026-10-06T11:30:00Z", f[3]);
-        Assert.Equal("9.994", f[4]);
-        Assert.Equal("0.476", f[5]);
+        Assert.Equal("9.99", f[4]);                                         // as printed: 2 decimals
+        Assert.Equal("0.48", f[5]);
     }
 
     [Fact]

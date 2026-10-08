@@ -13,8 +13,9 @@ public static class FtaQr
         Write(stream, 1, sellerName);
         Write(stream, 2, trn);
         Write(stream, 3, timestamp.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture));
-        Write(stream, 4, total.ToString("0.00#", CultureInfo.InvariantCulture));
-        Write(stream, 5, vat.ToString("0.00#", CultureInfo.InvariantCulture));
+        // As printed on the invoice: 2 decimals.
+        Write(stream, 4, ReceiptRenderer.Money(total));
+        Write(stream, 5, ReceiptRenderer.Money(vat));
         return Convert.ToBase64String(stream.ToArray());
     }
 

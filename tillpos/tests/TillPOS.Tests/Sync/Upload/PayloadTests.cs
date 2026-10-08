@@ -110,6 +110,24 @@ public partial class PayloadTests
         Assert.Equal(new ExpectedTotals(M("11.429"), M("11.500"), true), payload.Expected);
     }
 
+    [Theory]
+    [InlineData("11.429", "11.43", "11.500", "0.07", "0")]      // the card machine charged 11.43: Rounding pays the 0.07 to 11.50
+    [InlineData("22.858", "22.86", "22.750", null, "0.11")]     // charged 22.86 against 22.75: 0.11 is the change
+    public void Card_charged_to_two_decimals_balances_against_erpnexts_rounded_total(string grand, string card, string rounded,
+        string? rounding, string change)
+    {
+        var r = ExactCard(M(grand), M(rounded)) with { Payments = [new ReceiptPayment("Credit Card", M(card))] };
+
+        var payload = Build(r);
+
+        var rows = Rows(payload.Doc, "payments");
+        Assert.Equal(M(card), rows[0]["amount"]);
+        if (rounding is null) Assert.Single(rows);
+        else Assert.Equal(M(rounding), Assert.Single(rows, p => (string)p["mode_of_payment"]! == PosInvoicePayload.RoundingMode)["amount"]);
+        Assert.Equal(M(change), payload.Doc["change_amount"]);
+        Assert.Equal(M(rounded), rows.Sum(p => (decimal)p["amount"]!) - (decimal)payload.Doc["change_amount"]!);
+    }
+
     [Fact]
     public void Exact_card_bill_rounded_down_books_the_difference_as_change()
     {

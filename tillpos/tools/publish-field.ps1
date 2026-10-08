@@ -1,9 +1,9 @@
 <#
 Builds the TillPOS field-test package.
 Usage (from the tillpos folder):
-  powershell -File tools\publish-field.ps1 -Version 0.4.2              -> ..\publish\TillPOS-field-<Version>-dev.zip      (Dev, the default)
-  powershell -File tools\publish-field.ps1 -Version 0.4.2 -SingleExe   -> ..\publish\TillPOS-exe-<Version>-dev\TillPOS.exe
-  powershell -File tools\publish-field.ps1 -Version 0.4.2 [-SingleExe] -Environment Production [-CashierPin 4821] [-SupervisorPin 7350]
+  powershell -File tools\publish-field.ps1 -Version 0.4.3              -> ..\publish\TillPOS-field-<Version>-dev.zip      (Dev, the default)
+  powershell -File tools\publish-field.ps1 -Version 0.4.3 -SingleExe   -> ..\publish\TillPOS-exe-<Version>-dev\TillPOS.exe
+  powershell -File tools\publish-field.ps1 -Version 0.4.3 [-SingleExe] -Environment Production [-CashierPin 4821] [-SupervisorPin 7350]
                                                                        -> ..\publish\TillPOS-field-<Version>.zip, ..\publish\TillPOS-exe-<Version>\
 Zip: TillPOS folder + settings.json beside the exe + START HERE.txt.
 -SingleExe: one self-contained TillPOS.exe with settings.json built in (imported on the first start into C:\ProgramData\TillPOS,
@@ -22,7 +22,7 @@ generated with a CSPRNG and printed at the end. They are written only into the p
 the repo.
 #>
 param(
-    [string]$Version = "0.4.2",
+    [string]$Version = "0.4.3",
     [string]$CashierPin,
     [string]$SupervisorPin,
     [switch]$SingleExe,

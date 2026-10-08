@@ -47,6 +47,25 @@ public class PaymentCalculatorTests
         Assert.Equal(0m, p.RoundingDifference);
     }
 
+    [Theory]
+    [InlineData("11.429", "11.43")]   // a card machine charges fils, never the third decimal
+    [InlineData("22.858", "22.86")]
+    [InlineData("10.125", "10.13")]   // half away from zero
+    [InlineData("14.370", "14.37")]
+    public void Card_is_charged_to_two_decimals_and_never_rounded_to_the_cash_fraction(string grand, string card)
+    {
+        var p = calc.Plan(M(grand), Tender.Card());
+        Assert.Equal(M(card), p.CardAmount);
+        Assert.Equal(M(card), p.AmountDue);
+        Assert.False(p.UsesErpRoundedTotal);
+        Assert.True(p.IsComplete);
+    }
+
+    [Fact]
+    public void With_rounding_disabled_the_card_is_the_exact_grand_total() =>
+        Assert.Equal(M("11.429"), new PaymentCalculator(new MoneySettings(3, RoundingMethod.Bankers, 0.25m, DisableRoundedTotal: true))
+            .Plan(M("11.429"), Tender.Card()).CardAmount);
+
     [Fact]
     public void Split_rounds_the_whole_bill_and_charges_the_card_exactly()
     {

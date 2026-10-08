@@ -87,7 +87,8 @@ public static class ReceiptRenderer
         // was actually due, so the payment lines minus change add up on paper.
         var rounding = r.UsesErpRoundedTotal ? r.RoundingAdjustment : r.RoundingDifference;
         var amountDue = r.UsesErpRoundedTotal ? r.RoundedTotal : r.GrandTotal + r.RoundingDifference;
-        if (amountDue != r.GrandTotal)
+        // Compared as printed: a card bill charged 11.43 for a total of 11.429 has nothing to explain on paper.
+        if (Money(amountDue) != Money(r.GrandTotal))
         {
             Add(Pair("Rounding", Money(rounding), w));
             Add(Pair("AMOUNT DUE", Money(amountDue), w), LineStyle.Big);
@@ -200,7 +201,9 @@ public static class ReceiptRenderer
         return rate > 0m ? $"VAT {rate.ToString("0", CultureInfo.InvariantCulture)}%" : "VAT";
     }
 
-    internal static string Money(decimal value) => value.ToString("0.00#", CultureInfo.InvariantCulture);
+    /// <summary>An amount as printed: 2 decimals (11.429 → 11.43, half away from zero); ERPNext's 3 decimals stay inside the till.</summary>
+    internal static string Money(decimal value) =>
+        decimal.Round(value, 2, MidpointRounding.AwayFromZero).ToString("0.00", CultureInfo.InvariantCulture);
 
     private static string Qty(ReceiptLine line) =>
         line.FromScaleLabel || line.Qty != decimal.Truncate(line.Qty)

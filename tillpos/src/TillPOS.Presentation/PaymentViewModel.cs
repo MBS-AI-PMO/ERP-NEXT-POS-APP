@@ -85,7 +85,7 @@ public sealed class PaymentViewModel : ObservableObject
     public bool ShowsCashEntry => !IsCard;
 
     /// <summary>Card mode: the exact bill total to charge on the card machine (never rounded); "" otherwise.</summary>
-    public string CardAmountText => IsCard ? Format.Money(grandTotal) : "";
+    public string CardAmountText => IsCard && Plan is { } p ? Format.Money(p.CardAmount) : "";
     public bool EditCard { get => editCard; set => SetProperty(ref editCard, value); }
     public PaymentPlan? Plan { get => plan; private set => SetProperty(ref plan, value); }
     public string AmountDue => Plan is null ? "" : Format.Money(Plan.AmountDue);
@@ -174,6 +174,7 @@ public sealed class PaymentViewModel : ObservableObject
             Message = ex.Message.Split(" (Parameter", StringSplitOptions.None)[0];
         }
         OnPropertyChanged(nameof(AmountDue));
+        OnPropertyChanged(nameof(CardAmountText));
         OnPropertyChanged(nameof(Change));
         OnPropertyChanged(nameof(Shortfall));
     }

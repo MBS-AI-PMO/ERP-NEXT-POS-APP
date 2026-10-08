@@ -131,9 +131,9 @@ public class ShiftReportRendererTests
         var text = lines.Select(l => l.Text).ToList();
 
         AssertFits(lines, paper);
-        Assert.Contains(text, t => t.Contains("9999999.999", StringComparison.Ordinal));
-        Assert.Contains(text, t => t.Contains("11234567.124", StringComparison.Ordinal));
-        Assert.Contains(text, t => t.Contains("-1234567.125", StringComparison.Ordinal));
+        Assert.Contains(text, t => t.Contains("10000000.00", StringComparison.Ordinal));
+        Assert.Contains(text, t => t.Contains("11234567.12", StringComparison.Ordinal));
+        Assert.Contains(text, t => t.Contains("-1234567.13", StringComparison.Ordinal));
         Assert.Contains(text, t => t.StartsWith("Returns", StringComparison.Ordinal) && t.EndsWith('3'));
         Assert.Contains(text, t => t.Contains("Main Entrance", StringComparison.Ordinal));
     }
