@@ -254,7 +254,15 @@ public sealed class Uploader
         if (returnAgainst is not null && !IsStandIn(returnAgainst)
             && !(Mode == UploadMode.DryRun && previewed.Contains(InvoiceKey(receipt.ClientId))))
         {
-            (originalRows, rowIssue) = await OriginalRowsAsync(receipt, returnAgainst, ct);
+            try
+            {
+                (originalRows, rowIssue) = await OriginalRowsAsync(receipt, returnAgainst, ct);
+            }
+            catch (ErpException ex) when (Classify(ex) == ErpOutcome.ServerError)
+            {
+                run.Add(receipt.ClientId, $"Return {receipt.ClientId} waits: ERPNext error reading {returnAgainst}: {Short(ex.Message)}");
+                return null;
+            }
             if (rowIssue is not null && Mode == UploadMode.Live)
             {
                 receipts.MarkFailed(receipt.ClientId, rowIssue.Message, now() + Backoff(bill.Attempts + 1));
@@ -473,6 +481,13 @@ public sealed class Uploader
             run.Uploaded++;
             return found.Name;
         }
+        catch (Exception ex) when (Classify(ex) == ErpOutcome.ServerError)
+        {
+            // ERPNext crashed on this document (and rolled back). It waits under its in-flight marker and unknown count (escalated
+            // after 3); the other documents of the run go on, except those that depend on it (its shift's closing, returns of it).
+            run.Add(doc.ClientId, $"{doc.Label}: ERPNext error, tried again later: {Short(ex.Message)}");
+            return null;
+        }
         catch (DocumentSkipped)
         {
             // Marked handled (or otherwise changed) on the till since this run read it: that decision stands.
@@ -559,7 +574,7 @@ public sealed class Uploader
             return await LookupAsync(doc, ct)
                 ?? throw new DocumentFailure($"ERPNext reports this {doc.Doctype} as a duplicate, but none has this till's id: {Short(ex.Message)}");
         }
-        catch (Exception ex) when (Classify(ex) == ErpOutcome.Unknown && !ct.IsCancellationRequested)
+        catch (Exception ex) when (Classify(ex) is ErpOutcome.Unknown or ErpOutcome.ServerError && !ct.IsCancellationRequested)
         {
             marks.Unknown(UnknownText(ex.Message));
             throw;
@@ -587,28 +602,31 @@ public sealed class Uploader
         {
             throw new DocumentFailure($"Draft {draft.Name} is in ERPNext but could not be submitted: {Short(ex.Message)}");
         }
-        catch (Exception ex) when (Classify(ex) == ErpOutcome.Unknown && !ct.IsCancellationRequested)
+        catch (Exception ex) when (Classify(ex) is ErpOutcome.Unknown or ErpOutcome.ServerError && !ct.IsCancellationRequested)
         {
             marks.Unknown(UnknownText(ex.Message));
             throw;
         }
     }
 
-    public enum ErpOutcome { Unknown, Refused, Duplicate }
+    public enum ErpOutcome { Unknown, Refused, Duplicate, ServerError }
 
     private static readonly string[] DuplicateMarkers = ["DuplicateEntryError", "UniqueValidationError", "Duplicate entry", "already exists"];
     private static readonly string[] RefusalTypes = ["ValidationError", "MandatoryError", "LinkValidationError", "PermissionError"];
 
     /// <summary>What an error says about a document: Duplicate (ERPNext already has it), Refused (ERPNext checked it and said no:
-    /// the validation and permission errors, HTTP 417), or Unknown (network, timeout, gateway 502/503/504, 408, 429, 401, an
-    /// unreadable answer, a server error): nothing is known about the document, so it is left as it is.</summary>
+    /// the validation and permission errors, HTTP 417), ServerError (HTTP 500 with ERPNext's own exception type: it crashed on
+    /// this document and rolled back; the document waits, the run goes on), or Unknown (network, timeout, gateway 502/503/504,
+    /// 408, 429, 401, a 500 without an exception type, an unreadable answer): nothing is known, the run stops.</summary>
     public static ErpOutcome Classify(Exception ex)
     {
         if (ex is not ErpException erp) return ErpOutcome.Unknown;
         var text = $"{erp.ExcType} {erp.Message}";
         if (DuplicateMarkers.Any(m => text.Contains(m, StringComparison.OrdinalIgnoreCase))) return ErpOutcome.Duplicate;
         if (erp.ExcType is { } type && RefusalTypes.Contains(type, StringComparer.Ordinal)) return ErpOutcome.Refused;
-        return erp.StatusCode == 417 ? ErpOutcome.Refused : ErpOutcome.Unknown;
+        if (erp.StatusCode == 417) return ErpOutcome.Refused;
+        // ERPNext answered with its own error (a Python exception it rolled back): about this document only, not the connection.
+        return erp.StatusCode == 500 && !string.IsNullOrWhiteSpace(erp.ExcType) ? ErpOutcome.ServerError : ErpOutcome.Unknown;
     }
 
     private static readonly string[] InvoiceFields =

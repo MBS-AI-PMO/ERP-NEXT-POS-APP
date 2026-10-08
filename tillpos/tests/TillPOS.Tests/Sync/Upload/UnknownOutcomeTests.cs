@@ -166,6 +166,78 @@ public sealed class UnknownOutcomeTests : IDisposable
     }
 
     [Fact]
+    public async Task A_server_error_on_one_bill_does_not_hold_up_the_next()
+    {
+        Sale("TILL2-A", 1);
+        Sale("TILL2-B", 2);
+        erp.RejectInsert = (doctype, doc) => doctype == "POS Invoice" && doc.GetProperty("posa_client_request_id").GetString() == "TILL2-A"
+            ? new ErpException(500, "unsupported operand type(s) for -: 'NoneType' and 'float'", "TypeError")
+            : null;
+
+        var report = await New().RunOnceAsync();
+
+        Assert.Equal(ReceiptSyncStatus.Synced, receipts.SyncInfo("TILL2-B").Status);
+        var a = receipts.SyncInfo("TILL2-A");
+        Assert.Equal((ReceiptSyncStatus.Pending, 1, clock.Add(Uploader.InFlightHold)), (a.Status, a.UnknownAttempts, a.NextAttemptAt));
+        Assert.Contains(report.Problems, p => p.DocId == "TILL2-A" && p.Message.Contains("ERPNext error, tried again later"));
+        Assert.DoesNotContain(report.Problems, p => p.Message.StartsWith("Upload stopped", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_server_error_still_holds_back_what_depends_on_the_bill()
+    {
+        Sale("TILL2-A", 1);
+        receipts.Save(UploadTestData.Sale("TILL2-R", ShiftId, Morning.AddMinutes(70)) with
+        {
+            Kind = ReceiptKind.Return, ReturnAgainst = "TILL2-A",
+            Lines = [new ReceiptLine(1, "RICE5", "RICE 5KG", null, "Nos", 1m, -1m, M("10.500"), M("10.500"), M("-10.500"), null, null, false, null)],
+            GrandTotal = M("-10.500"), Payments = [new ReceiptPayment("Credit Card", M("-10.500"))],
+        });
+        shifts.Close(new ShiftClosing(ShiftId, Morning.AddHours(3), [], 1, 1, 0m, 0m, 0m));
+        erp.RejectInsert = (doctype, doc) => doctype == "POS Invoice" && doc.GetProperty("posa_client_request_id").GetString() == "TILL2-A"
+            ? new ErpException(500, "boom", "TypeError")
+            : null;
+
+        var report = await New().RunOnceAsync();
+
+        Assert.Equal(1, InvoiceInserts);   // only the failing attempt: the return waits for its original
+        Assert.DoesNotContain(erp.Inserted, i => i.Doctype == "POS Closing Shift");
+        Assert.Contains(report.Problems, p => p.Message.Contains("Return TILL2-R waits for its original sale TILL2-A"));
+    }
+
+    [Fact]
+    public async Task A_server_error_on_one_shift_does_not_hold_up_the_next_shift()
+    {
+        shifts.Close(new ShiftClosing(ShiftId, Morning.AddHours(1), [], 0, 0, 0m, 0m, 0m));
+        shifts.Open(new ShiftOpening("TILL2-SHIFT-2", "cashier1", "Al Ain Counter 1", Morning.AddHours(2), [new ReceiptPayment("Cash Counter 1", 100m)]));
+        erp.RejectInsert = (doctype, doc) => doctype == "POS Opening Shift" && doc.GetProperty("custom_offline_id").GetString() == ShiftId
+            ? new ErpException(500, "boom", "AttributeError")
+            : null;
+
+        await New().RunOnceAsync();
+
+        Assert.Equal(UploadStatus.Synced, shifts.SyncInfo("TILL2-SHIFT-2")!.OpeningStatus);
+        Assert.Equal(UploadStatus.Pending, shifts.SyncInfo(ShiftId)!.OpeningStatus);
+        Assert.Equal(1, shifts.SyncInfo(ShiftId)!.UnknownAttempts);
+    }
+
+    [Fact]
+    public async Task A_timeout_still_stops_the_run()
+    {
+        Sale("TILL2-A", 1);
+        Sale("TILL2-B", 2);
+        erp.RejectInsert = (doctype, doc) => doctype == "POS Invoice" && doc.GetProperty("posa_client_request_id").GetString() == "TILL2-A"
+            ? new TaskCanceledException("The request timed out.")
+            : null;
+
+        var report = await New().RunOnceAsync();
+
+        Assert.Equal(ReceiptSyncStatus.Pending, receipts.SyncInfo("TILL2-B").Status);
+        Assert.Equal(1, InvoiceInserts);
+        Assert.Contains(report.Problems, p => p.Message == "Upload stopped: The request timed out.");
+    }
+
+    [Fact]
     public async Task A_timeout_is_an_unknown_outcome_too()
     {
         Sale("TILL2-A", 1);
@@ -239,7 +311,8 @@ public sealed class UnknownOutcomeTests : IDisposable
     [InlineData(409, "DuplicateEntryError", Uploader.ErpOutcome.Duplicate)]
     [InlineData(403, null, Uploader.ErpOutcome.Unknown)]
     [InlineData(401, "AuthenticationError", Uploader.ErpOutcome.Unknown)]
-    [InlineData(500, "TypeError", Uploader.ErpOutcome.Unknown)]
+    [InlineData(500, "TypeError", Uploader.ErpOutcome.ServerError)]
+    [InlineData(500, null, Uploader.ErpOutcome.Unknown)]
     [InlineData(502, null, Uploader.ErpOutcome.Unknown)]
     [InlineData(429, null, Uploader.ErpOutcome.Unknown)]
     public void Errors_are_classified_by_what_they_say_about_the_document(int status, string? excType, Uploader.ErpOutcome expected) =>
