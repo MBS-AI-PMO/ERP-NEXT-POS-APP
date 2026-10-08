@@ -141,13 +141,22 @@ public sealed class FakeOutput : IReceiptOutput
         Printed.Add((receipt, openDrawer, copy));
     }
 
-    public List<(ShiftOpening Opening, ShiftClosing Closing, string CashierName, string? ApprovedBy, decimal? FirstCountDifference)>
+    public List<(ShiftOpening Opening, ShiftClosing Closing, string CashierName, string? ApprovedBy, decimal? FirstCountDifference, DeliverySummary? Deliveries)>
         ShiftReports { get; } = [];
 
     public void PrintShiftReport(ShiftOpening opening, ShiftClosing closing, string cashierName, string? approvedBy,
-        decimal? firstCountDifference)
+        decimal? firstCountDifference, DeliverySummary? deliveries = null)
     {
         if (Fail) throw new InvalidOperationException("Printer offline");
-        ShiftReports.Add((opening, closing, cashierName, approvedBy, firstCountDifference));
+        ShiftReports.Add((opening, closing, cashierName, approvedBy, firstCountDifference, deliveries));
+    }
+
+    public List<(Delivery Delivery, bool Copy)> Deliveries { get; } = [];
+
+    public void PrintDelivery(Delivery delivery, bool copy)
+    {
+        OnPrint?.Invoke();
+        if (Fail) throw new InvalidOperationException("Printer offline");
+        Deliveries.Add((delivery, copy));
     }
 }

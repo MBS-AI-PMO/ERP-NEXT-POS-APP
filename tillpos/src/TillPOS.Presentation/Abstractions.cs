@@ -62,7 +62,11 @@ public interface IReceiptOutput
     /// <summary>Prints the shift (Z) report; throws if the printer fails (the shift is already closed). Never opens the drawer.
     /// <paramref name="approvedBy"/> is the supervisor who approved the close; <paramref name="firstCountDifference"/> is a
     /// first count's cash difference to print (null: none; the blind close has no recount).</summary>
-    void PrintShiftReport(ShiftOpening opening, ShiftClosing closing, string cashierName, string? approvedBy, decimal? firstCountDifference);
+    void PrintShiftReport(ShiftOpening opening, ShiftClosing closing, string cashierName, string? approvedBy, decimal? firstCountDifference,
+        DeliverySummary? deliveries = null);
+
+    /// <summary>Prints a delivery's NOT PAID slip (<paramref name="copy"/>: a reprint); never opens the drawer; throws if the printer fails.</summary>
+    void PrintDelivery(Delivery delivery, bool copy);
 }
 
 /// <summary>Everything the view models need from the rest of the till, assembled once by the app.</summary>

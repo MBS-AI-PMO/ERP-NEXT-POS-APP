@@ -31,7 +31,20 @@ public static class ReceiptRenderer
     private const string CopyMark = "*** COPY ***";
 
     /// <param name="copy">A reprint: a centred bold "*** COPY ***" line follows the title block.</param>
-    public static IReadOnlyList<PrintLine> Layout(Receipt r, ReceiptHeader h, PaperWidth paper, bool copy = false)
+    public static IReadOnlyList<PrintLine> Layout(Receipt r, ReceiptHeader h, PaperWidth paper, bool copy = false) =>
+        Build(r, h, paper, copy, null);
+
+    /// <summary>The NOT PAID delivery slip (no QR: it is not a paid tax invoice yet).</summary>
+    public static IReadOnlyList<PrintLine> DeliverySlipLayout(Delivery d, ReceiptHeader h, PaperWidth paper, bool copy = false) =>
+        Build(d.Bill, h, paper, copy, d);
+
+    public static IReadOnlyList<string> DeliverySlipTextLines(Delivery d, ReceiptHeader h, PaperWidth paper, bool copy = false) =>
+        PlainText(DeliverySlipLayout(d, h, paper, copy), paper);
+
+    public static byte[] DeliverySlipEscPosBytes(Delivery d, ReceiptHeader h, PaperWidth paper, bool copy = false) =>
+        StyledBytes(DeliverySlipLayout(d, h, paper, copy), openDrawer: false, paper);
+
+    private static IReadOnlyList<PrintLine> Build(Receipt r, ReceiptHeader h, PaperWidth paper, bool copy, Delivery? slip)
     {
         var w = (int)paper;
         var lines = new List<PrintLine>();
@@ -48,8 +61,10 @@ public static class ReceiptRenderer
         if (h.Trn is { } trn) Centered("TRN: " + trn);
         Rule('=');
         var isReturn = r.Kind == ReceiptKind.Return;
-        foreach (var part in Wrap(isReturn ? "TAX CREDIT NOTE" : "TAX INVOICE", w / 2)) Add(part, LineStyle.Title);
+        foreach (var part in Wrap(slip is not null ? "DELIVERY INVOICE" : isReturn ? "TAX CREDIT NOTE" : "TAX INVOICE", w / 2)) Add(part, LineStyle.Title);
         Rule('=');
+        if (slip is not null) Centered("*** NOT PAID ***", LineStyle.Bold);
+        else if (r.IsDelivery && !isReturn) Centered("DELIVERY - PAID", LineStyle.Bold);
         if (copy) Centered(CopyMark, LineStyle.Bold);
 
         foreach (var text in Field("Invoice No", r.ClientId, w)) Add(text);
@@ -83,21 +98,32 @@ public static class ReceiptRenderer
         Add(Pair("Total excl. VAT", Money(r.NetTotal), w));
         Add(Pair(VatLabel(r), Money(r.TotalTaxes), w));
         Add(Pair("TOTAL AED", Money(r.GrandTotal), w), LineStyle.Big);
-        // Cash and split bills use ERPNext's rounded total (older split bills rounded only the cash part). Either way show what
-        // was actually due, so the payment lines minus change add up on paper.
-        var rounding = r.UsesErpRoundedTotal ? r.RoundingAdjustment : r.RoundingDifference;
-        var amountDue = r.UsesErpRoundedTotal ? r.RoundedTotal : r.GrandTotal + r.RoundingDifference;
-        // Compared as printed: a card bill charged 11.43 for a total of 11.429 has nothing to explain on paper.
-        if (Money(amountDue) != Money(r.GrandTotal))
+        if (slip is not null)
         {
-            Add(Pair("Rounding", Money(rounding), w));
-            Add(Pair("AMOUNT DUE", Money(amountDue), w), LineStyle.Big);
+            Rule('-');
+            Add("AMOUNT TO COLLECT", LineStyle.Bold);
+            Add(Pair("  Cash (rounded)", Money(slip.CashToCollect), w));
+            Add(Pair("  Card (exact)", Money(slip.CardToCollect), w));
+            Rule('-');
         }
-        Rule('-');
+        else
+        {
+            // Cash and split bills use ERPNext's rounded total (older split bills rounded only the cash part). Either way show what
+            // was actually due, so the payment lines minus change add up on paper.
+            var rounding = r.UsesErpRoundedTotal ? r.RoundingAdjustment : r.RoundingDifference;
+            var amountDue = r.UsesErpRoundedTotal ? r.RoundedTotal : r.GrandTotal + r.RoundingDifference;
+            // Compared as printed: a card bill charged 11.43 for a total of 11.429 has nothing to explain on paper.
+            if (Money(amountDue) != Money(r.GrandTotal))
+            {
+                Add(Pair("Rounding", Money(rounding), w));
+                Add(Pair("AMOUNT DUE", Money(amountDue), w), LineStyle.Big);
+            }
+            Rule('-');
 
-        // Refunds are paid in cash from the drawer (Plan 3c decision).
-        foreach (var payment in r.Payments) Add(Pair(isReturn ? "Refund paid (cash)" : PaymentLabel(payment.ModeOfPayment, h), Money(payment.Amount), w));
-        if (r.Change != 0m) Add(Pair("Change", Money(r.Change), w));
+            // Refunds are paid in cash from the drawer (Plan 3c decision).
+            foreach (var payment in r.Payments) Add(Pair(isReturn ? "Refund paid (cash)" : PaymentLabel(payment.ModeOfPayment, h), Money(payment.Amount), w));
+            if (r.Change != 0m) Add(Pair("Change", Money(r.Change), w));
+        }
         var saved = decimal.Round(r.Lines.Where(l => l.Rate < l.PriceListRate).Sum(Saved), 3);
         if (!isReturn && saved > 0m) Add(Pair("You saved", Money(saved), w));
         Rule('-');
@@ -106,7 +132,8 @@ public static class ReceiptRenderer
         Centered("Prices include 5% VAT");
 
         // Field 4 is the VAT-inclusive invoice value (consistent with field 5); cash rounding is a payment adjustment.
-        if (h.Trn is { } qrTrn)
+        if (slip is not null) { }
+        else if (h.Trn is { } qrTrn)
         {
             Add(FtaQr.Encode(h.CompanyName, qrTrn, r.CreatedAt, r.GrandTotal, r.TotalTaxes), LineStyle.Qr);
         }

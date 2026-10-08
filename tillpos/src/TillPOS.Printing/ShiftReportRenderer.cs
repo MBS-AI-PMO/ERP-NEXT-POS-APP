@@ -1,4 +1,5 @@
 using System.Globalization;
+using TillPOS.Core.Sales;
 using TillPOS.Core.Shifts;
 using static TillPOS.Printing.ReceiptRenderer;
 
@@ -13,7 +14,7 @@ public static class ShiftReportRenderer
 
     /// <param name="firstCountDifference">The first count's cash difference when a recount changed it; printed when given.</param>
     public static IReadOnlyList<PrintLine> Layout(ShiftOpening opening, ShiftClosing closing, ReceiptHeader h, string cashierName,
-        string? approvedBy, PaperWidth paper, decimal? firstCountDifference = null)
+        string? approvedBy, PaperWidth paper, decimal? firstCountDifference = null, DeliverySummary? deliveries = null)
     {
         var w = (int)paper;
         var lines = new List<PrintLine>();
@@ -44,6 +45,22 @@ public static class ShiftReportRenderer
             foreach (var text in table.Rows(mode)) Add(text);
         Rule();
 
+        if (deliveries is { PaidCount: > 0 } paid)
+            Add(Pair($"Deliveries paid ({paid.PaidCount.ToString(CultureInfo.InvariantCulture)})", Money(paid.PaidTotal), w));
+        if (deliveries is { StillOut.Count: > 0 } outstanding)
+        {
+            foreach (var part in Wrap("DELIVERIES STILL OUT (not in the drawer): " +
+                outstanding.StillOut.Count.ToString(CultureInfo.InvariantCulture), w)) Add(part, LineStyle.Bold);
+            foreach (var d in outstanding.StillOut)
+            {
+                var amount = Money(d.CardToCollect);
+                if (d.ClientId.Length + 1 + amount.Length <= w) Add(Pair(d.ClientId, amount, w));
+                else { Add(Fit(d.ClientId, w)); Add(amount.PadLeft(w)); }
+            }
+            Add(Pair("Total to collect", Money(outstanding.StillOut.Sum(d => d.CardToCollect)), w));
+            Rule();
+        }
+
         if (firstCountDifference is { } first)
             foreach (var part in Wrap("First count difference: " + Money(first), w)) Add(part);
         if (!string.IsNullOrWhiteSpace(approvedBy))
@@ -54,13 +71,13 @@ public static class ShiftReportRenderer
 
     /// <summary>Plain text (the report file when no printer is configured).</summary>
     public static IReadOnlyList<string> TextLines(ShiftOpening opening, ShiftClosing closing, ReceiptHeader h, string cashierName,
-        string? approvedBy, PaperWidth paper, decimal? firstCountDifference = null) =>
-        PlainText(Layout(opening, closing, h, cashierName, approvedBy, paper, firstCountDifference), paper);
+        string? approvedBy, PaperWidth paper, decimal? firstCountDifference = null, DeliverySummary? deliveries = null) =>
+        PlainText(Layout(opening, closing, h, cashierName, approvedBy, paper, firstCountDifference, deliveries), paper);
 
     /// <summary>ESC/POS bytes for the thermal printer; the drawer is never opened.</summary>
     public static byte[] EscPosBytes(ShiftOpening opening, ShiftClosing closing, ReceiptHeader h, string cashierName, string? approvedBy,
-        PaperWidth paper, decimal? firstCountDifference = null) =>
-        StyledBytes(Layout(opening, closing, h, cashierName, approvedBy, paper, firstCountDifference), openDrawer: false);
+        PaperWidth paper, decimal? firstCountDifference = null, DeliverySummary? deliveries = null) =>
+        StyledBytes(Layout(opening, closing, h, cashierName, approvedBy, paper, firstCountDifference, deliveries), openDrawer: false);
 
     private static string Time(DateTimeOffset at) => at.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture);
 

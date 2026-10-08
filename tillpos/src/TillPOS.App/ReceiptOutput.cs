@@ -26,18 +26,31 @@ public sealed class ReceiptOutput(TillSettings settings, CatalogStore store) : I
 
     /// <summary>The shift (Z) report; with no printer it is written to "SHIFT-{shift id}.txt" in the receipts folder.</summary>
     public void PrintShiftReport(ShiftOpening opening, ShiftClosing closing, string cashierName, string? approvedBy,
-        decimal? firstCountDifference)
+        decimal? firstCountDifference, DeliverySummary? deliveries = null)
     {
         var header = Header();
         if (string.IsNullOrWhiteSpace(settings.PrinterName))
         {
             File.WriteAllLines(Path.Combine(ReceiptsFolder(), $"SHIFT-{opening.ClientId}.txt"),
                 ShiftReportRenderer.TextLines(opening, closing, header, cashierName, approvedBy, settings.PaperWidth,
-                    firstCountDifference));
+                    firstCountDifference, deliveries));
             return;
         }
         RawPrinter.Send(settings.PrinterName,
-            ShiftReportRenderer.EscPosBytes(opening, closing, header, cashierName, approvedBy, settings.PaperWidth, firstCountDifference));
+            ShiftReportRenderer.EscPosBytes(opening, closing, header, cashierName, approvedBy, settings.PaperWidth, firstCountDifference, deliveries));
+    }
+
+    /// <summary>The delivery slip; with no printer it is written to "DELIVERY-{id}.txt" ("-COPY" for a reprint).</summary>
+    public void PrintDelivery(Delivery delivery, bool copy)
+    {
+        var header = Header();
+        if (string.IsNullOrWhiteSpace(settings.PrinterName))
+        {
+            File.WriteAllLines(Path.Combine(ReceiptsFolder(), $"DELIVERY-{delivery.ClientId}{(copy ? "-COPY" : "")}.txt"),
+                ReceiptRenderer.DeliverySlipTextLines(delivery, header, settings.PaperWidth, copy));
+            return;
+        }
+        RawPrinter.Send(settings.PrinterName, ReceiptRenderer.DeliverySlipEscPosBytes(delivery, header, settings.PaperWidth, copy));
     }
 
     private string ReceiptsFolder()

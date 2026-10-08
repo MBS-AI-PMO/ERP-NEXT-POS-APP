@@ -316,7 +316,7 @@ public sealed class CounterSelectionTests : IDisposable
         f.Dialogs.Pins.Enqueue("9999");
         await close.CloseAsync();
 
-        var (opening, closing, _, _, _) = Assert.Single(f.Output.ShiftReports);
+        var (opening, closing, _, _, _, _) = Assert.Single(f.Output.ShiftReports);
         Assert.All(closing.Modes, m => Assert.Equal(0m, m.Difference));
         Assert.Equal(("Test Counter", "Cash Counter 1"), (opening.CounterName, opening.CashMode));
         Assert.Equal(["Cash Counter 1", "Credit Card"], closing.Modes.Select(m => m.ModeOfPayment));
