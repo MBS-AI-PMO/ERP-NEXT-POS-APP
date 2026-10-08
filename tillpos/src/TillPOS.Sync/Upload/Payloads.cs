@@ -146,9 +146,10 @@ public static class ClosingShiftPayload
     /// <param name="erpUser">The till's ERPNext user.</param>
     /// <param name="customer">The POS Profile's customer (each transaction names it, unless the bill has its own).</param>
     /// <param name="taxTemplate">The profile's Sales Taxes and Charges Template: its account heads and rates for the taxes rows.</param>
+    /// <param name="currency">The profile's currency (e.g. AED), for each reconciliation row.</param>
     public static Dictionary<string, object?> Build(ShiftOpening opening, ShiftClosing closing, string openingErpName,
         IReadOnlyList<(string ErpName, Receipt Receipt)> invoices, string posProfile, string company, string erpUser, string customer,
-        SalesTaxTemplate? taxTemplate = null) => new()
+        SalesTaxTemplate? taxTemplate = null, string? currency = null) => new()
     {
         ["doctype"] = Doctype,
         ["pos_opening_shift"] = openingErpName,
@@ -178,6 +179,13 @@ public static class ClosingShiftPayload
             .Select(m => new Dictionary<string, object?>
             {
                 ["mode_of_payment"] = m.ModeOfPayment,
+                // POS Awesome's "POS Closing Shift Detail" takes the count in closing_amount_in_currency and derives
+                // closing_amount from it (sending only the base fields stores 0); the base fields are kept as well.
+                ["currency"] = currency,
+                ["opening_amount_in_currency"] = m.Opening,
+                ["expected_amount_in_currency"] = m.Expected,
+                ["closing_amount_in_currency"] = m.Counted,
+                ["difference_in_currency"] = m.Difference,
                 ["opening_amount"] = m.Opening,
                 ["expected_amount"] = m.Expected,
                 ["closing_amount"] = m.Counted,

@@ -104,6 +104,8 @@ public sealed class UploaderTests : IDisposable
         var closing = erp.Inserted.Single(i => i.Doctype == "POS Closing Shift").Doc;
         Assert.Equal(openingName, Str(closing, "pos_opening_shift"));
         Assert.Equal(3, closing.GetProperty("pos_transactions").GetArrayLength());
+        Assert.Equal("AED", closing.GetProperty("payment_reconciliation")[0].GetProperty("currency").GetString());
+        Assert.Equal(200m, closing.GetProperty("payment_reconciliation")[0].GetProperty("closing_amount_in_currency").GetDecimal());
         var approval = erp.Inserted.Single(i => i.Doctype == "TillPOS Approval").Doc;
         Assert.Equal(openingName, Str(approval, "shift"));
         Assert.Equal(saleA, Str(approval, "invoice"));

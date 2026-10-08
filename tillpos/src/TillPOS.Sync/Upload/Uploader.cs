@@ -207,7 +207,7 @@ public sealed class Uploader
         await UploadAsync(
             new Doc(ClosingShiftPayload.Doctype, OfflineIdField, id, ClosingKey(id), $"Closing of shift {id}", true,
                 () => ClosingShiftPayload.Build(opening, closing, openingName, uploaded, profile.PosProfile, profile.Company, user,
-                    profile.Customer, profile.TaxesAndCharges is { Length: > 0 } taxes ? TaxTemplates(taxes) : null),
+                    profile.Customer, profile.TaxesAndCharges is { Length: > 0 } taxes ? TaxTemplates(taxes) : null, profile.Currency),
                 Check: (checks, body, ct) => checks.ShiftAsync(body, "payment_reconciliation", ct)),
             new Marks(sync.Attempts, name => shifts.MarkSynced(id, ShiftDocument.Closing, name),
                 (error, next, keep) => shifts.MarkFailed(id, ShiftDocument.Closing, error, next, keep),

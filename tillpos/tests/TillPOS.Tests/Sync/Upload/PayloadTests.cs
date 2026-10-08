@@ -265,7 +265,7 @@ public partial class PayloadTests
 
         var doc = ClosingShiftPayload.Build(Opening, closing, "POS-OPE-2026-00042",
             [("ACC-PSINV-1", cash), ("ACC-PSINV-2", card), ("ACC-PSINV-3", refund)], "Al Ain Counter 1", "Al Ain Market",
-            "till2@shop.local", "Walk-in Customer");
+            "till2@shop.local", "Walk-in Customer", currency: "AED");
 
         Assert.Equal("POS Closing Shift", doc["doctype"]);
         Assert.Equal("POS-OPE-2026-00042", doc["pos_opening_shift"]);
@@ -294,6 +294,9 @@ public partial class PayloadTests
         Assert.Equal(M("200.000"), rec[0]["expected_amount"]);
         Assert.Equal(M("200.250"), rec[0]["closing_amount"]);
         Assert.Equal(M("0.250"), rec[0]["difference"]);
+        // POS Awesome reads the count from the *_in_currency fields (closing_amount_in_currency is its input).
+        Assert.Equal(("AED", 200m, M("200.000"), M("200.250"), M("0.250")), ((string)rec[0]["currency"]!, (decimal)rec[0]["opening_amount_in_currency"]!,
+            (decimal)rec[0]["expected_amount_in_currency"]!, (decimal)rec[0]["closing_amount_in_currency"]!, (decimal)rec[0]["difference_in_currency"]!));
         Assert.Equal(0m, rec[1]["opening_amount"]);
         Assert.Equal(M("21.000"), rec[1]["expected_amount"]);
         Assert.Equal(0m, rec[1]["difference"]);
@@ -318,7 +321,7 @@ public partial class PayloadTests
         var vat = new SalesTaxTemplate("UAE VAT 5% - AAML", [new TaxRow(1, "VAT 5% - AAML", "VAT 5%", 5m, true)], null);
 
         var doc = ClosingShiftPayload.Build(Opening, closing, "POS-OPE-1", [("ACC-1", cash), ("ACC-2", split)], "Al Ain Counter 1",
-            "Al Ain Market", "till2@shop.local", "Walk-in Customer", vat);
+            "Al Ain Market", "till2@shop.local", "Walk-in Customer", vat, "AED");
 
         const string golden = """
             {"doctype":"POS Closing Shift","pos_opening_shift":"POS-OPE-1","period_start_date":"2026-10-06 08:00:00",
@@ -328,8 +331,11 @@ public partial class PayloadTests
             {"pos_invoice":"ACC-2","posting_date":"2026-10-06","customer":"Walk-in Customer","grand_total":21.000}],
             "pos_payments":[],
             "taxes":[{"account_head":"VAT 5% - AAML","rate":5,"amount":1.123}],
-            "payment_reconciliation":[{"mode_of_payment":"Cash Counter 1","opening_amount":200,"expected_amount":203.500,"closing_amount":203.500,"difference":0},
-            {"mode_of_payment":"Credit Card","opening_amount":0,"expected_amount":20,"closing_amount":20,"difference":0}],
+            "payment_reconciliation":[{"mode_of_payment":"Cash Counter 1","currency":"AED","opening_amount_in_currency":200,
+            "expected_amount_in_currency":203.500,"closing_amount_in_currency":203.500,"difference_in_currency":0,
+            "opening_amount":200,"expected_amount":203.500,"closing_amount":203.500,"difference":0},
+            {"mode_of_payment":"Credit Card","currency":"AED","opening_amount_in_currency":0,"expected_amount_in_currency":20,
+            "closing_amount_in_currency":20,"difference_in_currency":0,"opening_amount":0,"expected_amount":20,"closing_amount":20,"difference":0}],
             "custom_offline_id":"TILL2-SHIFT-20261006080000","docstatus":0}
             """;
         Assert.Equal(golden.ReplaceLineEndings("").Replace("\n", ""), ErpFormat.Json(doc));
