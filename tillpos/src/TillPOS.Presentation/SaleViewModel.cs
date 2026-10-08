@@ -97,10 +97,11 @@ public sealed class SaleViewModel : ObservableObject, IPaymentHost
     public string Total { get => total; private set => SetProperty(ref total, value); }
     public string Message { get => message; private set => SetProperty(ref message, value); }
     public bool MessageIsError { get => messageIsError; private set => SetProperty(ref messageIsError, value); }
-    /// <summary>Bills on hold (for the "Recall (n)" badge).</summary>
+    /// <summary>Deliveries not paid yet (for the "Deliveries (n)" badge).</summary>
     public int DeliveryCount { get => deliveryCount; private set => SetProperty(ref deliveryCount, value); }
     public RelayCommand MakeDeliveryCommand { get; }
     public RelayCommand OpenDeliveriesCommand { get; }
+    /// <summary>Bills on hold (for the "Recall (n)" badge).</summary>
     public int HeldCount { get => heldCount; private set => SetProperty(ref heldCount, value); }
 
     public string SearchText
@@ -597,7 +598,17 @@ public sealed class SaleViewModel : ObservableObject, IPaymentHost
             var now = ctx.Clock.Now;
             delivery = Deliveries.Make(Cart, ClientIds.Receipt(ctx.TillNumber, now, ctx.Receipts.NextSequence()), now, shift.ClientId,
                 cashier.Id, cashier.Name, ctx.CounterOf(session).DisplayName);
-            ctx.Deliveries.Add(delivery);
+            // The autosave goes first: a crash after the delivery is stored must not restore its items onto the sale screen.
+            ClearAutosave();
+            try
+            {
+                ctx.Deliveries.Add(delivery);
+            }
+            catch
+            {
+                SaveAutosave();
+                throw;
+            }
         }
         catch (Exception ex)
         {

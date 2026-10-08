@@ -87,6 +87,20 @@ public sealed class DeliveryStoreTests : IDisposable
     }
 
     [Fact]
+    public void Pay_rolls_back_when_the_receipt_cannot_be_inserted()
+    {
+        store.Add(Open("TILL2-A", At));
+        receipts.Save(Bill("TILL2-A", 11.429m) with { Payments = [new ReceiptPayment("Cash Counter 2", 11.50m)] });   // same ClientId already stored
+        var paid = Bill("TILL2-A", 11.429m) with { Payments = [new ReceiptPayment("Cash Counter 2", 11.50m)] };
+
+        try { Assert.False(store.Pay(paid, At, "simran")); } catch (Exception) { /* a failed insert may throw */ }
+
+        Assert.Equal(DeliveryStatus.Open, store.Get("TILL2-A")!.Status);
+        Assert.Single(store.Open());
+        Assert.Single(receipts.ListPending(10));
+    }
+
+    [Fact]
     public void Pay_is_refused_once_paid_or_cancelled_and_saves_no_receipt()
     {
         store.Add(Open("TILL2-A", At));

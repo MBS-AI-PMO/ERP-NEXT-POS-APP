@@ -26,7 +26,11 @@ public partial class PaymentView : UserControl
         if (e.PropertyName != nameof(PaymentViewModel.Kind) || sender is not PaymentViewModel vm) return;
         // After layout: the card box is collapsed until IsSplit's binding shows it, and a collapsed box cannot take focus.
         // Leaving split collapses the card box, so move the keyboard back to cash rather than lose it.
-        Dispatcher.InvokeAsync(() => Target(vm).Focus(), DispatcherPriority.Input);
+        Dispatcher.InvokeAsync(() =>
+        {
+            Target(vm).Focus();
+            if (ReferenceEquals(Target(vm), CashBox)) SelectPrefill(vm);
+        }, DispatcherPriority.Input);
     }
 
     /// <summary>The box for the kind: the card part in split, the read-only card amount in Card (so Enter still completes),
@@ -40,5 +44,16 @@ public partial class PaymentView : UserControl
 
     private void CardFocused(object sender, RoutedEventArgs e) { if (DataContext is PaymentViewModel vm) vm.EditCard = true; }
 
-    private void CashFocused(object sender, RoutedEventArgs e) { if (DataContext is PaymentViewModel vm) vm.EditCard = false; }
+    private void CashFocused(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not PaymentViewModel vm) return;
+        vm.EditCard = false;
+        SelectPrefill(vm);
+    }
+
+    /// <summary>A prefilled (exact) cash amount is selected, so typing on the keyboard replaces it.</summary>
+    private void SelectPrefill(PaymentViewModel vm)
+    {
+        if (vm.Cash.ReplaceOnNextInput) CashBox.SelectAll();
+    }
 }

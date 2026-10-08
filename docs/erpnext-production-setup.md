@@ -57,7 +57,7 @@ New DocType, module Selling, **Custom** ticked, **not** submittable, naming `TPA
 
 | Field | Type | Options |
 |---|---|---|
-| `action` | Data | LineVoid, BillVoid, ReturnWithoutReceipt, ReturnOverLimit, ReturnOldReceipt, NoSaleDrawerOpen, HeldBillDelete, ShiftVariance, ShiftCount, SettingsChange, UploadModeChange, FailedSupervisorPin |
+| `action` | Data | LineVoid, BillVoid, ReturnWithoutReceipt, ReturnOverLimit, ReturnOldReceipt, NoSaleDrawerOpen, HeldBillDelete, ShiftVariance, ShiftCount, SettingsChange, UploadModeChange, UploadIncludeHistory, UploadRetry, UploadMarkHandled, UploadUnhandle, ReturnCrossTillOffline, ShiftClose, DeliveryChange, DeliveryCancel, FailedSupervisorPin |
 | `cashier` | Data | till cashier id |
 | `supervisor` | Data | blank for a failed PIN |
 | `shift` | Link → POS Opening Shift | |

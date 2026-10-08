@@ -52,7 +52,7 @@ public sealed class PaymentViewModel : ObservableObject
     private void PrefillCash()
     {
         if (!host.PrefillExactCash || kind != TenderKind.Cash || Cash.Value is not null) return;
-        Cash.Set(calculator.Plan(grandTotal, Tender.Cash(0m)).AmountDue);
+        Cash.Prefill(calculator.Plan(grandTotal, Tender.Cash(0m)).AmountDue);
     }
 
     /// <summary>The bill's lines (read-only on this screen), its line count, offers and VAT, as the sale screen showed them.</summary>

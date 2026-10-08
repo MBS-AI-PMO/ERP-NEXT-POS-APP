@@ -82,7 +82,7 @@ public sealed class DeliveryFlowTests : IDisposable
         f.Output.Fail = true;
         var d = Make();
         Assert.Contains("Reprint it from Deliveries", sale.Message);
-        Assert.Equal(DeliveryStatus.Open, d.Status);
+        Assert.Equal(DeliveryStatus.Open, f.Ctx.Deliveries.Get(d.ClientId)!.Status);
     }
 
     [Fact]
@@ -184,10 +184,11 @@ public sealed class DeliveryFlowTests : IDisposable
     }
 
     [Fact]
-    public async Task Reducing_a_line_needs_a_supervisor_and_saves_the_new_amounts()
+    public async Task Reducing_a_line_asks_how_many_to_keep_and_needs_one_supervisor_approval()
     {
         var d = Make();
         var vm = Open();
+        f.Dialogs.Numbers.Enqueue(1m);
         f.Dialogs.Pins.Enqueue("9999");
 
         await vm.ReduceLineAsync(vm.Cart.Lines[0].Id);
@@ -196,6 +197,55 @@ public sealed class DeliveryFlowTests : IDisposable
         Assert.Equal(M("6.79"), changed.Bill.GrandTotal);
         Assert.Equal(M("6.75"), changed.CashToCollect);
         Assert.Single(f.Ctx.Approvals.Unsynced(), a => a.Action == ApprovalAction.DeliveryChange);
+        Assert.Empty(f.Dialogs.Pins);
+    }
+
+    [Fact]
+    public async Task Cancelling_the_keep_prompt_changes_nothing_and_asks_no_pin()
+    {
+        var d = Make();
+        var vm = Open();
+        f.Dialogs.Numbers.Enqueue(null);
+        f.Dialogs.Pins.Enqueue("9999");
+
+        await vm.ReduceLineAsync(vm.Cart.Lines[0].Id);
+
+        Assert.Equal(M("13.58"), f.Ctx.Deliveries.Get(d.ClientId)!.Bill.GrandTotal);
+        Assert.Single(f.Dialogs.Pins);                                // never asked
+        Assert.Empty(f.Ctx.Approvals.Unsynced());
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("2")]
+    [InlineData("3")]
+    [InlineData("1.5")]
+    public async Task Keep_values_that_do_not_reduce_change_nothing_and_ask_no_pin(string keep)
+    {
+        var d = Make();
+        var vm = Open();
+        f.Dialogs.Numbers.Enqueue(decimal.Parse(keep, System.Globalization.CultureInfo.InvariantCulture));
+        f.Dialogs.Pins.Enqueue("9999");
+
+        await vm.ReduceLineAsync(vm.Cart.Lines[0].Id);
+
+        Assert.Equal(M("13.58"), f.Ctx.Deliveries.Get(d.ClientId)!.Bill.GrandTotal);
+        Assert.Single(f.Dialogs.Pins);
+        Assert.NotEqual("", vm.Message);
+    }
+
+    [Fact]
+    public async Task A_refused_pin_on_reduce_changes_nothing()
+    {
+        var d = Make();
+        var vm = Open();
+        f.Dialogs.Numbers.Enqueue(1m);
+        f.Dialogs.Pins.Enqueue("1111");
+
+        await vm.ReduceLineAsync(vm.Cart.Lines[0].Id);
+
+        Assert.Equal(M("13.58"), f.Ctx.Deliveries.Get(d.ClientId)!.Bill.GrandTotal);
+        Assert.Equal(2m, Assert.Single(vm.Cart.Lines).Qty);
     }
 
     [Fact]
@@ -222,6 +272,68 @@ public sealed class DeliveryFlowTests : IDisposable
 
         Assert.Equal(DeliveryStatus.Cancelled, f.Ctx.Deliveries.Get(d.ClientId)!.Status);
         Assert.Empty(vm.Rows);
+        var approval = Assert.Single(f.Ctx.Approvals.Unsynced());
+        Assert.Equal(ApprovalAction.DeliveryCancel, approval.Action);
+        Assert.Contains("all items removed", approval.Reason);
+    }
+
+    [Fact]
+    public async Task Removing_one_of_two_lines_is_logged_as_a_change()
+    {
+        f.Catalog.Items.Add(new Item("RICE", "Basmati Rice 5Kg", "Rice", null, "PCS", false, true));
+        f.Catalog.Prices.Add(new ItemPrice("P-RICE", "RICE", "PCS", M("40.00"), null, null));
+        f.Catalog.Barcodes.Add(new ItemBarcode("222", "RICE", null));
+        sale.Scan("111");
+        sale.Scan("222");
+        f.Dialogs.ConfirmAnswers.Enqueue(true);
+        sale.MakeDelivery();
+        var vm = Open();
+        f.Dialogs.Pins.Enqueue("9999");
+
+        await vm.RemoveLineAsync(vm.Cart.Lines[0].Id);
+
+        Assert.Equal(ApprovalAction.DeliveryChange, Assert.Single(f.Ctx.Approvals.Unsynced()).Action);
+    }
+
+    [Fact]
+    public void A_delivery_that_cannot_be_saved_leaves_the_cart_in_the_autosave()
+    {
+        sale.Scan("111");
+        sale.Scan("111");
+        using (var conn = f.Temp.Db.Open())
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "CREATE TRIGGER no_add BEFORE INSERT ON delivery BEGIN SELECT RAISE(ABORT, 'locked'); END";
+            cmd.ExecuteNonQuery();
+        }
+        f.Dialogs.ConfirmAnswers.Enqueue(true);
+
+        sale.MakeDelivery();
+
+        Assert.True(sale.MessageIsError);
+        Assert.Contains("Could not save the delivery", sale.Message);
+        Assert.Single(sale.Lines);
+        Assert.NotEqual("[]", f.Ctx.Kv.GetValue(SaleViewModel.AutosaveKey));
+        Assert.Empty(f.Ctx.Deliveries.Open());
+    }
+
+    [Fact]
+    public void Paying_a_delivery_by_split_saves_both_payments_and_closes_it()
+    {
+        var d = Make();
+        var vm = Open();
+        vm.PaySplitCommand.Execute(null);
+        var pay = Assert.IsType<PaymentViewModel>(f.Navigator.Current);
+        pay.Card.Set(5m);
+        pay.Cash.Set(9m);
+        pay.CompleteCommand.Execute(null);
+
+        var receipt = Assert.Single(f.Ctx.Receipts.ListPending(10));
+        Assert.Equal(d.ClientId, receipt.ClientId);
+        Assert.Equal(2, receipt.Payments.Count);
+        Assert.Contains(receipt.Payments, p => p.ModeOfPayment == "Credit Card" && p.Amount == M("5"));
+        Assert.Contains(receipt.Payments, p => p.ModeOfPayment == "Cash Counter 2" && p.Amount > 0m);
+        Assert.Equal(DeliveryStatus.Paid, f.Ctx.Deliveries.Get(d.ClientId)!.Status);
     }
 
     [Theory]
@@ -336,6 +448,7 @@ public sealed class DeliveryFlowTests : IDisposable
         Assert.Equal(2m, Assert.Single(vm.Cart.Lines).Qty);
         Assert.Single(vm.SelectedLines);
 
+        f.Dialogs.Numbers.Enqueue(1m);
         f.Dialogs.Pins.Enqueue("9999");
         await vm.ReduceLineAsync(vm.Cart.Lines[0].Id);
 

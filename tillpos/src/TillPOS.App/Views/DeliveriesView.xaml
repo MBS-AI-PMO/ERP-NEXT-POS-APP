@@ -18,7 +18,7 @@
         <Button DockPanel.Dock="Bottom" Focusable="False" Style="{StaticResource KeyButton}" Height="56" Margin="0,8,0,0"
                 local:ButtonIcon.Glyph="&#xE72B;" Content="Back to the sale (Esc)" Command="{Binding BackCommand}" />
         <Grid>
-          <ListBox ItemsSource="{Binding Rows}" SelectedValuePath="ClientId" SelectedValue="{Binding SelectedId}" HorizontalContentAlignment="Stretch">
+          <ListBox x:Name="DeliveryList" ItemsSource="{Binding Rows}" SelectedValuePath="ClientId" SelectedValue="{Binding SelectedId}" HorizontalContentAlignment="Stretch">
             <ListBox.ItemTemplate>
               <DataTemplate>
                 <Grid Margin="4,6">

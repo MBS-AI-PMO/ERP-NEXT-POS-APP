@@ -71,6 +71,42 @@ public sealed class PaymentHostTests : IDisposable
     }
 
     [Fact]
+    public void Typing_on_the_keypad_replaces_the_prefilled_cash()
+    {
+        var vm = new PaymentViewModel(f.Ctx, f.Session, new Host(Milk(), prefill: true), TenderKind.Cash);
+        vm.KeyCommand.Execute("2");
+        vm.KeyCommand.Execute("0");
+
+        Assert.Equal("20", vm.Cash.Text);
+        Assert.Equal(Format.Money(20m - 6.75m), vm.Change);
+        vm.KeyCommand.Execute("5");
+        Assert.Equal("205", vm.Cash.Text);                              // only the first key replaces
+    }
+
+    [Fact]
+    public void A_dot_on_the_keypad_replaces_the_prefilled_cash()
+    {
+        var vm = new PaymentViewModel(f.Ctx, f.Session, new Host(Milk(), prefill: true), TenderKind.Cash);
+        vm.KeyCommand.Execute(".");
+        vm.KeyCommand.Execute("5");
+        Assert.Equal("0.5", vm.Cash.Text);
+    }
+
+    [Fact]
+    public void Backspace_edits_the_prefill_and_a_normal_sale_still_appends()
+    {
+        var vm = new PaymentViewModel(f.Ctx, f.Session, new Host(Milk(), prefill: true), TenderKind.Cash);
+        vm.KeyCommand.Execute("⌫");
+        vm.KeyCommand.Execute("1");
+        Assert.Equal("6.71", vm.Cash.Text);
+
+        var plain = new PaymentViewModel(f.Ctx, f.Session, new Host(Milk(), prefill: false), TenderKind.Cash);
+        plain.KeyCommand.Execute("2");
+        plain.KeyCommand.Execute("0");
+        Assert.Equal("20", plain.Cash.Text);
+    }
+
+    [Fact]
     public void Without_prefill_the_cash_box_starts_empty() =>
         Assert.Equal("", new PaymentViewModel(f.Ctx, f.Session, new Host(Milk(), prefill: false), TenderKind.Cash).Cash.Text);
 

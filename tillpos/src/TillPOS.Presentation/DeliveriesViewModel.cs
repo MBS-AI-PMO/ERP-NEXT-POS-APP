@@ -85,25 +85,36 @@ public sealed class DeliveriesViewModel : ObservableObject, IPaymentHost
     public RelayCommand BackCommand { get; }
     public RelayCommand<string> ScanCommand { get; }
 
+    /// <summary>Reduces a line's quantity: asks "Keep how many?" once, then one supervisor approval. A scale-label line can only be removed.</summary>
     public async Task ReduceLineAsync(Guid id)
     {
         if (selected is null || Cart.Lines.FirstOrDefault(l => l.Id == id) is not { } line) return;
-        if (line.FromScaleLabel || line.Qty <= 1m) { await RemoveLineAsync(id); return; }
-        if (await gate.ApproveAsync(ApprovalAction.DeliveryChange, $"Delivery {selected.ClientId}: reduce {line.Item.ItemName}",
-                selected.ClientId, line.Item.ItemCode, line.Rate) is null) return;
-        Cart.Decrement(id);
+        if (line.FromScaleLabel) { await RemoveLineAsync(id); return; }
+        var answer = await ctx.Dialogs.AskNumberAsync("Keep how many?", $"{line.Item.ItemName} (now {line.Qty.ToString("0.###", CultureInfo.InvariantCulture)})");
+        if (answer is not { } keep) return;
+        if (keep <= 0m) { Error("To remove the line use ✕"); return; }
+        if (keep >= line.Qty) { Info("Nothing to reduce"); return; }
+        if (keep != decimal.Truncate(keep) && !Cart.Context.WeightUoms.Contains(line.Uom)) { Error("This item is sold in whole units."); return; }
+        if (await gate.ApproveAsync(ApprovalAction.DeliveryChange,
+                $"Delivery {selected.ClientId}: keep {keep.ToString("0.###", CultureInfo.InvariantCulture)} of {line.Item.ItemName}",
+                selected.ClientId, line.Item.ItemCode, (line.Qty - keep) * line.Rate) is null) return;
+        Cart.SetQty(id, keep);
         SaveChange();
     }
 
-    /// <summary>Removes a line (supervisor); removing the last line cancels the delivery ("All items removed").</summary>
+    /// <summary>Removes a line (supervisor); removing the last line cancels the delivery (approved and logged as a cancel).</summary>
     public async Task RemoveLineAsync(Guid id)
     {
         if (selected is null || Cart.Lines.FirstOrDefault(l => l.Id == id) is not { } line) return;
-        var supervisor = await gate.ApproveBySupervisorAsync(ApprovalAction.DeliveryChange,
-            $"Delivery {selected.ClientId}: remove {line.Item.ItemName}", selected.ClientId, line.Item.ItemCode, line.Qty * line.Rate);
+        var last = Cart.Lines.Count == 1;
+        var supervisor = last
+            ? await gate.ApproveBySupervisorAsync(ApprovalAction.DeliveryCancel, $"Cancel delivery {selected.ClientId}: all items removed",
+                selected.ClientId, null, selected.Bill.GrandTotal)
+            : await gate.ApproveBySupervisorAsync(ApprovalAction.DeliveryChange, $"Delivery {selected.ClientId}: remove {line.Item.ItemName}",
+                selected.ClientId, line.Item.ItemCode, line.Qty * line.Rate);
         if (supervisor is null) return;
         Cart.Remove(id);
-        if (Cart.Lines.Count == 0)
+        if (last)
         {
             CancelStored(selected.ClientId, supervisor.Id, "All items removed", $"Delivery {selected.ClientId} cancelled (all items removed)");
             return;
