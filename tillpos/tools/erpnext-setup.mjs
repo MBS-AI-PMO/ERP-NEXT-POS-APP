@@ -89,25 +89,40 @@ for (const c of cfg.Cashiers ?? []) {
   console.log(`made POS Cashier ${c.cashier_name}`);
 }
 
+// Exact permission rows on TillPOS's own two DocTypes. Every flag is spelled out: ERPNext fills a flag left out of a new
+// permission row with 1, which once gave the till role write/delete on cashiers (PINs) and delete on approvals.
 // The till role needs: POS Cashier read (incl. the PIN at permission level 1), TillPOS Approval read + create.
 const tillRole = cfg.TillRole ?? 'TillPOS Device';
+const FLAGS = ['read', 'write', 'create', 'delete', 'submit', 'cancel', 'amend', 'report', 'export', 'import', 'share', 'print', 'email'];
+const exact = (role, permlevel, granted) => ({ role, permlevel, ...Object.fromEntries(FLAGS.map(f => [f, granted.includes(f) ? 1 : 0])) });
 async function ensurePerms(doctype, rows) {
   const dt = (await call('GET', '/api/resource/DocType/' + encodeURIComponent(doctype))).data;
-  // Every existing row is sent back whole (all its fields: if_owner, print, email, share, amend, cancel, select, …, and its
-  // name, so ERPNext keeps the row as it is); new rows are only appended.
+  // Every existing row is sent back whole (all its fields and its name, so ERPNext keeps it); a row for a role/level listed
+  // here gets exactly the listed flags; a missing one is appended. Rows for other roles are left as they are.
   const perms = dt.permissions.map(row => ({ ...row }));
-  let changed = false;
+  const changes = [];
   for (const want of rows) {
-    if (perms.some(x => x.role === want.role && (x.permlevel ?? 0) === (want.permlevel ?? 0))) continue;
-    perms.push(want); changed = true;
+    const row = perms.find(x => x.role === want.role && (x.permlevel ?? 0) === want.permlevel);
+    if (!row) { perms.push(want); changes.push(`added ${want.role}@${want.permlevel}`); continue; }
+    const diff = FLAGS.filter(f => (row[f] ?? 0) !== want[f]);
+    if (diff.length) { for (const f of FLAGS) row[f] = want[f]; changes.push(`set ${want.role}@${want.permlevel} (${diff.join(', ')})`); }
   }
-  if (!changed) { console.log(`ok   ${doctype} permissions for ${tillRole}`); return; }
+  if (!changes.length) { console.log(`ok   ${doctype} permissions`); return; }
   await call('PUT', '/api/resource/DocType/' + encodeURIComponent(doctype), { permissions: perms });
-  console.log(`made ${doctype} permissions for ${tillRole}`);
+  console.log(`made ${doctype} permissions: ${changes.join('; ')}`);
 }
 if (await exists('Role', tillRole)) {
-  await ensurePerms('POS Cashier', [{ role: tillRole, permlevel: 0, read: 1 }, { role: tillRole, permlevel: 1, read: 1 }]);
-  await ensurePerms('TillPOS Approval', [{ role: tillRole, permlevel: 0, read: 1, create: 1 }]);
+  await ensurePerms('POS Cashier', [
+    exact('System Manager', 0, ['read', 'write', 'create', 'delete', 'report', 'export', 'print', 'share']),
+    exact('System Manager', 1, ['read', 'write']),
+    exact(tillRole, 0, ['read']),
+    exact(tillRole, 1, ['read']),
+  ]);
+  await ensurePerms('TillPOS Approval', [
+    exact('System Manager', 0, ['read', 'write', 'create', 'delete', 'report', 'export', 'print', 'share']),
+    exact('Accounts Manager', 0, ['read', 'report', 'export', 'print']),
+    exact(tillRole, 0, ['read', 'create']),
+  ]);
 } else console.log(`!!   Role ${tillRole} does not exist — create it (see docs/erpnext-production-setup.md step 2)`);
 
 // The "Rounding" Mode of Payment: an exact card bill whose rounded total is a few fils higher pays those fils in a Rounding row
@@ -118,9 +133,15 @@ else {
   const missing = companies.filter(c => !c.round_off_account).map(c => c.name);
   if (missing.length) console.log(`!!   Company ${missing.join(', ')} has no Round Off Account — set it, then run this again`);
   else {
-    await call('POST', '/api/resource/Mode of Payment', { mode_of_payment: 'Rounding', type: 'General', enabled: 1,
-      accounts: companies.map(c => ({ company: c.name, default_account: c.round_off_account })) });
-    console.log('made Mode of Payment Rounding');
+    try {
+      await call('POST', '/api/resource/Mode of Payment', { mode_of_payment: 'Rounding', type: 'General', enabled: 1,
+        accounts: companies.map(c => ({ company: c.name, default_account: c.round_off_account })) });
+      console.log('made Mode of Payment Rounding');
+    } catch (e) {
+      // Creating a Mode of Payment needs Accounts Manager; System Manager alone is refused.
+      console.log(`!!   Mode of Payment Rounding not created (${e.message.split(' -> ')[1] ?? e.message}): create it by hand — type General, ` +
+        `account = the company's Round Off account (${companies.map(c => c.round_off_account).join(', ')})`);
+    }
   }
 }
 
