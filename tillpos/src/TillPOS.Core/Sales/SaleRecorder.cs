@@ -10,6 +10,17 @@ public sealed class SaleRecorder(IReceiptStore store, int tillNumber, TenderMode
     public Receipt CompleteSale(Cart cart, PaymentPlan plan, string cashier, string shiftClientId, string? cashierUser = null,
         string? cashierName = null)
     {
+        var receipt = Build(cart, plan, cashier, shiftClientId, cashierUser, cashierName, null);
+        store.Save(receipt);
+        cart.Clear();
+        return receipt;
+    }
+
+    /// <summary>The paid bill as a receipt, not saved and the cart not cleared. <paramref name="deliveryClientId"/>: a delivery
+    /// being paid keeps its number (and the receipt is marked <see cref="Receipt.IsDelivery"/>); null takes the next number.</summary>
+    public Receipt Build(Cart cart, PaymentPlan plan, string cashier, string shiftClientId, string? cashierUser, string? cashierName,
+        string? deliveryClientId)
+    {
         if (cart.Lines.Count == 0) throw new InvalidOperationException("The bill is empty.");
         var totals = cart.Totals();
         if (plan.GrandTotal != totals.GrandTotal)
@@ -19,8 +30,8 @@ public sealed class SaleRecorder(IReceiptStore store, int tillNumber, TenderMode
         var at = now();
         // Card only with rounding on: the card pays the exact total, ERPNext still gets its rounded total (Receipt.ExactCardOnRoundedTotal).
         var exactCard = plan.Kind == TenderKind.Card && !totals.RoundedTotalDisabled;
-        var receipt = new Receipt(
-            ClientIds.Receipt(tillNumber, at, store.NextSequence()), ReceiptKind.Sale, null, shiftClientId, cashier, at,
+        return new Receipt(
+            deliveryClientId ?? ClientIds.Receipt(tillNumber, at, store.NextSequence()), ReceiptKind.Sale, null, shiftClientId, cashier, at,
             ToLines(cart, totals), totals.Total, totals.NetTotal, totals.TotalTaxes, totals.GrandTotal,
             plan.UsesErpRoundedTotal,
             plan.UsesErpRoundedTotal ? plan.AmountDue : exactCard ? totals.RoundedTotal : 0m,
@@ -34,10 +45,8 @@ public sealed class SaleRecorder(IReceiptStore store, int tillNumber, TenderMode
             PosProfile = cart.Context.PosProfile,
             Warehouse = cart.Context.Warehouse,
             DisableRoundedTotal = cart.Context.Money.DisableRoundedTotal,
+            IsDelivery = deliveryClientId is not null,
         };
-        store.Save(receipt);
-        cart.Clear();
-        return receipt;
     }
 
     internal static IReadOnlyList<ReceiptLine> ToLines(Cart cart, BillTotals totals) =>

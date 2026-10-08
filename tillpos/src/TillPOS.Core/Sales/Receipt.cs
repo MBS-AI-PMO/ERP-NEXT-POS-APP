@@ -68,6 +68,10 @@ public sealed record Receipt(
     /// (below), as POS Awesome does with an exact card amount.</summary>
     public bool ExactCardOnRoundedTotal { get; init; }
 
+    /// <summary>A delivery bill: the unpaid bill stored with a delivery (no payments), or the sale it became once paid (it keeps
+    /// the delivery's number). The paid invoice prints "DELIVERY - PAID".</summary>
+    public bool IsDelivery { get; init; }
+
     /// <summary>The bill's customer; null = the POS Profile's default customer. A return keeps its original's (ERPNext requires
     /// the same customer on a return as on the bill it returns), e.g. a bill of another till made for a named customer.</summary>
     public string? Customer { get; init; }

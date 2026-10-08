@@ -209,6 +209,21 @@ public sealed class Cart(SaleContext ctx)
         return failed;
     }
 
+    /// <summary>Re-adds a stored bill's lines at their stored prices (a delivery: never re-priced), into an empty cart. An item no
+    /// longer in the catalog keeps its stored name and unit.</summary>
+    public void RestoreFixed(IEnumerable<ReceiptLine> stored)
+    {
+        if (lines.Count > 0) throw new InvalidOperationException("Finish or hold the current bill first.");
+        foreach (var s in stored)
+        {
+            var item = ctx.Catalog.FindItem(s.ItemCode) ?? new Item(s.ItemCode, s.ItemName, "", null, s.Uom, false, true);
+            var line = new CartLine(item, s.Uom, s.ConversionFactor, s.PriceListRate, null, s.Rate, s.ItemTaxTemplate, s.Barcode,
+                s.FromScaleLabel ? s.Qty : null, s.UomFallbackFrom);
+            if (!s.FromScaleLabel) line.Qty = s.Qty;
+            lines.Add(line);
+        }
+    }
+
     public BillTotals Totals() =>
         taxes.Calculate(lines.Select(l => new TaxLineInput(l.Qty, l.Rate, l.ItemTaxTemplate)).ToList(), ctx.TaxTemplate);
 
