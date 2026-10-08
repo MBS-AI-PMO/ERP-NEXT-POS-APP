@@ -125,8 +125,10 @@ else {
 }
 
 // Report, read-only: things the admin still has to do by hand.
-const profiles = await call('GET', '/api/resource/POS Profile?fields=["name","disable_rounded_total","write_off_limit","write_off_account","account_for_change_amount","customer"]');
+const profiles = await call('GET', '/api/resource/POS Profile?fields=["name","disable_rounded_total","write_off_limit","write_off_account","account_for_change_amount","cost_center","customer"]');
 console.log('POS Profiles:', JSON.stringify(profiles.data));
+for (const p of profiles.data.filter(p => !p.cost_center))
+  console.log(`!!   POS Profile ${p.name} has no Cost Center — set it (e.g. Main - AAML): closing fails on a card bill's Rounding row without it`);
 const company = await call('GET', '/api/resource/Company?fields=["name","tax_id"]');
 console.log('Company tax_id:', JSON.stringify(company.data));
 console.log('Done. Still manual if missing: Company Tax ID (TRN), company address on each POS Profile, POS Cashier doctype + cashiers, Allow Negative Stock, TillPOS Device role for till users.');

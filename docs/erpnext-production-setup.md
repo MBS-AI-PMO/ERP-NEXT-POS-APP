@@ -37,6 +37,7 @@ The till already lists counters from its settings ("Al Ain Counter 1", "Al Ain C
 - **Disable Rounded Total:** the till ignores this setting, as POS Awesome does: cash and split bills are rounded to AED 0.25 and card bills are charged the exact amount, whatever the profile says (all three profiles have it ticked today).
 - **Write Off Limit:** 0.05, with the write-off account and cost centre set, so a rounding difference of a few fils never blocks an upload.
 - **Account for Change Amount:** the counter's cash account.
+- **Cost Center:** Main - AAML. Required: at closing ERPNext books a card bill's "Rounding" row to Round Off - AAML (a profit-and-loss account), and it takes the cost center from the POS Profile, not the company default. Without it the shift cannot close in ERPNext.
 - **Customer:** the walk-in customer.
 - **Applicable for Users:** the till users that may use this counter.
 
