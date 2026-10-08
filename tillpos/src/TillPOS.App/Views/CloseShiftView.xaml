@@ -25,9 +25,8 @@
   <!-- Scrolls only when the screen is too small (e.g. 125% scaling), so the buttons stay reachable. -->
   <ScrollViewer Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
     <Grid>
-      <!-- ===== Stage 1: blind count. Nothing here shows (or depends on) the expected amounts. ===== -->
-      <Grid x:Name="CountStage" MaxWidth="1000" Visibility="{Binding IsCounting, Converter={StaticResource BoolToVisibility}}"
-            KeyboardNavigation.TabNavigation="Cycle" KeyDown="CountStageKeyDown">
+      <!-- ===== Blind count. Nothing here shows (or depends on) the expected amounts; they are only on the Z report. ===== -->
+      <Grid x:Name="CountStage" MaxWidth="1000" KeyboardNavigation.TabNavigation="Cycle" KeyDown="CountStageKeyDown">
         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="380" /></Grid.ColumnDefinitions>
   
@@ -36,7 +35,7 @@
             <TextBlock Text="&#xE72E;" Style="{StaticResource Icon}" FontSize="22" Foreground="{StaticResource Accent}" Margin="0,0,10,0" />
             <TextBlock Text="Close shift — count the drawer" Style="{StaticResource ScreenTitle}" />
           </StackPanel>
-          <TextBlock Text="Enter how many of each note and coin (Enter moves to the next box). The expected amounts are shown only after you confirm the count."
+          <TextBlock Text="Enter how many of each note and coin (Enter moves to the next box) and the card machine total. Closing needs a supervisor PIN; the shift (Z) report then prints."
                      Foreground="{StaticResource Muted}" TextWrapping="Wrap" />
           <!-- Bills of this shift not in ERPNext yet: the Closing Shift waits for them. -->
           <TextBlock Text="{Binding UploadWarning}" Foreground="{StaticResource Warn}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,4,0,0">
@@ -98,65 +97,11 @@
             </StackPanel>
           </Border>
           <TextBlock Text="{Binding Message}" Style="{StaticResource MessageText}" Margin="0,8,0,0" />
-          <Button Focusable="False" Style="{StaticResource PrimaryButton}" Height="72" Margin="4,8,4,4" local:ButtonIcon.Glyph="&#xE73E;" Content="Confirm count" Command="{Binding ConfirmCountCommand}" />
+          <Button Focusable="False" Style="{StaticResource PrimaryButton}" Height="72" Margin="4,8,4,4" local:ButtonIcon.Glyph="&#xE73E;" Content="Close shift &amp; print Z report" Command="{Binding CloseCommand}" />
           <Button Focusable="False" Style="{StaticResource KeyButton}" Height="56" local:ButtonIcon.Glyph="&#xE72B;" Content="Back to the sale (Esc)" Command="{Binding BackCommand}" />
         </StackPanel>
       </Grid>
   
-      <!-- ===== Stage 2: result (collapsed, and empty, until the count is confirmed) ===== -->
-      <StackPanel x:Name="ResultStage" MaxWidth="820" Visibility="{Binding IsResult, Converter={StaticResource BoolToVisibility}}">
-        <TextBlock Text="Shift result" Style="{StaticResource ScreenTitle}" Margin="0,0,0,8" />
-        <Border Style="{StaticResource Card}" Padding="20,12">
-          <StackPanel>
-            <DockPanel><TextBlock Text="Bills (sales)" Foreground="{StaticResource Muted}" /><TextBlock Text="{Binding SalesCount}" HorizontalAlignment="Right" FontSize="18" Style="{StaticResource Money}" /></DockPanel>
-            <DockPanel><TextBlock Text="Total incl. VAT" Foreground="{StaticResource Muted}" /><TextBlock Text="{Binding GrandTotalText}" HorizontalAlignment="Right" FontSize="18" Style="{StaticResource Money}" /></DockPanel>
-            <DockPanel><TextBlock Text="VAT" Foreground="{StaticResource Muted}" /><TextBlock Text="{Binding VatText}" HorizontalAlignment="Right" FontSize="18" Style="{StaticResource Money}" /></DockPanel>
-  
-            <Separator Margin="0,10" />
-            <Grid Margin="0,0,0,4">
-              <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="150" /><ColumnDefinition Width="150" /><ColumnDefinition Width="150" /></Grid.ColumnDefinitions>
-              <TextBlock Grid.Column="0" Text="Mode" Style="{StaticResource SectionTitle}" />
-              <TextBlock Grid.Column="1" Text="Expected" Style="{StaticResource SectionTitle}" TextAlignment="Right" />
-              <TextBlock Grid.Column="2" Text="Counted" Style="{StaticResource SectionTitle}" TextAlignment="Right" />
-              <TextBlock Grid.Column="3" Text="Difference" Style="{StaticResource SectionTitle}" TextAlignment="Right" />
-            </Grid>
-            <ItemsControl ItemsSource="{Binding Rows}" Focusable="False">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                  <Grid MinHeight="40">
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="150" /><ColumnDefinition Width="150" /><ColumnDefinition Width="150" /></Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="{Binding Mode}" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                    <TextBlock Grid.Column="1" Text="{Binding Expected}" FontSize="20" TextAlignment="Right" VerticalAlignment="Center" Style="{StaticResource Money}" />
-                    <TextBlock Grid.Column="2" Text="{Binding Counted}" FontSize="20" TextAlignment="Right" VerticalAlignment="Center" Style="{StaticResource Money}" />
-                    <TextBlock Grid.Column="3" Text="{Binding Difference}" FontSize="20" TextAlignment="Right" VerticalAlignment="Center">
-                      <TextBlock.Style>
-                        <Style TargetType="TextBlock" BasedOn="{StaticResource Money}">
-                          <Setter Property="Foreground" Value="{StaticResource Accent}" />
-                          <Style.Triggers>
-                            <DataTrigger Binding="{Binding HasDifference}" Value="True"><Setter Property="Foreground" Value="{StaticResource Danger}" /></DataTrigger>
-                          </Style.Triggers>
-                        </Style>
-                      </TextBlock.Style>
-                    </TextBlock>
-                  </Grid>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-          </StackPanel>
-        </Border>
-  
-        <Border Background="{StaticResource Danger}" CornerRadius="{StaticResource Radius}" Padding="16,10" Margin="0,12,0,0"
-                Visibility="{Binding NeedsSupervisor, Converter={StaticResource BoolToVisibility}}">
-          <TextBlock Foreground="White" FontWeight="SemiBold" TextWrapping="Wrap"
-                     Text="Supervisor needed: the cash difference is more than AED 5.00 (over or short). Closing the shift will ask for a supervisor PIN." />
-        </Border>
-        <TextBlock Text="{Binding Message}" Style="{StaticResource MessageText}" Margin="0,8,0,0" />
-  
-        <DockPanel Margin="0,8,0,0">
-          <Button DockPanel.Dock="Left" Focusable="False" Style="{StaticResource KeyButton}" Width="200" Height="72" local:ButtonIcon.Glyph="&#xE72C;" Content="Recount" Command="{Binding RecountCommand}" />
-          <Button Focusable="False" Style="{StaticResource PrimaryButton}" Height="72" local:ButtonIcon.Glyph="&#xE749;" Content="Close shift &amp; print report" Command="{Binding CloseCommand}" />
-        </DockPanel>
-      </StackPanel>
     </Grid>
   </ScrollViewer>
 </UserControl>

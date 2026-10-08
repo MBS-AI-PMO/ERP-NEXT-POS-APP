@@ -60,7 +60,7 @@ public partial class PayloadTests
     }
 
     [Fact]
-    public void Card_bill_is_exact_and_not_rounded()
+    public void Card_bill_taken_before_exact_card_rounding_is_sent_unrounded()
     {
         var r = Sale("TILL2-1", [Line(1, "RICE5", "RICE 5KG", 1m, M("10.500"), M("10.500"), M("10.500"))], M("10.500"), false, 0m,
             [new ReceiptPayment("Credit Card", M("10.500"))], 0m);
@@ -75,6 +75,61 @@ public partial class PayloadTests
         Assert.Equal(new ExpectedTotals(M("10.500"), M("10.500"), false), payload.Expected);
         Assert.False(payload.Doc.ContainsKey("rounded_total"));
         Assert.False(payload.Doc.ContainsKey("grand_total"));
+    }
+
+    [Theory]
+    [InlineData(12, 16, "2026-10-06", "11:16:24")]   // a PC on Pakistan time (UTC+5): ERPNext's Dubai clock is an hour behind
+    [InlineData(0, 30, "2026-10-05", "23:30:24")]    // just after midnight on the PC is still the day before in Dubai
+    public void Posting_date_and_time_are_in_erpnexts_time_zone_whatever_the_pc_zone(int hour, int minute, string date, string time)
+    {
+        var at = new DateTimeOffset(2026, 10, 6, hour, minute, 24, TimeSpan.FromHours(5));
+        var r = Sale("TILL2-7", [Line(1, "RICE5", "RICE 5KG", 1m, 10m, 10m, 10m)], 10m, false, 0m, [new ReceiptPayment("Credit Card", 10m)], 0m, at);
+
+        var payload = Build(r);
+
+        Assert.Equal(date, payload.Doc["posting_date"]);
+        Assert.Equal(time, payload.Doc["posting_time"]);
+    }
+
+    /// <summary>A 0.4.2+ card bill: card paid the exact grand total, ERPNext gets the rounded total.</summary>
+    private static Receipt ExactCard(decimal grand, decimal rounded) =>
+        Sale("TILL2-9", [Line(1, "RICE5", "RICE 5KG", 1m, grand, grand, grand)], grand, false, 0m, [new ReceiptPayment("Credit Card", grand)], 0m)
+            with { RoundedTotal = rounded, RoundingAdjustment = rounded - grand, ExactCardOnRoundedTotal = true, DisableRoundedTotal = false };
+
+    [Fact]
+    public void Exact_card_bill_rounded_up_pays_the_difference_in_a_rounding_row()
+    {
+        var payload = Build(ExactCard(M("11.429"), M("11.500")));
+
+        Assert.Equal(0, payload.Doc["disable_rounded_total"]);
+        // ERPNext refuses a POS Invoice paid below its rounded total, so the card's exact amount gets a Rounding row beside it.
+        Assert.Equal(new[] { ("Credit Card", M("11.429")), (PosInvoicePayload.RoundingMode, M("0.071")) },
+            Rows(payload.Doc, "payments").Select(p => ((string)p["mode_of_payment"]!, (decimal)p["amount"]!)));
+        Assert.False(payload.Doc.ContainsKey("write_off_amount"));
+        Assert.Equal(0m, payload.Doc["change_amount"]);
+        Assert.Equal(new ExpectedTotals(M("11.429"), M("11.500"), true), payload.Expected);
+    }
+
+    [Fact]
+    public void Exact_card_bill_rounded_down_books_the_difference_as_change()
+    {
+        var payload = Build(ExactCard(M("14.370"), M("14.250")));
+
+        Assert.Equal(0, payload.Doc["disable_rounded_total"]);
+        Assert.Equal(M("14.370"), Assert.Single(Rows(payload.Doc, "payments"))["amount"]);
+        Assert.Equal(M("0.120"), payload.Doc["change_amount"]);
+        Assert.False(payload.Doc.ContainsKey("write_off_amount"));
+        Assert.Equal(new ExpectedTotals(M("14.370"), M("14.250"), true), payload.Expected);
+    }
+
+    [Fact]
+    public void Exact_card_bill_already_on_a_quarter_needs_no_adjustment()
+    {
+        var payload = Build(ExactCard(M("10.500"), M("10.500")));
+
+        Assert.Equal(0, payload.Doc["disable_rounded_total"]);
+        Assert.Equal(0m, payload.Doc["change_amount"]);
+        Assert.Single(Rows(payload.Doc, "payments"));
     }
 
     [Fact]

@@ -5,8 +5,8 @@
     <UseWPF>true</UseWPF>
     <AssemblyName>TillPOS</AssemblyName>
     <RootNamespace>TillPOS.App</RootNamespace>
-    <Version>0.4.1</Version>
-    <InformationalVersion>0.4.1-test</InformationalVersion>
+    <Version>0.4.2</Version>
+    <InformationalVersion>0.4.2-test</InformationalVersion>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\TillPOS.Core\TillPOS.Core.csproj" />

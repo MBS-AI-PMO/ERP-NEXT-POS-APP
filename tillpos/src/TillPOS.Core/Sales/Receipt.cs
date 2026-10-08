@@ -61,6 +61,13 @@ public sealed record Receipt(
 
     public bool? DisableRoundedTotal { get; init; }
 
+    /// <summary>A card-only sale taken with rounding on: the card is charged the exact grand total, but the invoice still goes to
+    /// ERPNext with its rounded total (<see cref="RoundedTotal"/> / <see cref="RoundingAdjustment"/> hold it; the customer sees
+    /// no rounding), because POS Awesome's consolidation at closing only balances when every bill of the shift is rounded. The
+    /// few fils between the two go in a "Rounding" payment row (rounded total above the card amount) or are booked as change
+    /// (below), as POS Awesome does with an exact card amount.</summary>
+    public bool ExactCardOnRoundedTotal { get; init; }
+
     /// <summary>The bill's customer; null = the POS Profile's default customer. A return keeps its original's (ERPNext requires
     /// the same customer on a return as on the bill it returns), e.g. a bill of another till made for a named customer.</summary>
     public string? Customer { get; init; }

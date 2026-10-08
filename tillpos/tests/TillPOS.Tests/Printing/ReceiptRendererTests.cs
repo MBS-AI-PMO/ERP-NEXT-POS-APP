@@ -77,7 +77,9 @@ public class ReceiptRendererTests
             "AL AIN MARKETING L.L.C", "Nuaimiya 1, Al Ain Market, Ajman, UAE", "Tel: +971 6 000 0000", "TRN: 100000000000003",
             "TAX INVOICE", "Invoice No: TILL2-20261006153000-000001", "Date      : 06/10/2026 15:30", "Cashier   : Test Cashier",
             "Till      : Till 2", "Item", "FULL CREAM MILK 1L", "CUCUMBER/KIYAR", "Items: 2", "Total excl. VAT", "VAT 5%", "TOTAL AED",
-            "Rounding", "AMOUNT DUE", "Cash Counter 2", "Change", "Thank you for shopping with us", "Prices include 5% VAT");
+            "Rounding", "AMOUNT DUE", "Cash ", "Change", "Thank you for shopping with us", "Prices include 5% VAT");
+        Assert.Contains(lines, l => l.StartsWith("Cash ") && l.EndsWith(" 20.00"));
+        Assert.DoesNotContain(lines, l => l.Contains("Counter 2"));
         Assert.Contains(lines, l => l.StartsWith("Item") && l.EndsWith("Qty     Price    Amount"));
         Assert.Contains(lines, l => l.EndsWith("2      6.79     13.58"));
         Assert.Contains(lines, l => l.EndsWith("0.740 Kg      3.50      2.59"));
@@ -361,6 +363,30 @@ public class ReceiptRendererTests
 
         Assert.Contains(lines, l => l.StartsWith("Rounding") && l.EndsWith(" 0.08"));
         Assert.Contains(lines, l => l.StartsWith("AMOUNT DUE") && l.EndsWith(" 16.25"));
+        AssertInOrder(lines, "Card (Visa/Master)", "Cash ", "Change");
+    }
+
+    [Fact]
+    public void Payment_rows_print_cash_or_card_not_the_erpnext_mode_names()
+    {
+        var split = Sale() with { Payments = [new ReceiptPayment("Credit Card", 10m), new ReceiptPayment("Cash Counter 1", 10m)] };
+
+        var lines = Text(split);
+
+        Assert.Contains(lines, l => l.StartsWith("Card (Visa/Master)") && l.EndsWith(" 10.00"));
+        Assert.Contains(lines, l => l.StartsWith("Cash ") && l.EndsWith(" 10.00"));
+        Assert.DoesNotContain(lines, l => l.Contains("Credit Card") || l.Contains("Cash Counter"));
+    }
+
+    [Fact]
+    public void The_counters_card_modes_decide_which_row_is_the_card()
+    {
+        var bill = Sale() with { Payments = [new ReceiptPayment("Network POS", 10m), new ReceiptPayment("Cash Counter 1", 10m)] };
+
+        var lines = Text(bill, header: Header with { CardModes = ["Network POS"] });
+
+        Assert.Contains(lines, l => l.StartsWith("Card (Visa/Master)") && l.EndsWith(" 10.00"));
+        Assert.Contains(lines, l => l.StartsWith("Cash ") && l.EndsWith(" 10.00"));
     }
 
     [Fact]
@@ -381,6 +407,12 @@ public class ReceiptRendererTests
         Assert.DoesNotContain("Rounding", text);
         Assert.DoesNotContain("AMOUNT DUE", text);
         Assert.DoesNotContain("Change", text);
+
+        // A card bill keeps ERPNext's rounded total for the upload only: the customer still sees the exact amount.
+        var exact = string.Join("\n", Text(card with { RoundedTotal = M("16.250"), RoundingAdjustment = M("0.080"), ExactCardOnRoundedTotal = true }));
+        Assert.DoesNotContain("Rounding", exact);
+        Assert.DoesNotContain("AMOUNT DUE", exact);
+        Assert.Contains("Card (Visa/Master)", exact);
     }
 
     [Fact]

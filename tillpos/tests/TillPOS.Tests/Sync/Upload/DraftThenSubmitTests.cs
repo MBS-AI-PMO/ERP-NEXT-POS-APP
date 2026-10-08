@@ -90,7 +90,21 @@ public sealed class DraftThenSubmitTests : IDisposable
 
         var info = receipts.SyncInfo("TILL2-A");
         Assert.Equal(ReceiptSyncStatus.Failed, info.Status);
-        Assert.Contains("paid 10.400 (after change) against 10.500 due", info.LastError);
+        Assert.Contains("paid 10.400 (after change and write-off) against 10.500 due", info.LastError);
+    }
+
+    [Fact]
+    public async Task A_write_off_counts_towards_the_amount_due()
+    {
+        erp.OnInsert = (doctype, doc) => doctype != "POS Invoice" ? null : new Dictionary<string, object?>
+        {
+            ["grand_total"] = M("10.500"), ["rounded_total"] = 0m, ["paid_amount"] = M("10.400"), ["change_amount"] = 0m,
+            ["write_off_amount"] = M("0.100"),
+        };
+
+        await New().RunOnceAsync();
+
+        Assert.Equal(ReceiptSyncStatus.Synced, receipts.SyncInfo("TILL2-A").Status);
     }
 
     [Fact]

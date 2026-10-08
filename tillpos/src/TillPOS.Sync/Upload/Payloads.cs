@@ -22,6 +22,10 @@ public static class PosInvoicePayload
 {
     public const string Doctype = "POS Invoice";
 
+    /// <summary>The ERPNext Mode of Payment for an exact card bill's round-up (type General, account "Round Off - AAML"); see the
+    /// admin checklist. Never shown to the customer or counted in a drawer.</summary>
+    public const string RoundingMode = "Rounding";
+
     /// <param name="r">The receipt.</param>
     /// <param name="posProfile">The POS Profile of the shift's counter (ShiftOpening.Counter); the receipt's own PosProfile wins
     /// when it has one (saved at sale time).</param>
@@ -52,8 +56,11 @@ public static class PosInvoicePayload
             ["ignore_pricing_rule"] = 1,
         };
         if (!string.IsNullOrWhiteSpace(profile.TaxesAndCharges)) doc["taxes_and_charges"] = profile.TaxesAndCharges;
-        // A profile that disabled the rounded total at sale time stays disabled; otherwise only cash-only bills use it.
-        doc["disable_rounded_total"] = r.DisableRoundedTotal == true || !r.UsesErpRoundedTotal ? 1 : 0;
+        // A bill taken with rounding disabled stays disabled; otherwise cash and split bills use the rounded total, and so does an
+        // exact card bill (Receipt.ExactCardOnRoundedTotal), so every bill of the shift is rounded and the consolidation balances.
+        var exactCard = r.ExactCardOnRoundedTotal && r.Kind == ReceiptKind.Sale && r.DisableRoundedTotal != true;
+        var usesRounded = r.DisableRoundedTotal != true && (r.UsesErpRoundedTotal || exactCard);
+        doc["disable_rounded_total"] = usesRounded ? 0 : 1;
         doc["items"] = r.Lines.Select(l => Item(l, warehouse, originalRows?.GetValueOrDefault(l.LineNo))).ToList();
         doc["payments"] = r.Payments
             .Select(p => new Dictionary<string, object?> { ["mode_of_payment"] = p.ModeOfPayment, ["amount"] = p.Amount })
@@ -66,6 +73,17 @@ public static class PosInvoicePayload
             doc["paid_amount"] = paid;
             doc["base_paid_amount"] = paid;
             doc["change_amount"] = 0m;
+        }
+        else if (exactCard)
+        {
+            // The card paid the exact grand total. ERPNext refuses a POS Invoice paid below its rounded total (a write-off does not
+            // count), so a rounded total above the card amount gets a "Rounding" payment row for the few fils (booked to the round-off
+            // account); one below it is the "change", as POS Awesome books an exact card amount.
+            var difference = r.RoundedTotal - r.Payments.Sum(p => p.Amount);
+            if (difference > 0m)
+                ((List<Dictionary<string, object?>>)doc["payments"]!).Add(
+                    new Dictionary<string, object?> { ["mode_of_payment"] = RoundingMode, ["amount"] = difference });
+            doc["change_amount"] = difference < 0m ? -difference : 0m;
         }
         else
         {
@@ -82,7 +100,7 @@ public static class PosInvoicePayload
         }
         doc["docstatus"] = 0; // inserted as a draft, checked, then submitted (Uploader)
 
-        var expected = new ExpectedTotals(r.GrandTotal, r.UsesErpRoundedTotal ? r.RoundedTotal : r.GrandTotal, r.UsesErpRoundedTotal);
+        var expected = new ExpectedTotals(r.GrandTotal, usesRounded ? r.RoundedTotal : r.GrandTotal, usesRounded);
         return new InvoicePayload(doc, expected);
     }
 

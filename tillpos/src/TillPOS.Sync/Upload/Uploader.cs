@@ -659,7 +659,7 @@ public sealed class Uploader
     }
 
     private static readonly string[] InvoiceFields =
-        ["name", "docstatus", "grand_total", "rounded_total", "paid_amount", "change_amount", "outstanding_amount"];
+        ["name", "docstatus", "grand_total", "rounded_total", "paid_amount", "change_amount", "write_off_amount", "outstanding_amount"];
 
     /// <summary>The document with this client id in ERPNext (submitted first, else this till's own draft), or null. One found
     /// only cancelled is a failure to check by hand: it is never adopted and never inserted again.</summary>
@@ -692,7 +692,7 @@ public sealed class Uploader
     }
 
     /// <summary>Why ERPNext's invoice is not what the till charged, or null: grand and rounded total, and what was paid (paid −
-    /// change) against the amount due, each within the write-off limit; once submitted, nothing may be outstanding.</summary>
+    /// change + write-off) against the amount due, each within the write-off limit; once submitted, nothing may be outstanding.</summary>
     private static string? Mismatch(Doc doc, Found found)
     {
         if (doc.Expected is not { } till) return null;
@@ -705,9 +705,9 @@ public sealed class Uploader
             problems.Add(string.Create(CultureInfo.InvariantCulture,
                 $"ERPNext's total is {grand} (rounded {rounded}), but the till charged {till.GrandTotal} (rounded {till.RoundedTotal})"));
         var due = rounded != 0m ? rounded : grand;
-        var paid = erp.Dec("paid_amount") - erp.Dec("change_amount");
+        var paid = erp.Dec("paid_amount") - erp.Dec("change_amount") + erp.Dec("write_off_amount");
         if (Math.Abs(paid - due) > limit)
-            problems.Add(string.Create(CultureInfo.InvariantCulture, $"paid {paid} (after change) against {due} due"));
+            problems.Add(string.Create(CultureInfo.InvariantCulture, $"paid {paid} (after change and write-off) against {due} due"));
         if (found.DocStatus == 1 && erp.Dec("outstanding_amount") != 0m)
             problems.Add(string.Create(CultureInfo.InvariantCulture, $"{erp.Dec("outstanding_amount")} is outstanding after submit"));
         if (problems.Count == 0) return null;

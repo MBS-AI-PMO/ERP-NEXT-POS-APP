@@ -58,7 +58,7 @@ public class SaleRecorderTests
     }
 
     [Fact]
-    public void Card_sale_is_exact_and_not_rounded()
+    public void Card_sale_charges_the_exact_total_and_keeps_erpnexts_rounded_total_for_the_upload()
     {
         var cart = NewCart();
         cart.AddBarcode("111");
@@ -66,10 +66,40 @@ public class SaleRecorderTests
 
         var r = Recorder().CompleteSale(cart, plan, "cashier", "S1");
 
-        Assert.False(r.UsesErpRoundedTotal);
+        Assert.False(r.UsesErpRoundedTotal);                       // the customer sees no rounding
+        Assert.True(r.ExactCardOnRoundedTotal);
+        Assert.Equal(M("6.750"), r.RoundedTotal);                  // what ERPNext will compute (6.79 → 6.75)
+        Assert.Equal(M("-0.040"), r.RoundingAdjustment);
+        Assert.Equal(0m, r.RoundingDifference);
+        Assert.Equal(0m, r.Change);
+        Assert.Equal(new[] { new ReceiptPayment("Credit Card", M("6.790")) }, r.Payments);
+    }
+
+    [Fact]
+    public void Card_sale_with_rounding_disabled_has_no_rounded_total()
+    {
+        var exact = Money with { DisableRoundedTotal = true };
+        var cart = new Cart(new SaleContext(catalog, exact, "Standard Selling", "Stores - AAML", null, Vat, () => new DateOnly(2026, 10, 6)));
+        cart.AddBarcode("111");
+        var plan = new PaymentCalculator(exact).Plan(cart.Totals().GrandTotal, Tender.Card());
+
+        var r = Recorder().CompleteSale(cart, plan, "cashier", "S1");
+
+        Assert.False(r.ExactCardOnRoundedTotal);
         Assert.Equal(0m, r.RoundedTotal);
         Assert.Equal(0m, r.RoundingAdjustment);
-        Assert.Equal(new[] { new ReceiptPayment("Credit Card", M("6.790")) }, r.Payments);
+    }
+
+    [Fact]
+    public void Cash_and_split_sales_are_not_exact_card_bills()
+    {
+        var cart = NewCart();
+        cart.AddBarcode("111");
+        Assert.False(Recorder().CompleteSale(cart, payments.Plan(cart.Totals().GrandTotal, Tender.Cash(10m)), "c", "S1").ExactCardOnRoundedTotal);
+        cart.AddBarcode("111");
+        cart.AddBarcode("111");
+        Assert.False(Recorder().CompleteSale(cart, payments.Plan(cart.Totals().GrandTotal, Tender.Split(10m, 5m)), "c", "S1")
+            .ExactCardOnRoundedTotal);
     }
 
     [Fact]

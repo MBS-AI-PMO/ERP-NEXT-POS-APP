@@ -47,7 +47,7 @@ public static class ShiftReportRenderer
         if (firstCountDifference is { } first)
             foreach (var part in Wrap("First count difference: " + Money(first), w)) Add(part);
         if (!string.IsNullOrWhiteSpace(approvedBy))
-            foreach (var part in Wrap("Variance approved by: " + approvedBy, w)) Add(part);
+            foreach (var part in Wrap("Closed with supervisor: " + approvedBy, w)) Add(part);
         Add(Fit(Signature, w));
         return lines;
     }

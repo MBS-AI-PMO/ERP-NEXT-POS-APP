@@ -1,3 +1,4 @@
+using System.Globalization;
 using TillPOS.Core.Money;
 
 namespace TillPOS.Core.Payments;
@@ -12,8 +13,8 @@ public sealed record Tender(TenderKind Kind, decimal CardAmount, decimal CashTen
 }
 
 /// <summary>How a bill is paid. GrandTotal is ERPNext's exact total; AmountDue is what the customer pays.
-/// UsesErpRoundedTotal = cash-only bill (ERPNext rounded total applies, unless the POS Profile disables it); card and split bills are not rounded as a whole.
-/// RoundingDifference = cash due − the exact cash portion (negative when rounding went down).</summary>
+/// UsesErpRoundedTotal = cash and split bills (ERPNext's rounded total is the amount due, unless rounding is disabled); card-only
+/// bills are exact. RoundingDifference = amount due − grand total (negative when rounding went down).</summary>
 public sealed record PaymentPlan(
     TenderKind Kind,
     decimal GrandTotal,
@@ -29,10 +30,11 @@ public sealed record PaymentPlan(
     public bool IsComplete => Shortfall == 0m;
 }
 
-/// <summary>Spec §0 decision 4: card exact; cash rounded to the currency's smallest fraction with ERPNext's rule;
-/// split = card exact + cash remainder rounded. When the POS Profile disables the rounded total (MoneySettings.DisableRoundedTotal),
-/// ERPNext keeps the exact grand total, so cash is exact too (only rounded to the currency precision) and no bill uses a
-/// rounded total.</summary>
+/// <summary>Card exact; cash rounded to the currency's smallest fraction with ERPNext's rule; split = the whole bill rounded like
+/// cash (ERPNext's rounded total, as POS Awesome does), the card part charged exactly as entered and the cash part the rest, so
+/// what is paid always equals ERPNext's rounded total. When rounding is disabled (MoneySettings.DisableRoundedTotal), ERPNext
+/// keeps the exact grand total, so cash is exact too (only rounded to the currency precision) and no bill uses a rounded
+/// total.</summary>
 public sealed class PaymentCalculator(MoneySettings money)
 {
     public PaymentPlan Plan(decimal grandTotal, Tender tender) => tender.Kind switch
@@ -60,12 +62,36 @@ public sealed class PaymentCalculator(MoneySettings money)
 
     private PaymentPlan Split(decimal grandTotal, Tender tender)
     {
-        if (tender.CardAmount <= 0m || tender.CardAmount >= grandTotal)
-            throw new ArgumentOutOfRangeException(nameof(tender), "The card part must be more than zero and less than the bill total.");
-        var remainder = grandTotal - tender.CardAmount;
-        if (CashRound(remainder) <= 0m)
-            throw new ArgumentOutOfRangeException(nameof(tender), "The cash part rounds to zero; take the whole amount by card.");
-        return WithCash(grandTotal, TenderKind.Split, tender.CardAmount, remainder, tender.CashTendered);
+        if (money.DisableRoundedTotal)
+        {
+            if (tender.CardAmount <= 0m || tender.CardAmount >= grandTotal)
+                throw new ArgumentOutOfRangeException(nameof(tender), "The card part must be more than zero and less than the bill total.");
+            if (CashRound(grandTotal - tender.CardAmount) <= 0m)
+                throw new ArgumentOutOfRangeException(nameof(tender), "The cash part rounds to zero; take the whole amount by card.");
+            return WithCash(grandTotal, TenderKind.Split, tender.CardAmount, grandTotal - tender.CardAmount, tender.CashTendered);
+        }
+
+        var due = CashRound(grandTotal);
+        if (tender.CardAmount <= 0m || tender.CardAmount >= due)
+            throw new ArgumentOutOfRangeException(nameof(tender),
+                $"The card part must be more than zero and less than the amount due ({due.ToString("0.00", CultureInfo.InvariantCulture)}); " +
+                "for the whole amount by card use Card.");
+        var cashDue = Rounder.Round(due - tender.CardAmount, money);
+        // The drawer only has coins down to the smallest fraction (AED 0.25): a cash part like 10.12 would owe change it cannot give.
+        var fraction = money.SmallestCurrencyFraction;
+        if (fraction > 0m && cashDue % fraction != 0m)
+        {
+            var lowerCash = Math.Floor(cashDue / fraction) * fraction;
+            var cards = new[] { due - lowerCash - fraction, due - lowerCash }.Where(c => c > 0m && c < due)
+                .Select(c => c.ToString("0.00", CultureInfo.InvariantCulture));
+            throw new ArgumentOutOfRangeException(nameof(tender),
+                $"The cash part must be in steps of {fraction.ToString("0.00", CultureInfo.InvariantCulture)}: make the card part " +
+                string.Join(" or ", cards) + ".");
+        }
+        var shortfall = Math.Max(0m, cashDue - tender.CashTendered);
+        var change = Math.Max(0m, tender.CashTendered - cashDue);
+        return new PaymentPlan(TenderKind.Split, grandTotal, true, due, tender.CardAmount, cashDue, tender.CashTendered, change, shortfall,
+            Rounder.Round(due - grandTotal, money));
     }
 
     private decimal CashRound(decimal value) =>

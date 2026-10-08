@@ -51,10 +51,13 @@ public sealed class DryRunChecks(IErpClient reader)
                 issues.Add(new("pos_profile", $"POS Profile {profileName} does not exist"));
             else
             {
-                if (receipt.Change > 0m && profile.StrOrNull("account_for_change_amount") is null)
+                // The payment rows and change sent (an exact card bill's Rounding row or change is worked out for the payload, not
+                // stored on the receipt); whatever they leave short of the amount due must be written off.
+                var change = body.GetValueOrDefault("change_amount") as decimal? ?? 0m;
+                if (change > 0m && profile.StrOrNull("account_for_change_amount") is null)
                     issues.Add(new("account_for_change_amount", $"POS Profile {profileName} has no change account, but the bill gives change"));
-                var due = receipt.UsesErpRoundedTotal ? receipt.RoundedTotal : receipt.GrandTotal;
-                var paid = receipt.Payments.Sum(p => p.Amount) - receipt.Change;
+                var due = Equals(body.GetValueOrDefault("disable_rounded_total"), 0) ? receipt.RoundedTotal : receipt.GrandTotal;
+                var paid = Rows(body, "payments").Sum(p => p.GetValueOrDefault("amount") as decimal? ?? 0m) - change;
                 if (paid != due && profile.StrOrNull("write_off_account") is null)
                     issues.Add(new("write_off_account", string.Create(CultureInfo.InvariantCulture,
                         $"POS Profile {profileName} has no write-off account, but the bill needs a write-off of {due - paid}")));

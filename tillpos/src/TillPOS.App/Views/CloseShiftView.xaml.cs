@@ -1,41 +1,24 @@
-using System.ComponentModel;
-using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using TillPOS.Presentation;
 
 namespace TillPOS.App.Views;
 
-/// <summary>Close shift: the blind count, then the result. In the count, Enter moves to the next box and Esc goes back to
-/// the sale; every button is non-focusable, so typing always lands in a box. A scan here is ignored by the main window.</summary>
+/// <summary>Close shift: the blind count. Enter moves to the next box and Esc goes back to the sale; every button is
+/// non-focusable, so typing always lands in a box. A scan here is ignored by the main window.</summary>
 public partial class CloseShiftView : UserControl
 {
     public CloseShiftView()
     {
         InitializeComponent();
-        Loaded += (_, _) => FocusStage();
+        // After layout: the AED 500 box.
+        Loaded += (_, _) => Keyboarding.FocusWhenReady(this, () => Keyboarding.FirstTextBox(CountStage));
         // Select the box's text on entry, so a count is replaced by typing rather than appended to.
         CountStage.AddHandler(GotKeyboardFocusEvent, new KeyboardFocusChangedEventHandler((_, e) =>
         {
             if (e.NewFocus is TextBox box) box.SelectAll();
         }));
-        DataContextChanged += (_, e) =>
-        {
-            if (e.OldValue is CloseShiftViewModel old) old.PropertyChanged -= OnViewModelChanged;
-            if (e.NewValue is CloseShiftViewModel vm) vm.PropertyChanged += OnViewModelChanged;
-        };
     }
-
-    private void OnViewModelChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName == nameof(CloseShiftViewModel.IsCounting)) FocusStage();
-    }
-
-    /// <summary>After layout (a collapsed panel cannot take focus): the AED 500 box while counting (on arrival and after a
-    /// recount), otherwise the view itself, so the keyboard is never left on a hidden box.</summary>
-    private void FocusStage() =>
-        Keyboarding.FocusWhenReady(this, () =>
-            DataContext is CloseShiftViewModel { IsCounting: true } ? Keyboarding.FirstTextBox(CountStage) : this);
 
     private void CountStageKeyDown(object sender, KeyEventArgs e)
     {

@@ -40,6 +40,9 @@ HOW TO START
 #EXE#   program. Click "More info", then click "Run anyway".
 
 USED AN OLDER TEST VERSION ON THIS PC?
+#DEV#FIRST close the open shift on the old version (Close shift) and wait until
+#DEV#the top bar shows "0 waiting". A shift started on an older version and
+#DEV#finished on this one cannot be closed in ERPNext.
 The till keeps the settings it already has in {{DATA_FOLDER}}.
 To start with this version's settings (and the sample QR code), close
 TillPOS, delete {{DATA_FOLDER}}\settings.json, then start it again.
@@ -76,9 +79,8 @@ shift is closed; the top bar shows it next to the till number.
 A counter marked "Not available" cannot be used on this till: its settings
 could not be downloaded from ERPNext (for example the test login cannot
 read it), or it uses a different price list or company. Choose another one.
-At "Test Counter" cash is not rounded to 0.25 (its ERPNext profile turns
-rounding off), so amounts can show three decimals, for example 9.875.
-At "Counter 1" cash is rounded to 0.25 as usual.
+At every counter cash is rounded to 0.25 (12.44 is 12.50 in cash) and card
+is charged the exact amount (12.44).
 #DEV#"Counter 2" is the DEV ERPNext's "Al Ain Counter 2".
 The counters are set up on the setup screen (Settings on the Login screen).
 
@@ -96,7 +98,16 @@ Esc     Cancel / go back
 PAYING BY CARD
 The Card screen shows the exact amount to charge on the card machine (no
 cash box and no change). Charge that amount, then press "Complete & print".
-For card + cash, choose "Split".
+For card + cash, choose "Split": the bill is rounded to 0.25 like cash, and
+the card part must leave a cash part in 0.25 steps (the till says which card
+amounts work).
+
+CLOSING THE SHIFT
+Press "Close shift". Count the drawer (how many of each note and coin, or
+the total) and type the card machine's settlement total. The screen does not
+show what the till expected. Press "Close shift & print Z report": a
+supervisor must enter their PIN. The Z report then prints with the expected,
+counted and difference amounts for cash and card, for the supervisor.
 
 BARCODE SCANNER
 The scanner must press Enter after the code. Most USB scanners do this

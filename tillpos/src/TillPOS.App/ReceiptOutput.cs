@@ -51,8 +51,10 @@ public sealed class ReceiptOutput(TillSettings settings, CatalogStore store) : I
     public ReceiptHeader Header()
     {
         var pos = store.LoadPosSettings() ?? throw new InvalidOperationException("POS settings are not downloaded yet.");
+        var cardModes = settings.EffectiveCounters().Select(c => c.CardMode).Where(m => !string.IsNullOrWhiteSpace(m)).ToList();
         return new ReceiptHeader(pos.CompanyName, FirstNonBlank(pos.AddressText, settings.ShopAddress), FirstNonBlank(pos.TaxId, settings.Trn),
-            $"Till {settings.TillNumber}", settings.ReceiptFooter, FirstNonBlank(null, settings.ShopPhone), SampleQr: settings.SampleQr);
+            $"Till {settings.TillNumber}", settings.ReceiptFooter, FirstNonBlank(null, settings.ShopPhone), SampleQr: settings.SampleQr,
+            CardModes: cardModes.Count > 0 ? cardModes : null);
     }
 
     /// <summary>ERPNext's value, else the settings fallback; blank counts as missing (a blank TRN prints no TRN line and no real

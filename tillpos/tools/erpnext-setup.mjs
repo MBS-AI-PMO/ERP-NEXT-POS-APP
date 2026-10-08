@@ -2,7 +2,7 @@
 //   node erpnext-setup.mjs <config.json>
 // config.json: { "BaseUrl": "https://…/", "ApiKey": "…", "ApiSecret": "…" }  (the user needs System Manager)
 // It never touches transactions. It creates (only when missing) the Custom Fields, the "TillPOS Approval" and "POS Cashier"
-// DocTypes and the optional cashiers from the config, and adds the till role's permission rows on POS Cashier and TillPOS
+// DocTypes, the optional cashiers from the config and the "Rounding" Mode of Payment, and adds the till role's permission rows on POS Cashier and TillPOS
 // Approval (existing permission rows are kept exactly as they are; rows are only appended). Then it reports, read-only, what is
 // still to be done by hand.
 import { readFileSync } from 'node:fs';
@@ -109,6 +109,20 @@ if (await exists('Role', tillRole)) {
   await ensurePerms('POS Cashier', [{ role: tillRole, permlevel: 0, read: 1 }, { role: tillRole, permlevel: 1, read: 1 }]);
   await ensurePerms('TillPOS Approval', [{ role: tillRole, permlevel: 0, read: 1, create: 1 }]);
 } else console.log(`!!   Role ${tillRole} does not exist — create it (see docs/erpnext-production-setup.md step 2)`);
+
+// The "Rounding" Mode of Payment: an exact card bill whose rounded total is a few fils higher pays those fils in a Rounding row
+// (ERPNext refuses a POS Invoice paid below its rounded total), booked to each company's round-off account.
+if (await exists('Mode of Payment', 'Rounding')) console.log('ok   Mode of Payment Rounding exists');
+else {
+  const companies = (await call('GET', '/api/resource/Company?fields=["name","round_off_account"]')).data;
+  const missing = companies.filter(c => !c.round_off_account).map(c => c.name);
+  if (missing.length) console.log(`!!   Company ${missing.join(', ')} has no Round Off Account — set it, then run this again`);
+  else {
+    await call('POST', '/api/resource/Mode of Payment', { mode_of_payment: 'Rounding', type: 'General', enabled: 1,
+      accounts: companies.map(c => ({ company: c.name, default_account: c.round_off_account })) });
+    console.log('made Mode of Payment Rounding');
+  }
+}
 
 // Report, read-only: things the admin still has to do by hand.
 const profiles = await call('GET', '/api/resource/POS Profile?fields=["name","disable_rounded_total","write_off_limit","write_off_account","account_for_change_amount","customer"]');

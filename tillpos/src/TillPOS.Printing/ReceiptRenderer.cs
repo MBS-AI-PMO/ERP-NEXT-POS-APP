@@ -7,8 +7,10 @@ public enum PaperWidth { Mm80 = 48, Mm58 = 32 }
 
 /// <param name="SampleQr">Testing only: with no TRN, print a QR code with a zero TRN and a "SAMPLE QR" note under it, so the
 /// QR position and size can be checked on real paper. A real TRN always wins (real QR, no note).</param>
+/// <param name="CardModes">The counters' card payment modes (e.g. "Credit Card"): printed as "Card (Visa/Master)", as is any mode
+/// named "…card…"; every other mode prints as "Cash" (the ERPNext mode names, e.g. "Cash Counter 2", are not printed).</param>
 public sealed record ReceiptHeader(string CompanyName, string? Address, string? Trn, string TillName, string? Footer, string? Phone = null,
-    bool SampleQr = false);
+    bool SampleQr = false, IReadOnlyCollection<string>? CardModes = null);
 
 /// <summary>How a receipt line is printed. Title = double width + double height + bold + centred (its text is unpadded and
 /// at most half the paper columns); Big = double height + bold (full width); Bold = bold only; Qr = a centred QR code whose
@@ -81,8 +83,8 @@ public static class ReceiptRenderer
         Add(Pair("Total excl. VAT", Money(r.NetTotal), w));
         Add(Pair(VatLabel(r), Money(r.TotalTaxes), w));
         Add(Pair("TOTAL AED", Money(r.GrandTotal), w), LineStyle.Big);
-        // Cash bills use ERPNext's rounded total; split bills round only the cash part. Either way show what was
-        // actually due, so the payment lines minus change add up on paper.
+        // Cash and split bills use ERPNext's rounded total (older split bills rounded only the cash part). Either way show what
+        // was actually due, so the payment lines minus change add up on paper.
         var rounding = r.UsesErpRoundedTotal ? r.RoundingAdjustment : r.RoundingDifference;
         var amountDue = r.UsesErpRoundedTotal ? r.RoundedTotal : r.GrandTotal + r.RoundingDifference;
         if (amountDue != r.GrandTotal)
@@ -93,7 +95,7 @@ public static class ReceiptRenderer
         Rule('-');
 
         // Refunds are paid in cash from the drawer (Plan 3c decision).
-        foreach (var payment in r.Payments) Add(Pair(isReturn ? "Refund paid (cash)" : payment.ModeOfPayment, Money(payment.Amount), w));
+        foreach (var payment in r.Payments) Add(Pair(isReturn ? "Refund paid (cash)" : PaymentLabel(payment.ModeOfPayment, h), Money(payment.Amount), w));
         if (r.Change != 0m) Add(Pair("Change", Money(r.Change), w));
         var saved = decimal.Round(r.Lines.Where(l => l.Rate < l.PriceListRate).Sum(Saved), 3);
         if (!isReturn && saved > 0m) Add(Pair("You saved", Money(saved), w));
@@ -177,6 +179,16 @@ public static class ReceiptRenderer
         private static string Cell(string text, int width) =>
             width == 0 ? "" : text.Length < width ? text.PadLeft(width) : " " + text;
     }
+
+    public const string CashLabel = "Cash";
+    public const string CardLabel = "Card (Visa/Master)";
+
+    /// <summary>What the customer sees for a payment row: "Card (Visa/Master)" or "Cash" (see <see cref="ReceiptHeader.CardModes"/>).</summary>
+    internal static string PaymentLabel(string mode, ReceiptHeader h) =>
+        // A mode named "…card…" is always a card (also on a reprint after its counter was removed).
+        h.CardModes?.Contains(mode, StringComparer.OrdinalIgnoreCase) == true || mode.Contains("card", StringComparison.OrdinalIgnoreCase)
+            ? CardLabel
+            : CashLabel;
 
     private static decimal Saved(ReceiptLine line) => decimal.Round((line.PriceListRate - line.Rate) * line.Qty, 3);
 

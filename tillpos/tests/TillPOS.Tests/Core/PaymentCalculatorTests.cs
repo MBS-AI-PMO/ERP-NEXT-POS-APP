@@ -48,30 +48,46 @@ public class PaymentCalculatorTests
     }
 
     [Fact]
-    public void Split_charges_card_exactly_and_rounds_the_cash_remainder()
+    public void Split_rounds_the_whole_bill_and_charges_the_card_exactly()
     {
         var p = calc.Plan(M("14.37"), Tender.Split(10m, 5m));
-        Assert.False(p.UsesErpRoundedTotal);
+        Assert.True(p.UsesErpRoundedTotal);
         Assert.Equal(10m, p.CardAmount);
         Assert.Equal(M("4.25"), p.CashDue);
         Assert.Equal(M("14.25"), p.AmountDue);
         Assert.Equal(M("0.75"), p.Change);
         Assert.Equal(M("-0.12"), p.RoundingDifference);
+        Assert.True(p.IsComplete);
     }
 
     [Fact]
-    public void Split_with_a_fractional_card_amount()
+    public void Split_pays_erpnexts_rounded_total()
     {
-        var p = calc.Plan(M("14.37"), Tender.Split(M("10.10"), 5m));
-        Assert.Equal(M("4.25"), p.CashDue);
-        Assert.Equal(M("14.35"), p.AmountDue);
+        var p = calc.Plan(M("6.145"), Tender.Split(M("6.00"), M("1.00")));
+        Assert.Equal(M("6.25"), p.AmountDue);
+        Assert.Equal(M("0.25"), p.CashDue);
+        Assert.Equal(M("0.75"), p.Change);
+        Assert.Equal(M("0.105"), p.RoundingDifference);
+        Assert.Equal(p.AmountDue, p.CardAmount + p.CashTendered - p.Change);
+    }
+
+    // Production POS Awesome bill ACC-PSINV-2026-06508 took card 6.15 + cash 0.10: change in fils the drawer cannot give.
+    [Theory]
+    [InlineData("6.145", "6.15", "6.00 or 6.25")]   // due 6.25: cash 0.10 → card 6.00 (cash 0.25); 6.25 is the whole due, so not offered
+    [InlineData("20.13", "10.13", "10.00 or 10.25")]
+    public void Split_cash_part_must_be_in_quarter_steps(string grand, string card, string suggestion)
+    {
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => calc.Plan(M(grand), Tender.Split(M(card), 20m)));
+        Assert.Contains("steps of 0.25", ex.Message);
+        Assert.Contains(suggestion.Split(" or ")[0], ex.Message);
     }
 
     [Theory]
     [InlineData("0")]
-    [InlineData("14.37")]
+    [InlineData("14.25")]   // the amount due (14.37 rounds to 14.25): use Card instead
+    [InlineData("14.30")]   // under the bill total but over the amount due
     [InlineData("20")]
-    public void Split_card_part_must_be_between_zero_and_the_total(string card) =>
+    public void Split_card_part_must_be_between_zero_and_the_amount_due(string card) =>
         Assert.Throws<ArgumentOutOfRangeException>(() => calc.Plan(M("14.37"), Tender.Split(M(card), 5m)));
 
     [Fact]
@@ -99,8 +115,8 @@ public class PaymentCalculatorTests
     public void Split_whose_cash_part_rounds_to_zero_is_refused() =>
         Assert.Throws<ArgumentOutOfRangeException>(() => calc.Plan(M("10.10"), Tender.Split(M("10.00"), 0m)));
 
-    // POS Profile "Disable Rounded Total" (the live Test Counter has it on; the shop counters have it off): ERPNext keeps the
-    // exact grand total, so cash is not rounded to the quarter either.
+    // Rounding disabled (MoneySettings.DisableRoundedTotal; bills taken before the till ignored the profile's flag): ERPNext keeps
+    // the exact grand total, so cash is not rounded to the quarter either.
     private readonly PaymentCalculator exact = new(new MoneySettings(3, RoundingMethod.Bankers, 0.25m, DisableRoundedTotal: true));
 
     [Fact]

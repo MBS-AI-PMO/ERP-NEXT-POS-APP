@@ -17,7 +17,10 @@ public sealed record SaleContext(
     public static SaleContext Create(ICatalog catalog, PosSettings settings, Func<string, SalesTaxTemplate?> findSalesTaxTemplate,
         int precision, RoundingMethod rounding, Func<DateOnly> today)
     {
-        var money = new MoneySettings(precision, rounding, settings.SmallestCurrencyFraction, settings.DisableRoundedTotal);
+        // The shop's POS Profiles all tick "Disable Rounded Total", yet POS Awesome rounds every bill to the currency's smallest
+        // fraction (AED 0.25) by sending disable_rounded_total = 0 on the invoice. The till does the same, so cash is rounded
+        // whatever the profile says (card stays exact: PaymentCalculator).
+        var money = new MoneySettings(precision, rounding, settings.SmallestCurrencyFraction, DisableRoundedTotal: false);
         SalesTaxTemplate? template = null;
         if (settings.TaxesAndCharges is { } name)
             template = findSalesTaxTemplate(name)

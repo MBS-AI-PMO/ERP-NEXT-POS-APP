@@ -256,7 +256,7 @@ public sealed class CounterSelectionTests : IDisposable
     }
 
     [Fact]
-    public void Closing_the_shift_expects_cash_in_the_counters_cash_mode()
+    public async Task Closing_the_shift_expects_cash_in_the_counters_cash_mode()
     {
         f.LogInWithOpenShift(TestCounter);
         var sale = NewSale();
@@ -268,11 +268,12 @@ public sealed class CounterSelectionTests : IDisposable
         sale.CloseShift();
         var close = Assert.IsType<CloseShiftViewModel>(f.Navigator.Current);
         close.UseTotalInstead.Text = "206.79";
-        close.ConfirmCount();
+        f.Dialogs.Pins.Enqueue("9999");
+        await close.CloseAsync();
 
-        Assert.Equal(0m, close.CashDifference);
-        Assert.Contains(close.Rows, r => r.Mode == "Cash Counter 1");
-        Assert.DoesNotContain(close.Rows, r => r.Mode == "Cash Counter 2");
+        var modes = Assert.Single(f.Output.ShiftReports).Closing.Modes;
+        Assert.Equal(0m, modes.Single(m => m.ModeOfPayment == "Cash Counter 1").Difference);
+        Assert.DoesNotContain(modes, m => m.ModeOfPayment == "Cash Counter 2");
     }
 
     [Fact]
@@ -312,11 +313,11 @@ public sealed class CounterSelectionTests : IDisposable
         var close = Assert.IsType<CloseShiftViewModel>(f.Navigator.Current);
         close.UseTotalInstead.Text = "206.79";
         close.CardTotal.Text = "6.79";
-        close.ConfirmCount();
-        Assert.Equal(0m, close.CashDifference);
+        f.Dialogs.Pins.Enqueue("9999");
         await close.CloseAsync();
 
         var (opening, closing, _, _, _) = Assert.Single(f.Output.ShiftReports);
+        Assert.All(closing.Modes, m => Assert.Equal(0m, m.Difference));
         Assert.Equal(("Test Counter", "Cash Counter 1"), (opening.CounterName, opening.CashMode));
         Assert.Equal(["Cash Counter 1", "Credit Card"], closing.Modes.Select(m => m.ModeOfPayment));
     }

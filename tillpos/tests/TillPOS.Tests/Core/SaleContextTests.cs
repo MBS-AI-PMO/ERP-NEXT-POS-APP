@@ -29,7 +29,8 @@ public class SaleContextTests
         var ctx = Create(Settings("UAE VAT 5%"), n => n == "UAE VAT 5%" ? Vat : null);
         Assert.Same(Vat, ctx.TaxTemplate);
         Assert.Equal(0.25m, ctx.Money.SmallestCurrencyFraction);
-        Assert.True(ctx.Money.DisableRoundedTotal);
+        // POS Awesome rounds every bill although the profiles disable the rounded total; so does the till.
+        Assert.False(ctx.Money.DisableRoundedTotal);
         Assert.Equal("Retail", ctx.PriceList);
         Assert.Equal("Stores - S", ctx.Warehouse);
         Assert.Equal("Retail Cat", ctx.TaxCategory);

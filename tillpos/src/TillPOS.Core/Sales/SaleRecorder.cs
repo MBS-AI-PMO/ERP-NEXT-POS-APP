@@ -17,14 +17,17 @@ public sealed class SaleRecorder(IReceiptStore store, int tillNumber, TenderMode
         if (!plan.IsComplete) throw new InvalidOperationException($"Still to pay: {plan.Shortfall}.");
 
         var at = now();
+        // Card only with rounding on: the card pays the exact total, ERPNext still gets its rounded total (Receipt.ExactCardOnRoundedTotal).
+        var exactCard = plan.Kind == TenderKind.Card && !totals.RoundedTotalDisabled;
         var receipt = new Receipt(
             ClientIds.Receipt(tillNumber, at, store.NextSequence()), ReceiptKind.Sale, null, shiftClientId, cashier, at,
             ToLines(cart, totals), totals.Total, totals.NetTotal, totals.TotalTaxes, totals.GrandTotal,
             plan.UsesErpRoundedTotal,
-            plan.UsesErpRoundedTotal ? plan.AmountDue : 0m,
-            plan.UsesErpRoundedTotal ? plan.RoundingDifference : 0m,
+            plan.UsesErpRoundedTotal ? plan.AmountDue : exactCard ? totals.RoundedTotal : 0m,
+            plan.UsesErpRoundedTotal ? plan.RoundingDifference : exactCard ? totals.RoundingAdjustment : 0m,
             Payments(plan, modes), plan.Change, plan.RoundingDifference, null)
         {
+            ExactCardOnRoundedTotal = exactCard,
             CashierUser = cashierUser,
             CashierName = cashierName,
             CounterName = counterName,

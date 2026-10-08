@@ -92,7 +92,7 @@
       <!-- Card: nothing to type; the exact bill total to charge on the card machine (read-only, but it holds the keyboard so
            Enter completes). -->
       <StackPanel Visibility="{Binding IsCard, Converter={StaticResource BoolToVisibility}}" Margin="4,0">
-        <TextBlock Text="Card amount (charge exactly this on the card machine)" Style="{StaticResource SectionTitle}" Margin="0,8,0,4" />
+        <TextBlock Text="Received by card (exact bill amount, not rounded)" Style="{StaticResource SectionTitle}" Margin="0,8,0,4" />
         <TextBox x:Name="CardAmountBox" Style="{StaticResource AmountTextBox}" IsReadOnly="True" IsReadOnlyCaretVisible="False"
                  Text="{Binding CardAmountText, Mode=OneWay}" FontSize="32" FontWeight="Bold" Height="60"
                  Background="{StaticResource Subtle}" Foreground="{StaticResource Accent}" />

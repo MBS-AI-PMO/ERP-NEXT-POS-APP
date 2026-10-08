@@ -87,7 +87,7 @@ public class ShiftReportRendererTests
         ], text.Skip(mode).Take(6));
         Assert.Contains("Total incl. VAT          1234.50", text);
         Assert.Contains("Bills (sales)                 42", text);
-        Assert.Contains("Variance approved by:", text);
+        Assert.Contains("Closed with supervisor:", text);
         Assert.Contains("supervisor1", text);
     }
 
@@ -95,7 +95,7 @@ public class ShiftReportRendererTests
     public void The_approval_line_appears_only_with_an_approver()
     {
         var with = Layout(PaperWidth.Mm80, "supervisor1").Select(l => l.Text).ToList();
-        Assert.Equal("Variance approved by: supervisor1", with[^2]);
+        Assert.Equal("Closed with supervisor: supervisor1", with[^2]);
         Assert.Equal("Signature: ____________________", with[^1]);
 
         Assert.DoesNotContain(Layout(PaperWidth.Mm80, null).Select(l => l.Text), t => t.Contains("approved", StringComparison.Ordinal));
@@ -112,7 +112,7 @@ public class ShiftReportRendererTests
         var text = lines.Select(l => l.Text).ToList();
         var first = text.IndexOf("First count difference: -10.00");
         Assert.True(first > 0);
-        Assert.True(first < text.FindIndex(t => t.StartsWith("Variance approved by:", StringComparison.Ordinal)));
+        Assert.True(first < text.FindIndex(t => t.StartsWith("Closed with supervisor:", StringComparison.Ordinal)));
 
         Assert.DoesNotContain(Layout(paper, "supervisor1").Select(l => l.Text), t => t.StartsWith("First count", StringComparison.Ordinal));
         Assert.Contains("First count difference: 2.50",

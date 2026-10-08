@@ -1,9 +1,9 @@
 <#
 Builds the TillPOS field-test package.
 Usage (from the tillpos folder):
-  powershell -File tools\publish-field.ps1 -Version 0.4.1              -> ..\publish\TillPOS-field-<Version>-dev.zip      (Dev, the default)
-  powershell -File tools\publish-field.ps1 -Version 0.4.1 -SingleExe   -> ..\publish\TillPOS-exe-<Version>-dev\TillPOS.exe
-  powershell -File tools\publish-field.ps1 -Version 0.4.1 [-SingleExe] -Environment Production [-CashierPin 4821] [-SupervisorPin 7350]
+  powershell -File tools\publish-field.ps1 -Version 0.4.2              -> ..\publish\TillPOS-field-<Version>-dev.zip      (Dev, the default)
+  powershell -File tools\publish-field.ps1 -Version 0.4.2 -SingleExe   -> ..\publish\TillPOS-exe-<Version>-dev\TillPOS.exe
+  powershell -File tools\publish-field.ps1 -Version 0.4.2 [-SingleExe] -Environment Production [-CashierPin 4821] [-SupervisorPin 7350]
                                                                        -> ..\publish\TillPOS-field-<Version>.zip, ..\publish\TillPOS-exe-<Version>\
 Zip: TillPOS folder + settings.json beside the exe + START HERE.txt.
 -SingleExe: one self-contained TillPOS.exe with settings.json built in (imported on the first start into C:\ProgramData\TillPOS,
@@ -22,7 +22,7 @@ generated with a CSPRNG and printed at the end. They are written only into the p
 the repo.
 #>
 param(
-    [string]$Version = "0.4.1",
+    [string]$Version = "0.4.2",
     [string]$CashierPin,
     [string]$SupervisorPin,
     [switch]$SingleExe,
@@ -146,9 +146,9 @@ $settings = [ordered]@{
     # Production field packages never write to ERPNext (Off; the test build refuses Live). Dev packages upload Live from the
     # first start, to the dev ERPNext only.
     Upload              = $(if ($isDev) { "Live" } else { "Off" })
-    # The counters a cashier can open a shift at (the first is the default). "Test Counter" rounds nothing (its POS Profile
-    # disables the rounded total); "Al Ain Counter 1" rounds cash to 0.25. If the test API user cannot read a counter's
-    # POS Profile, that counter shows as "Not available" on the Open Shift screen.
+    # The counters a cashier can open a shift at (the first is the default). Every counter rounds cash to 0.25 and charges
+    # card exactly. If the test API user cannot read a counter's POS Profile, that counter shows as "Not available" on the
+    # Open Shift screen.
     Counters            = @(
         [ordered]@{ PosProfile = "Test Counter";     Label = "Test Counter"; CashMode = "Cash Counter 2"; CardMode = "Credit Card" },
         [ordered]@{ PosProfile = "Al Ain Counter 1"; Label = "Counter 1";    CashMode = "Cash Counter 1"; CardMode = "Credit Card" }

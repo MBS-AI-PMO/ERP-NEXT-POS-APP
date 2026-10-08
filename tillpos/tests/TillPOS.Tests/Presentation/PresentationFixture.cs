@@ -62,6 +62,7 @@ public sealed class PresentationFixture : IDisposable
                 "Al Ain Counter 2" => new SaleContext(Catalog, new MoneySettings(3, RoundingMethod.Bankers, 0.25m), "Standard Selling",
                     "Stores - AAML", null, Vat, () => new DateOnly(2026, 10, 7))
                     { PosProfile = "Al Ain Counter 2", Company = "Al Ain Marketing LLC" },
+                // Rounding disabled: the app now always rounds cash (SaleContext.Create), but the counter's money settings must still reach the bill.
                 "Test Counter" => new SaleContext(Catalog, new MoneySettings(3, RoundingMethod.Bankers, 0.25m, DisableRoundedTotal: true),
                     "Standard Selling", "Test Stores - AAML", null, Vat, () => new DateOnly(2026, 10, 7))
                     { PosProfile = "Test Counter", Company = "Al Ain Marketing LLC" },

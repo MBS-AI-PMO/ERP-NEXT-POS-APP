@@ -34,7 +34,7 @@ The till already lists counters from its settings ("Al Ain Counter 1", "Al Ain C
 
 - **Company**, **Warehouse** (Stores - AAML), **Selling Price List** "Standard Selling", **Taxes and Charges** "UAE VAT 5% - AAML".
 - **Payments:** the counter's cash mode (e.g. "Cash Counter 1" → account "POS Cash Drawer 1 - AAML") set as **default**, plus "Credit Card".
-- **Disable Rounded Total:** off on real counters (cash rounds to AED 0.25). It is on for "Test Counter", so that counter takes exact cash.
+- **Disable Rounded Total:** the till ignores this setting, as POS Awesome does: cash and split bills are rounded to AED 0.25 and card bills are charged the exact amount, whatever the profile says (all three profiles have it ticked today).
 - **Write Off Limit:** 0.05, with the write-off account and cost centre set, so a rounding difference of a few fils never blocks an upload.
 - **Account for Change Amount:** the counter's cash account.
 - **Customer:** the walk-in customer.
@@ -76,9 +76,11 @@ Fields: `cashier_name` (Data), `user` (Link → User; the cashier's ERPNext user
 
 Add every cashier and supervisor. The test PINs in the field builds stop working as soon as this list syncs.
 
-## 7. Stock, company and tax
+## 7. Stock, company, tax and rounding
 
 - **Stock Settings → Allow Negative Stock = on** (agreed), so an offline bill is never rejected for stock.
+- **Mode of Payment "Rounding"** (type General; account: the company's **Round Off - AAML**). `erpnext-setup.mjs` creates it when run with an Accounts Manager or System Manager key. A card bill is charged the exact amount, but every bill goes to ERPNext with its rounded total (POS Awesome's closing only balances that way). When the rounded total is a few fils higher than the card amount, the till adds those fils as a "Rounding" payment row, because ERPNext refuses a POS Invoice paid below its rounded total. When it is lower, the fils are booked as change, as POS Awesome does today. The Rounding mode does not need to be on the POS Profiles, so it never appears in POS Awesome.
+- **Time zone:** the till sends every date and time in UAE time (UTC+4), whatever the till PC's own time zone is.
 - **Company → Tax ID** = the shop's TRN. **Company address** with "Is Your Company Address" ticked and linked on each POS Profile (Company Address). The till then prints the real TRN and the real QR code instead of the sample.
 
 ## 8. Before the live sync test (sandbox)
