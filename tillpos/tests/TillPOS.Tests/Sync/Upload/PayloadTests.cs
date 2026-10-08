@@ -194,6 +194,23 @@ public partial class PayloadTests
     }
 
     [Fact]
+    public void A_return_sends_what_it_pays_back_and_no_change()
+    {
+        var json = ErpFormat.Json(Build(Return("TILL2-20261006153005-000001"), returnAgainst: "ACC-PSINV-2026-01234").Doc);
+
+        Assert.Contains("\"payments\":[{\"mode_of_payment\":\"Cash Counter 1\",\"amount\":-10.500}],\"paid_amount\":-10.500,\"base_paid_amount\":-10.500,\"change_amount\":0,", json);
+    }
+
+    [Fact]
+    public void A_sale_leaves_paid_amount_to_erpnext()
+    {
+        var r = Sale("TILL2-9", [Line(1, "A", "A", 1m, 1m, 1m, 1m)], 1m, true, 1m, [new ReceiptPayment("Cash Counter 1", 5m)], 4m);
+        var doc = Build(r).Doc;
+        Assert.False(doc.ContainsKey("paid_amount") || doc.ContainsKey("base_paid_amount"));
+        Assert.Equal(4m, doc["change_amount"]);
+    }
+
+    [Fact]
     public void Return_without_receipt_has_no_return_against()
     {
         var payload = Build(Return(null), returnAgainst: null);

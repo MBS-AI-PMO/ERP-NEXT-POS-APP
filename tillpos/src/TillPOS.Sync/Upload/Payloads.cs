@@ -58,7 +58,19 @@ public static class PosInvoicePayload
         doc["payments"] = r.Payments
             .Select(p => new Dictionary<string, object?> { ["mode_of_payment"] = p.ModeOfPayment, ["amount"] = p.Amount })
             .ToList();
-        doc["change_amount"] = r.Change;
+        if (r.Kind == ReceiptKind.Return)
+        {
+            // ERPNext's POS Invoice validation (validate_change_amount) computes paid_amount − grand_total for a return before it
+            // fills paid_amount itself, and crashes (HTTP 500 TypeError) without it: a return sends what it pays back (negative).
+            var paid = r.Payments.Sum(p => p.Amount);
+            doc["paid_amount"] = paid;
+            doc["base_paid_amount"] = paid;
+            doc["change_amount"] = 0m;
+        }
+        else
+        {
+            doc["change_amount"] = r.Change;
+        }
         doc["posa_pos_opening_shift"] = openingShiftErpName;
         if (!string.IsNullOrWhiteSpace(cashierUser)) doc["posa_cashier"] = cashierUser;
         doc["posa_client_request_id"] = r.ClientId;
