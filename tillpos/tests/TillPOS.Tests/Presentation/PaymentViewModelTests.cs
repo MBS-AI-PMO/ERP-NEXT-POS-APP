@@ -47,6 +47,57 @@ public sealed class PaymentViewModelTests : IDisposable
     }
 
     [Fact]
+    public void Card_mode_shows_the_exact_amount_to_charge_and_no_cash_entry()
+    {
+        sale.Scan("111");                                              // 13.58: cash would round, the card is exact
+        var vm = Pay(TenderKind.Card);
+
+        Assert.True(vm.IsCard);
+        Assert.False(vm.ShowsCashEntry);
+        Assert.Equal("13.58", vm.CardAmountText);
+        Assert.Equal("13.58", vm.AmountDue);
+    }
+
+    [Fact]
+    public void In_card_mode_the_keypad_and_quick_cash_have_no_target()
+    {
+        var vm = Pay(TenderKind.Card);
+
+        vm.KeyCommand.Execute("5");
+        vm.QuickCashCommand.Execute(20m);
+
+        Assert.Equal("", vm.Cash.Text);
+        Assert.Equal("", vm.Card.Text);
+        Assert.Equal("6.79", vm.CardAmountText);
+        Assert.Equal("0.00", vm.Change);
+    }
+
+    [Fact]
+    public void Switching_between_cash_card_and_split_updates_what_is_shown()
+    {
+        var vm = Pay(TenderKind.Cash);
+        Assert.Equal((false, true, ""), (vm.IsCard, vm.ShowsCashEntry, vm.CardAmountText));
+        var changed = new List<string?>();
+        vm.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+        vm.SetKindCommand.Execute("Card");
+        Assert.Equal((true, false, "6.79"), (vm.IsCard, vm.ShowsCashEntry, vm.CardAmountText));
+        Assert.Contains(nameof(PaymentViewModel.IsCard), changed);
+        Assert.Contains(nameof(PaymentViewModel.ShowsCashEntry), changed);
+        Assert.Contains(nameof(PaymentViewModel.CardAmountText), changed);
+
+        vm.SetKindCommand.Execute("Split");                            // card box + cash box, as before
+        Assert.Equal((false, true, ""), (vm.IsCard, vm.ShowsCashEntry, vm.CardAmountText));
+        Assert.True(vm.IsSplit);
+
+        vm.SetKindCommand.Execute("Cash");
+        vm.KeyCommand.Execute("2");
+        vm.KeyCommand.Execute("0");
+        Assert.Equal("20", vm.Cash.Text);
+        Assert.Equal("13.25", vm.Change);
+    }
+
+    [Fact]
     public void Card_payment_is_exact_and_does_not_open_the_drawer()
     {
         var vm = Pay(TenderKind.Card);

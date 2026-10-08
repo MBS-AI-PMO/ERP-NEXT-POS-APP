@@ -89,25 +89,37 @@
                  local:Placeholder.Text="Card amount" local:Placeholder.Icon="&#xE8C7;"
                  Text="{Binding Card.Text, UpdateSourceTrigger=PropertyChanged}" FontSize="26" Height="52" GotFocus="CardFocused" />
       </StackPanel>
-      <TextBlock Text="Cash received" Style="{StaticResource SectionTitle}" Margin="4,8,4,4" />
-      <TextBox x:Name="CashBox" Style="{StaticResource AmountTextBox}" Margin="4,0" local:Keyboarding.SelectAllOnTap="True"
-               local:Placeholder.Text="Cash received"
-               Text="{Binding Cash.Text, UpdateSourceTrigger=PropertyChanged}" FontSize="26" Height="52" GotFocus="CashFocused" />
-      <ItemsControl ItemsSource="{Binding QuickCash}" Margin="0,6">
-        <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-        <ItemsControl.ItemTemplate>
-          <DataTemplate>
-            <Button Focusable="False" Style="{StaticResource SecondaryButton}" MinHeight="56" FontSize="18" FontWeight="SemiBold" Content="{Binding}"
-                    Command="{Binding DataContext.QuickCashCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" />
-          </DataTemplate>
-        </ItemsControl.ItemTemplate>
-      </ItemsControl>
-      <Border Background="{StaticResource AccentSoft}" CornerRadius="{StaticResource CardRadius}" Padding="16,4" Margin="4,0">
-        <DockPanel>
-          <TextBlock Text="Change" FontSize="20" FontWeight="SemiBold" Foreground="{StaticResource Accent}" VerticalAlignment="Center" />
-          <TextBlock Text="{Binding Change}" HorizontalAlignment="Right" FontSize="32" FontWeight="Bold" Foreground="{StaticResource Accent}" Style="{StaticResource Money}" />
-        </DockPanel>
-      </Border>
+      <!-- Card: nothing to type; the exact bill total to charge on the card machine (read-only, but it holds the keyboard so
+           Enter completes). -->
+      <StackPanel Visibility="{Binding IsCard, Converter={StaticResource BoolToVisibility}}" Margin="4,0">
+        <TextBlock Text="Card amount (charge exactly this on the card machine)" Style="{StaticResource SectionTitle}" Margin="0,8,0,4" />
+        <TextBox x:Name="CardAmountBox" Style="{StaticResource AmountTextBox}" IsReadOnly="True" IsReadOnlyCaretVisible="False"
+                 Text="{Binding CardAmountText, Mode=OneWay}" FontSize="32" FontWeight="Bold" Height="60"
+                 Background="{StaticResource Subtle}" Foreground="{StaticResource Accent}" />
+        <TextBlock Text="No change is given on a card payment." Foreground="{StaticResource Muted}" Margin="0,6,0,0" />
+      </StackPanel>
+      <!-- Cash and Split: the cash box, quick cash and the change. -->
+      <StackPanel Visibility="{Binding ShowsCashEntry, Converter={StaticResource BoolToVisibility}}">
+        <TextBlock Text="Cash received" Style="{StaticResource SectionTitle}" Margin="4,8,4,4" />
+        <TextBox x:Name="CashBox" Style="{StaticResource AmountTextBox}" Margin="4,0" local:Keyboarding.SelectAllOnTap="True"
+                 local:Placeholder.Text="Cash received"
+                 Text="{Binding Cash.Text, UpdateSourceTrigger=PropertyChanged}" FontSize="26" Height="52" GotFocus="CashFocused" />
+        <ItemsControl ItemsSource="{Binding QuickCash}" Margin="0,6">
+          <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Button Focusable="False" Style="{StaticResource SecondaryButton}" MinHeight="56" FontSize="18" FontWeight="SemiBold" Content="{Binding}"
+                      Command="{Binding DataContext.QuickCashCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <Border Background="{StaticResource AccentSoft}" CornerRadius="{StaticResource CardRadius}" Padding="16,4" Margin="4,0">
+          <DockPanel>
+            <TextBlock Text="Change" FontSize="20" FontWeight="SemiBold" Foreground="{StaticResource Accent}" VerticalAlignment="Center" />
+            <TextBlock Text="{Binding Change}" HorizontalAlignment="Right" FontSize="32" FontWeight="Bold" Foreground="{StaticResource Accent}" Style="{StaticResource Money}" />
+          </DockPanel>
+        </Border>
+      </StackPanel>
       <TextBlock Text="{Binding Message}" Foreground="{StaticResource Danger}" FontSize="16" TextWrapping="Wrap" MinHeight="22" Margin="4,4,4,0" />
       <DockPanel Margin="0,4,0,0">
         <Button DockPanel.Dock="Left" Style="{StaticResource KeyButton}" Width="200" Height="72" local:ButtonIcon.Glyph="&#xE72B;"

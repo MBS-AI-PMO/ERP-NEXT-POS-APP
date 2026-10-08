@@ -6,14 +6,14 @@ using TillPOS.Presentation;
 
 namespace TillPOS.App.Views;
 
-/// <summary>Keeps the keyboard in a box: cash on arrival, the card part when split is chosen, so typed digits and Enter
-/// always land where the cashier expects (the keypad and kind buttons never take focus).</summary>
+/// <summary>Keeps the keyboard in a box: cash on arrival, the card part when split is chosen, the read-only card amount in Card
+/// mode, so typed digits and Enter always land where the cashier expects (the keypad and kind buttons never take focus).</summary>
 public partial class PaymentView : UserControl
 {
     public PaymentView()
     {
         InitializeComponent();
-        Loaded += (_, _) => Keyboarding.FocusWhenReady(this, () => CashBox);
+        Loaded += (_, _) => Keyboarding.FocusWhenReady(this, () => Target(DataContext as PaymentViewModel));
         DataContextChanged += (_, e) =>
         {
             if (e.OldValue is PaymentViewModel old) old.PropertyChanged -= OnViewModelChanged;
@@ -26,8 +26,17 @@ public partial class PaymentView : UserControl
         if (e.PropertyName != nameof(PaymentViewModel.Kind) || sender is not PaymentViewModel vm) return;
         // After layout: the card box is collapsed until IsSplit's binding shows it, and a collapsed box cannot take focus.
         // Leaving split collapses the card box, so move the keyboard back to cash rather than lose it.
-        Dispatcher.InvokeAsync(() => (vm.IsSplit ? CardBox : CashBox).Focus(), DispatcherPriority.Input);
+        Dispatcher.InvokeAsync(() => Target(vm).Focus(), DispatcherPriority.Input);
     }
+
+    /// <summary>The box for the kind: the card part in split, the read-only card amount in Card (so Enter still completes),
+    /// otherwise cash.</summary>
+    private Control Target(PaymentViewModel? vm) => vm switch
+    {
+        { IsSplit: true } => CardBox,
+        { IsCard: true } => CardAmountBox,
+        _ => CashBox,
+    };
 
     private void CardFocused(object sender, RoutedEventArgs e) { if (DataContext is PaymentViewModel vm) vm.EditCard = true; }
 

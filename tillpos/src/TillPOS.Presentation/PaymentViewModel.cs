@@ -6,7 +6,9 @@ using TillPOS.Core.Sales;
 namespace TillPOS.Presentation;
 
 /// <summary>Payment screen: cash (rounded to the currency fraction), card (exact) or split. Completing saves the bill first,
-/// then prints; the drawer opens only when cash was taken. A printer failure never loses the bill.</summary>
+/// then prints; the drawer opens only when cash was taken. A printer failure never loses the bill. In Card mode there is
+/// nothing to type: the screen shows the exact amount to charge (<see cref="CardAmountText"/>), and the keypad and quick-cash
+/// buttons do nothing.</summary>
 public sealed class PaymentViewModel : ObservableObject
 {
     private readonly TillContext ctx;
@@ -34,7 +36,7 @@ public sealed class PaymentViewModel : ObservableObject
         Card.Changed += Recalculate;
 
         SetKindCommand = new RelayCommand<string>(k => { if (Enum.TryParse<TenderKind>(k, out var parsed)) Kind = parsed; });
-        QuickCashCommand = new RelayCommand<decimal>(amount => Cash.Set(amount));
+        QuickCashCommand = new RelayCommand<decimal>(amount => { if (!IsCard) Cash.Set(amount); });
         KeyCommand = new RelayCommand<string>(Key);
         CompleteCommand = new RelayCommand(Complete, () => !completed);
         BackCommand = new RelayCommand(() => ctx.Navigator.Show(sale));
@@ -55,11 +57,23 @@ public sealed class PaymentViewModel : ObservableObject
         {
             if (!SetProperty(ref kind, value)) return;
             OnPropertyChanged(nameof(IsSplit));
+            OnPropertyChanged(nameof(IsCard));
+            OnPropertyChanged(nameof(ShowsCashEntry));
+            OnPropertyChanged(nameof(CardAmountText));
             Recalculate();
         }
     }
 
     public bool IsSplit => kind == TenderKind.Split;
+
+    /// <summary>Card only: the whole bill goes on the card machine.</summary>
+    public bool IsCard => kind == TenderKind.Card;
+
+    /// <summary>The "Cash received" box, quick-cash buttons and Change band show (Cash and Split; not Card).</summary>
+    public bool ShowsCashEntry => !IsCard;
+
+    /// <summary>Card mode: the exact bill total to charge on the card machine (never rounded); "" otherwise.</summary>
+    public string CardAmountText => IsCard ? Format.Money(grandTotal) : "";
     public bool EditCard { get => editCard; set => SetProperty(ref editCard, value); }
     public PaymentPlan? Plan { get => plan; private set => SetProperty(ref plan, value); }
     public string AmountDue => Plan is null ? "" : Format.Money(Plan.AmountDue);
@@ -122,6 +136,7 @@ public sealed class PaymentViewModel : ObservableObject
 
     private void Key(string? key)
     {
+        if (IsCard) return;                       // nothing to type: the card amount is the exact total
         var entry = IsSplit && EditCard ? Card : Cash;
         if (key == ".") entry.Dot();
         else if (key == "⌫") entry.Backspace();

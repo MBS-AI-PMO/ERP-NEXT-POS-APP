@@ -93,6 +93,11 @@ Delete  Remove a line (needs the supervisor PIN)
 Enter   Confirm
 Esc     Cancel / go back
 
+PAYING BY CARD
+The Card screen shows the exact amount to charge on the card machine (no
+cash box and no change). Charge that amount, then press "Complete & print".
+For card + cash, choose "Split".
+
 BARCODE SCANNER
 The scanner must press Enter after the code. Most USB scanners do this
 already. If a scan does not add the item, check this setting.
