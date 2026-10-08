@@ -293,7 +293,10 @@ public sealed class SaleViewModel : ObservableObject
         RefreshHeldCount();
     }
 
-    /// <summary>Ctrl+P: prints the last completed bill again, marked "*** COPY ***". Never opens the drawer.</summary>
+    /// <summary>Ctrl+P: prints the last completed bill (a sale or a credit note) again, marked "*** COPY ***" once it has printed
+    /// before, and never opens the drawer. The receipt is always shown on screen as well (marked COPY likewise, with the printer
+    /// problem if the print failed), also when the invoice popup is off: without a printer the copy only goes to a file, so the
+    /// popup is the visible proof. Its "Print again" prints another copy; a barcode scanned on it goes on the next bill.</summary>
     public void ReprintLast()
     {
         Receipt? receipt;
@@ -309,17 +312,36 @@ public sealed class SaleViewModel : ObservableObject
             return;
         }
         if (receipt is null) { Info("No receipt to reprint yet"); return; }
+        var copy = printed;
+        string? printError = null;
         try
         {
-            ctx.Output.Print(receipt, openDrawer: false, copy: printed);
+            ctx.Output.Print(receipt, openDrawer: false, copy: copy);
+            printed = true;
+            WriteLastReceipt(ctx.Kv, receipt.ClientId, printed: true);
             Info($"Reprinted {receipt.ClientId}");
         }
         catch (Exception ex)
         {
+            printError = ex.Message;
             Error($"Reprint of {receipt.ClientId} failed: {ex.Message}");
-            return;
         }
-        WriteLastReceipt(ctx.Kv, receipt.ClientId, printed: true);
+
+        var code = ctx.Dialogs.ShowReceipt(receipt, printError, () =>
+        {
+            try
+            {
+                ctx.Output.Print(receipt, openDrawer: false, copy: printed);
+                printed = true;
+                WriteLastReceipt(ctx.Kv, receipt.ClientId, printed: true);
+                return null;
+            }
+            catch (Exception ex)
+            {
+                return ex.Message;
+            }
+        }, copy: copy, reprinted: true);
+        if (!string.IsNullOrWhiteSpace(code)) Scan(code.Trim());
     }
 
     /// <summary>F6: the Returns screen, only on an empty bill. Esc there comes back to this bill screen; a finished refund comes
@@ -538,7 +560,15 @@ public sealed class SaleViewModel : ObservableObject
 
     private CartLine? Find(Guid id) => Cart.Lines.FirstOrDefault(l => l.Id == id);
 
-    private void Info(string text) { Message = text; MessageIsError = false; }
+    private void Info(string text) => Show(text, isError: false);
 
-    private void Error(string text) { Message = text; MessageIsError = true; }
+    private void Error(string text) => Show(text, isError: true);
+
+    /// <summary>The same text again (e.g. a second reprint) still notifies, so the message line visibly refreshes.</summary>
+    private void Show(string text, bool isError)
+    {
+        if (text == Message) OnPropertyChanged(nameof(Message));
+        Message = text;
+        MessageIsError = isError;
+    }
 }

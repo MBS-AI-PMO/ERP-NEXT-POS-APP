@@ -179,7 +179,9 @@
               <Setter Property="local:ButtonIcon.Size" Value="15" />
             </Style>
           </UniformGrid.Resources>
-          <Button Command="{Binding ReprintLastCommand}" local:ButtonIcon.Glyph="&#xE749;">
+          <!-- Reprint shows the bill on screen too (marked COPY), so it visibly works even without a printer. -->
+          <Button Command="{Binding ReprintLastCommand}" local:ButtonIcon.Glyph="&#xE749;" Foreground="{StaticResource Accent}" FontWeight="SemiBold"
+                  ToolTip="Prints the last bill or credit note again (marked COPY) and shows it on screen">
             <TextBlock Text="Reprint last (Ctrl+P)" TextWrapping="Wrap" TextAlignment="Center" />
           </Button>
           <Button Content="Log out" local:ButtonIcon.Glyph="&#xE748;" Command="{Binding LogOutCommand}" />

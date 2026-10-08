@@ -27,16 +27,20 @@ public partial class ReceiptDialog : Window
 
     /// <param name="hasPrinter">False when receipts are saved as files; "Print again" then reports that instead of "Sent to printer".</param>
     /// <param name="isCreditNote">A return: the window and the printer message say "credit note" instead of invoice / bill.</param>
-    public ReceiptDialog(IReadOnlyList<PrintLine> lines, string? printError, Func<string?> reprint, bool hasPrinter, bool isCreditNote = false)
+    /// <param name="copy">The lines are a copy (they carry "*** COPY ***"): the title says so.</param>
+    /// <param name="reprinted">Opened by "Reprint last": a green banner says where the reprint went (unless it failed).</param>
+    public ReceiptDialog(IReadOnlyList<PrintLine> lines, string? printError, Func<string?> reprint, bool hasPrinter, bool isCreditNote = false,
+        bool copy = false, bool reprinted = false)
     {
         InitializeComponent();
         this.reprint = reprint;
         this.hasPrinter = hasPrinter;
         this.isCreditNote = isCreditNote;
-        if (isCreditNote) Title = "Credit note";
+        Title = (isCreditNote ? "Credit note" : "Invoice") + (copy ? " (copy)" : "");
         MaxHeight = SystemParameters.WorkArea.Height * 0.9;
         foreach (var line in lines) Paper.Children.Add(line.Style == LineStyle.Qr ? QrImage(line.Text) : LineBlock(line));
         if (printError is not null) ShowBanner(PrinterProblem(printError), ok: false);
+        else if (reprinted) ShowBanner(hasPrinter ? "Reprinted - sent to the printer" : "Reprinted - saved to the receipts folder (no printer set up)", ok: true);
 
         Loaded += (_, _) => Scroller.Focus();
         PreviewTextInput += (_, e) => { foreach (var c in e.Text) scanBuffer.OnChar(c); };

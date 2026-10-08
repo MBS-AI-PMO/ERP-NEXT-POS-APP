@@ -607,6 +607,94 @@ public sealed class PriceHoldRecallTests : IDisposable
     }
 
     [Fact]
+    public void Reprint_last_always_shows_the_receipt_on_screen_marked_copy()
+    {
+        var sale = NewSale();
+        var id = CompleteCashSale(sale);
+        f.Dialogs.Receipts.Clear();
+        f.Dialogs.ReceiptPopups.Clear();
+
+        sale.ReprintLastCommand.Execute(null);
+
+        // Without a printer the copy only goes to a file: the popup is what shows that it worked.
+        var (shown, printError) = Assert.Single(f.Dialogs.Receipts);
+        Assert.Equal(id, shown.ClientId);
+        Assert.Null(printError);
+        Assert.Equal((true, true), Assert.Single(f.Dialogs.ReceiptPopups));
+        Assert.Equal($"Reprinted {id}", sale.Message);
+    }
+
+    [Fact]
+    public void Reprint_last_shows_the_popup_even_when_the_invoice_preview_is_off()
+    {
+        var sale = new SaleViewModel(f.Ctx with { ShowReceiptPreview = false }, f.Session, Gate(),
+            (s, kind) => new PaymentViewModel(f.Ctx with { ShowReceiptPreview = false }, f.Session, s, kind), () => new object());
+        var id = CompleteCashSale(sale);
+        Assert.Empty(f.Dialogs.Receipts);
+
+        sale.ReprintLast();
+
+        Assert.Equal(id, Assert.Single(f.Dialogs.Receipts).Receipt.ClientId);
+    }
+
+    [Fact]
+    public void Pressing_reprint_again_shows_the_message_again()
+    {
+        var sale = NewSale();
+        var id = CompleteCashSale(sale);
+        sale.ReprintLast();
+        var changes = new List<string?>();
+        sale.PropertyChanged += (_, e) => changes.Add(e.PropertyName);
+
+        sale.ReprintLast();
+
+        Assert.Contains(nameof(SaleViewModel.Message), changes);
+        Assert.Equal($"Reprinted {id}", sale.Message);
+        Assert.Equal(2, f.Dialogs.ReceiptPopups.Count(p => p.Reprinted));
+    }
+
+    [Fact]
+    public void A_failed_reprint_still_shows_the_receipt_with_the_printer_problem()
+    {
+        var sale = NewSale();
+        var id = CompleteCashSale(sale);
+        f.Dialogs.Receipts.Clear();
+        f.Output.Fail = true;
+
+        sale.ReprintLast();
+
+        Assert.Equal((id, "Printer offline"), (Assert.Single(f.Dialogs.Receipts).Receipt.ClientId, f.Dialogs.Receipts[0].PrintError));
+        Assert.True(sale.MessageIsError);
+    }
+
+    [Fact]
+    public void Print_again_in_the_reprint_popup_prints_another_copy()
+    {
+        var sale = NewSale();
+        CompleteCashSale(sale);
+        sale.ReprintLast();
+        var printed = f.Output.Printed.Count;
+
+        Assert.Null(f.Dialogs.LastReprint!());
+
+        Assert.Equal(printed + 1, f.Output.Printed.Count);
+        Assert.True(f.Output.Printed[^1].Copy);
+        Assert.False(f.Output.Printed[^1].OpenDrawer);
+    }
+
+    [Fact]
+    public void A_barcode_scanned_on_the_reprint_popup_goes_on_the_next_bill()
+    {
+        var sale = NewSale();
+        CompleteCashSale(sale);
+        f.Dialogs.ReceiptScans.Enqueue("111");
+
+        sale.ReprintLast();
+
+        Assert.Single(sale.Lines);
+    }
+
+    [Fact]
     public void Reprint_with_no_receipt_yet_says_so()
     {
         var sale = NewSale();

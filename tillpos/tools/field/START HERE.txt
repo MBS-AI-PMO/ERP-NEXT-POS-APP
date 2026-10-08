@@ -87,6 +87,8 @@ F2      Search for an item
 F3      Change quantity
 F11     Pay by card
 F12     Pay by cash
+Ctrl+P  Reprint the last bill or credit note (marked COPY); it is also
+        shown on screen, so you can see it worked even without a printer
 Delete  Remove a line (needs the supervisor PIN)
 Enter   Confirm
 Esc     Cancel / go back

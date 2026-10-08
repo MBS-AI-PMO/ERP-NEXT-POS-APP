@@ -874,5 +874,9 @@ public sealed class ReturnViewModelTests : IDisposable
         Assert.Equal(credit.ClientId, printed.ClientId);
         Assert.False(drawer);
         Assert.True(copy);
+        // The credit note is shown on screen too, marked COPY.
+        Assert.Equal(credit.ClientId, f.Dialogs.Receipts[^1].Receipt.ClientId);
+        Assert.Equal((true, true), f.Dialogs.ReceiptPopups[^1]);
+        Assert.Equal($"Reprinted {credit.ClientId}", sale.Message);
     }
 }

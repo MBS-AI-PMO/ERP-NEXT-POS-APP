@@ -32,13 +32,13 @@ public sealed class WpfDialogs(
 
     /// <summary>The bill is already saved when this runs, so a problem showing it (e.g. POS settings missing) is logged and
     /// the popup skipped; it never fails the sale.</summary>
-    public string? ShowReceipt(Receipt receipt, string? printError, Func<string?> reprint)
+    public string? ShowReceipt(Receipt receipt, string? printError, Func<string?> reprint, bool copy = false, bool reprinted = false)
     {
         try
         {
             var (header, paper) = receiptLayout();
-            var dialog = new ReceiptDialog(ReceiptRenderer.Layout(receipt, header, paper), printError, reprint, hasPrinter,
-                isCreditNote: receipt.Kind == ReceiptKind.Return)
+            var dialog = new ReceiptDialog(ReceiptRenderer.Layout(receipt, header, paper, copy), printError, reprint, hasPrinter,
+                isCreditNote: receipt.Kind == ReceiptKind.Return, copy: copy, reprinted: reprinted)
             {
                 Owner = owner,
             };

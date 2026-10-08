@@ -20,7 +20,7 @@ public interface IDialogs
 
     /// <summary>Shows the saved bill (modal) with the print error, if any. <paramref name="reprint"/> prints it again without
     /// opening the drawer and returns an error message or null. Returns the barcode when a scan closed the popup, otherwise null.</summary>
-    string? ShowReceipt(Receipt receipt, string? printError, Func<string?> reprint);
+    string? ShowReceipt(Receipt receipt, string? printError, Func<string?> reprint, bool copy = false, bool reprinted = false);
 
     /// <summary>Shows the till setup (printer, paper, till number, invoice preview, counters, upload mode). Returns true when the
     /// settings were saved (the app then restarts to use them). When the upload mode was changed, <paramref name="uploadModeChanged"/>

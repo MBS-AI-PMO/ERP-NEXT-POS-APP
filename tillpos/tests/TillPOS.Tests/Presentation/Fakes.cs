@@ -52,9 +52,13 @@ public sealed class FakeDialogs : IDialogs
     public Task<decimal?> AskNumberAsync(string title, string prompt) => Task.FromResult(Numbers.Count > 0 ? Numbers.Dequeue() : null);
     public void Info(string message) => Infos.Add(message);
 
-    public string? ShowReceipt(Receipt receipt, string? printError, Func<string?> reprint)
+    /// <summary>How each popup was shown, in order: marked COPY, and opened by "Reprint last".</summary>
+    public List<(bool Copy, bool Reprinted)> ReceiptPopups { get; } = [];
+
+    public string? ShowReceipt(Receipt receipt, string? printError, Func<string?> reprint, bool copy = false, bool reprinted = false)
     {
         Receipts.Add((receipt, printError));
+        ReceiptPopups.Add((copy, reprinted));
         LastReprint = reprint;
         return ReceiptScans.Count > 0 ? ReceiptScans.Dequeue() : null;
     }
