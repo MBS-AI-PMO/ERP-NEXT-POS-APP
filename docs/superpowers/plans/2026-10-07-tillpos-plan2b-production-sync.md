@@ -169,3 +169,18 @@ Build: commit fd211a00 (Debug), `Upload = DryRun`, pointed at the dev sandbox (t
 Tasks 1–6 and the fix waves are implemented and reviewed on `feat/tillpos-ui-and-sync` (HEAD ee8bae0a): write guard (Off/DryRun/Live, Live refused in test builds and while a shift is open), payload builders, upload engine (lookup-first idempotency, in-flight marker, draft→check→submit, error classes, backoff, escalation), DryRun validation, cross-till returns with double-refund checks, Upload problems screen (Failed / Excluded / Handled, all supervisor-gated and logged), schema downgrade guard. 853 tests, 0 warnings. Test package 0.3.7 built (Upload = Off).
 
 Sandbox prepared (metadata + 2 cashiers + change accounts). **Task 9 (Live on the sandbox) waits for the owner's go-ahead.** Task 7/8 production items remain for the admin (TRN, cashiers, roles, Allow Negative Stock).
+
+## Sandbox Live test log (2026-10-08, https://dev.quickgroc.com, till 7, Test Counter)
+
+| Step | Result |
+|---|---|
+| Go Live with no shift open | OK; "LIVE UPLOAD" badge |
+| POS Opening Shift | **POSA-OS-26-0000045**, submitted, status Open, `custom_offline_id` set |
+| Cash bill 3.333, paid 10 | **ACC-PSINV-2026-05626** Paid; change 6.667; outstanding 0; VAT 0.159; shift + cashier linked |
+| Card bill 11.429 | **ACC-PSINV-2026-05627** Paid |
+| Split bill 5.923 (card 2 + cash 5) incl. weighed 0.740 Kg | **ACC-PSINV-2026-05628** Paid; change 1.077 |
+| Further sales #5, #6 | **ACC-PSINV-2026-05629 / 05630** Paid |
+| Finding 1 | Till user needed Accounts/Sales/Stock User roles to create POS Invoices (added; checklist updated) |
+| Finding 2 | Return refused: needs `pos_invoice_item` per line (fixed 62fb0509) **and** `paid_amount`/`base_paid_amount`/`change_amount 0` (ERPNext crashes with a 500 TypeError in `validate_change_amount` otherwise — verified by a hand probe, probe draft deleted) |
+| Finding 3 | A deterministic 500 on one document paused the whole queue until escalation; escalation → Failed → supervisor Retry worked as designed |
+| Finding 4 | Login screen's "Upload problems" count only refreshed on login |
