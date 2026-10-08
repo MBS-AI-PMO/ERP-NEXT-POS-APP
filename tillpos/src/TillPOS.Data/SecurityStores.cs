@@ -56,13 +56,50 @@ public sealed class ApprovalStore(TillDb db)
                 SqlExt.Str(r, 2), SqlExt.Str(r, 3), r.GetInt32(4), SqlExt.Instant(r, 5), r.GetInt32(6)));
     }
 
-    /// <summary>The approval is in ERPNext as <paramref name="erpName"/>.</summary>
-    public void MarkUploaded(string id, string erpName) =>
+    /// <summary>The approval is in ERPNext as <paramref name="erpName"/>, since <paramref name="at"/> (default: now).</summary>
+    public void MarkUploaded(string id, string erpName, DateTimeOffset? at = null) =>
         Update("""
             UPDATE approval_log SET synced = 1, sync_status = 'Synced', erp_name = @n, last_error = NULL, attempts = attempts + 1,
-                next_attempt_at = NULL, unknown_attempts = 0
+                next_attempt_at = NULL, unknown_attempts = 0, synced_at = @at
             WHERE id = @id
-            """, id, ("@n", erpName));
+            """, id, ("@n", erpName), ("@at", SqlExt.Instant(at ?? DateTimeOffset.UtcNow)));
+
+    /// <summary>Approvals that reached ERPNext at or after <paramref name="since"/>.</summary>
+    public int CountSyncedSince(DateTimeOffset since)
+    {
+        using var c = db.Open();
+        return Convert.ToInt32(c.Scalar(null, "SELECT COUNT(*) FROM approval_log WHERE sync_status = 'Synced' AND synced_at >= @s",
+            ("@s", SqlExt.Instant(since))), CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>Approvals that reached ERPNext at or after <paramref name="since"/>, newest first (amount: the approval's, or
+    /// null when it has none).</summary>
+    public IReadOnlyList<SyncedDocument> SyncedSince(DateTimeOffset since)
+    {
+        using var c = db.Open();
+        return c.Query("""
+            SELECT json, erp_name, synced_at FROM approval_log WHERE sync_status = 'Synced' AND synced_at >= @s ORDER BY synced_at DESC, id
+            """,
+            r =>
+            {
+                var record = JsonSerializer.Deserialize<ApprovalRecord>(r.GetString(0), Json)!;
+                return new SyncedDocument(OutboxKind.Approval, record.Id, SqlExt.Str(r, 1), SqlExt.Instant(r, 2)!.Value,
+                    record.Amount == 0m ? null : record.Amount);
+            }, ("@s", SqlExt.Instant(since)));
+    }
+
+    /// <summary>Approvals waiting for upload (Pending), oldest first, with their last error or note.</summary>
+    public IReadOnlyList<OutboxProblem> Waiting()
+    {
+        using var c = db.Open();
+        return c.Query("SELECT json, last_error, attempts FROM approval_log WHERE sync_status = 'Pending' ORDER BY at, id",
+            r =>
+            {
+                var record = JsonSerializer.Deserialize<ApprovalRecord>(r.GetString(0), Json)!;
+                return new OutboxProblem(OutboxKind.Approval, record.Id, record.ShiftClientId, record.At, UploadStatus.Pending,
+                    SqlExt.Str(r, 1), r.GetInt32(2));
+            });
+    }
 
     /// <summary>A failure reported after the approval was already uploaded is ignored.</summary>
     public void MarkFailed(string id, string error, DateTimeOffset? nextAttemptAt, bool keepUnknown = false) =>

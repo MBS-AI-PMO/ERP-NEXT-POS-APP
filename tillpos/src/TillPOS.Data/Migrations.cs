@@ -121,5 +121,14 @@ internal static class Migrations
         UPDATE shift SET opening_error = last_error WHERE opening_status <> 'Synced';
         UPDATE shift SET closing_error = last_error WHERE opening_status = 'Synced';
         """,
+        // 0.4.0: when each document reached ERPNext (UTC, ISO 8601), for "N uploaded today" and the Sync status window.
+        // Documents synced before this stay NULL (not counted as today's).
+        """
+        ALTER TABLE receipt ADD COLUMN synced_at TEXT;
+        ALTER TABLE shift ADD COLUMN opening_synced_at TEXT;
+        ALTER TABLE shift ADD COLUMN closing_synced_at TEXT;
+        ALTER TABLE approval_log ADD COLUMN synced_at TEXT;
+        CREATE INDEX ix_receipt_synced_at ON receipt(synced_at);
+        """,
     ];
 }

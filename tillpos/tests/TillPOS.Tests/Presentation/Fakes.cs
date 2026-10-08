@@ -95,6 +95,11 @@ public sealed class FakeDialogs : IDialogs
         return ConfirmAnswers.Count > 0 && ConfirmAnswers.Dequeue();
     }
 
+    /// <summary>Plays the Sync status window: gets the view model, returns true when "Open Upload problems" was pressed.</summary>
+    public Func<SyncStatusViewModel, bool> OnSyncStatus { get; set; } = _ => false;
+
+    public bool ShowSyncStatus(SyncStatusViewModel vm) => OnSyncStatus(vm);
+
     public PriceCheckPick? ShowPriceCheck(PriceCheckViewModel vm)
     {
         PriceCheckRequests++;

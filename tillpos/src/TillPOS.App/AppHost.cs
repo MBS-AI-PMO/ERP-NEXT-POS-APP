@@ -99,6 +99,9 @@ public sealed class AppHost
             RemoteReturnsCheck = remoteReturns,
             TaxTemplates = catalog.FindSalesTaxTemplate,
         };
+        // The header's sync pill: the Sync status window, on any screen.
+        Shell.OpenSyncStatus = () => SyncStatusViewModel.OpenAsync(ctx, Shell);
+        Shell.UploadedToday = uploader.UploadedSince(SyncStatusViewModel.StartOfDay(DateTimeOffset.Now));
     }
 
     public ShellViewModel Shell { get; } = new();

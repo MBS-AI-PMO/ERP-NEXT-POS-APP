@@ -69,7 +69,21 @@
           <TextBlock Foreground="White" VerticalAlignment="Center" Margin="0,0,20,0">
             <Run Text="Cashier " Foreground="{StaticResource OnInkMuted}" /><Run Text="{Binding Session.Cashier.Name, Mode=OneWay}" FontWeight="SemiBold" />
           </TextBlock>
-          <Border CornerRadius="14" Background="{StaticResource InkRaised}" Padding="12,5" Margin="0,0,20,0">
+          <!-- The sync pill: click it on any screen for the Sync status window (read-only, no PIN). Not focusable, so a scan's
+               Enter never presses it. -->
+          <Button Command="{Binding SyncStatusCommand}" Focusable="False" Cursor="Hand" Margin="0,0,20,0"
+                  ToolTip="Sync status: downloads, uploads today, waiting and failed">
+            <Button.Template>
+              <ControlTemplate TargetType="Button">
+                <Border x:Name="Pill" CornerRadius="14" Background="{StaticResource InkRaised}" Padding="12,5">
+                  <ContentPresenter />
+                </Border>
+                <ControlTemplate.Triggers>
+                  <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Pill" Property="Opacity" Value="0.85" /></Trigger>
+                  <Trigger Property="IsPressed" Value="True"><Setter TargetName="Pill" Property="Opacity" Value="0.7" /></Trigger>
+                </ControlTemplate.Triggers>
+              </ControlTemplate>
+            </Button.Template>
             <StackPanel Orientation="Horizontal">
               <TextBlock Text="&#xE753;" FontSize="16" Margin="0,0,8,0">
                 <TextBlock.Style>
@@ -82,12 +96,12 @@
                 </TextBlock.Style>
               </TextBlock>
               <TextBlock Text="{Binding SyncStatus}" Foreground="White" VerticalAlignment="Center" ToolTip="{Binding SyncNotes}" />
-              <!-- "N waiting · M failed"; the tooltip lists what the last upload run reported. -->
+              <!-- "N uploaded today · N waiting · M failed"; the tooltip lists what the last upload run reported. -->
               <TextBlock Foreground="{StaticResource OnInkMuted}" Margin="8,0,0,0" VerticalAlignment="Center" ToolTip="{Binding UploadProblemsText}">
-                <Run Text="· " /><Run Text="{Binding PendingUploads, Mode=OneWay}" /><Run Text=" waiting · " /><Run Text="{Binding FailedUploads, Mode=OneWay}" /><Run Text=" failed" />
+                <Run Text="· " /><Run Text="{Binding UploadCountsText, Mode=OneWay}" />
               </TextBlock>
             </StackPanel>
-          </Border>
+          </Button>
           <TextBlock Text="&#xE823;" Style="{StaticResource Icon}" FontSize="16" Foreground="{StaticResource OnInkMuted}" Margin="0,0,8,0" />
           <TextBlock Text="{Binding Clock}" Foreground="White" FontSize="17" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular"
                      VerticalAlignment="Center" />

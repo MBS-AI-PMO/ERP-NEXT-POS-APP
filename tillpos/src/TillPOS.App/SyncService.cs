@@ -44,6 +44,7 @@ public sealed class SyncService(Func<CatalogPuller> newPuller, IErpClient erp, U
             string? status = "Offline";
             string? notes = null;
             UploadReport? upload = null;
+            PullReport? pulled = null;
             try
             {
                 await erp.PingAsync(ct);
@@ -53,6 +54,7 @@ public sealed class SyncService(Func<CatalogPuller> newPuller, IErpClient erp, U
                 {
                     status = "Sync error";
                     var report = await newPuller().RunAsync(ct);
+                    pulled = report;
                     var noted = report.Notes;
                     notes = noted.Count == 0 ? "" : string.Join(Environment.NewLine, noted);
                     status = report.Ok
@@ -70,8 +72,17 @@ public sealed class SyncService(Func<CatalogPuller> newPuller, IErpClient erp, U
                 logError(ex);
             }
             upload ??= uploader.Counts();
+            var uploadedToday = UploadedToday();
+            var syncedAt = DateTimeOffset.Now;
             await dispatcher.InvokeAsync(() =>
             {
+                if (pulled is not null)
+                {
+                    shell.LastPull = pulled;
+                    shell.LastSyncAt = syncedAt;
+                }
+                if (uploadedToday is { } count) shell.UploadedToday = count;
+                shell.UploadProblemDetails = upload.Problems;
                 shell.Online = online;
                 if (status is not null) shell.SyncStatus = status;
                 if (notes is not null) shell.SyncNotes = notes.Length == 0 ? null : notes;
@@ -103,5 +114,19 @@ public sealed class SyncService(Func<CatalogPuller> newPuller, IErpClient erp, U
             }
         }
         return true;
+    }
+
+    /// <summary>Documents uploaded since local midnight, or null when the till's database could not say (logged).</summary>
+    private int? UploadedToday()
+    {
+        try
+        {
+            return uploader.UploadedSince(SyncStatusViewModel.StartOfDay(DateTimeOffset.Now));
+        }
+        catch (Exception ex)
+        {
+            logError(ex);
+            return null;
+        }
     }
 }

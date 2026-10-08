@@ -38,6 +38,11 @@ public enum OutboxKind { Opening, Bill, Closing, Approval }
 public sealed record OutboxProblem(OutboxKind Kind, string Id, string ShiftId, DateTimeOffset Created, UploadStatus Status, string? Error,
     int Attempts);
 
+/// <summary>A document that reached ERPNext (inserted, or found there and adopted) at <paramref name="SyncedAt"/>, for the Sync
+/// status window. Amount: a bill's grand total (negative for a return), an opening's float, a closing's sales total, an
+/// approval's amount (null when it has none).</summary>
+public sealed record SyncedDocument(OutboxKind Kind, string Id, string? ErpName, DateTimeOffset SyncedAt, decimal? Amount, bool IsReturn = false);
+
 /// <summary>An approval that is not in ERPNext yet, with its upload state.</summary>
 public sealed record ApprovalOutboxEntry(
     ApprovalRecord Record,

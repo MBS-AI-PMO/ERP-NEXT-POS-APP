@@ -108,6 +108,11 @@ public sealed class Uploader
         new(uploaded, receipts.CountPending() + shifts.CountPending() + approvals.CountPending(),
             receipts.CountFailed() + shifts.CountFailed() + approvals.CountFailed(), problems ?? []);
 
+    /// <summary>Documents (bills, shift openings and closings, approvals) that reached ERPNext at or after <paramref name="since"/>
+    /// (e.g. local midnight: the header's "N uploaded today"), from the till only.</summary>
+    public int UploadedSince(DateTimeOffset since) =>
+        receipts.CountSyncedSince(since) + shifts.CountSyncedSince(since) + approvals.CountSyncedSince(since);
+
     public async Task<UploadReport> RunOnceAsync(CancellationToken ct = default)
     {
         if (Mode == UploadMode.Off) return Counts();
@@ -175,7 +180,7 @@ public sealed class Uploader
                 new Doc(OpeningShiftPayload.Doctype, OfflineIdField, id, OpeningKey(id), $"Opening of shift {id}", true,
                     () => OpeningShiftPayload.Build(opening, profile.PosProfile, profile.Company, user),
                     Check: (checks, body, ct) => checks.ShiftAsync(body, "balance_details", ct)),
-                new Marks(sync.Attempts, name => shifts.MarkSynced(id, ShiftDocument.Opening, name),
+                new Marks(sync.Attempts, name => shifts.MarkSynced(id, ShiftDocument.Opening, name, now()),
                     (error, next, keep) => shifts.MarkFailed(id, ShiftDocument.Opening, error, next, keep),
                     until => shifts.MarkInFlight(id, ShiftDocument.Opening, until), sync.UnknownAttempts, sync.OpeningError,
                     error => shifts.MarkUnknown(id, ShiftDocument.Opening, error)), run, ct);
@@ -209,7 +214,7 @@ public sealed class Uploader
                 () => ClosingShiftPayload.Build(opening, closing, openingName, uploaded, profile.PosProfile, profile.Company, user,
                     profile.Customer, profile.TaxesAndCharges is { Length: > 0 } taxes ? TaxTemplates(taxes) : null, profile.Currency),
                 Check: (checks, body, ct) => checks.ShiftAsync(body, "payment_reconciliation", ct)),
-            new Marks(sync.Attempts, name => shifts.MarkSynced(id, ShiftDocument.Closing, name),
+            new Marks(sync.Attempts, name => shifts.MarkSynced(id, ShiftDocument.Closing, name, now()),
                 (error, next, keep) => shifts.MarkFailed(id, ShiftDocument.Closing, error, next, keep),
                 until => shifts.MarkInFlight(id, ShiftDocument.Closing, until), sync.UnknownAttempts, sync.ClosingError,
                 error => shifts.MarkUnknown(id, ShiftDocument.Closing, error)), run, ct);
@@ -292,7 +297,7 @@ public sealed class Uploader
                     if (rowIssue is not null) issues.Add(rowIssue);
                     return issues;
                 }),
-            new Marks(bill.Attempts, name => receipts.MarkSynced(receipt.ClientId, name),
+            new Marks(bill.Attempts, name => receipts.MarkSynced(receipt.ClientId, name, now()),
                 (error, next, keep) => receipts.MarkFailed(receipt.ClientId, error, next, keep), until => receipts.MarkInFlight(receipt.ClientId, until),
                 bill.UnknownAttempts, bill.LastError, error => receipts.MarkUnknown(receipt.ClientId, error)),
             run, ct);
@@ -436,7 +441,7 @@ public sealed class Uploader
             await UploadAsync(
                 new Doc(ApprovalPayload.Doctype, OfflineIdField, a.Id, $"APPROVAL-{a.Id}", label, false,
                     () => ApprovalPayload.Build(a, till, shiftName, invoiceName)),
-                new Marks(entry.Attempts, name => approvals.MarkUploaded(a.Id, name), (error, next, keep) => approvals.MarkFailed(a.Id, error, next, keep),
+                new Marks(entry.Attempts, name => approvals.MarkUploaded(a.Id, name, now()), (error, next, keep) => approvals.MarkFailed(a.Id, error, next, keep),
                     until => approvals.MarkInFlight(a.Id, until), entry.UnknownAttempts, entry.LastError,
                     error => approvals.MarkUnknown(a.Id, error)), run, ct);
         }

@@ -88,12 +88,49 @@ public sealed class ReceiptStore(TillDb db) : IReceiptStore
             r => new ReceiptOutboxEntry(Deserialize(r.GetString(0)), ReadSync(r, 1)), ("@s", shiftClientId));
     }
 
-    public void MarkSynced(string clientId, string erpName) =>
+    /// <summary>The bill is in ERPNext as <paramref name="erpName"/>, since <paramref name="at"/> (default: now).</summary>
+    public void MarkSynced(string clientId, string erpName, DateTimeOffset? at = null) =>
         Update("""
-            UPDATE receipt SET sync_status = 'Synced', erp_name = @n, last_error = NULL, attempts = attempts + 1, next_attempt_at = NULL, unknown_attempts = 0
+            UPDATE receipt SET sync_status = 'Synced', erp_name = @n, last_error = NULL, attempts = attempts + 1, next_attempt_at = NULL, unknown_attempts = 0,
+                synced_at = @at
             WHERE client_id = @id
             """,
-            clientId, false, ("@n", erpName));
+            clientId, false, ("@n", erpName), ("@at", SqlExt.Instant(at ?? DateTimeOffset.UtcNow)));
+
+    /// <summary>Bills that reached ERPNext at or after <paramref name="since"/>.</summary>
+    public int CountSyncedSince(DateTimeOffset since)
+    {
+        using var c = db.Open();
+        return Convert.ToInt32(c.Scalar(null, "SELECT COUNT(*) FROM receipt WHERE sync_status = 'Synced' AND synced_at >= @s",
+            ("@s", SqlExt.Instant(since))), CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>Bills that reached ERPNext at or after <paramref name="since"/>, newest first.</summary>
+    public IReadOnlyList<SyncedDocument> SyncedSince(DateTimeOffset since)
+    {
+        using var c = db.Open();
+        return c.Query("""
+            SELECT json, erp_name, synced_at FROM receipt WHERE sync_status = 'Synced' AND synced_at >= @s ORDER BY synced_at DESC, client_id
+            """,
+            r =>
+            {
+                var receipt = Deserialize(r.GetString(0));
+                return new SyncedDocument(OutboxKind.Bill, receipt.ClientId, SqlExt.Str(r, 1), SqlExt.Instant(r, 2)!.Value, receipt.GrandTotal,
+                    receipt.Kind == ReceiptKind.Return);
+            }, ("@s", SqlExt.Instant(since)));
+    }
+
+    /// <summary>Bills waiting for upload (Pending), oldest first, with their last error or note (e.g. "upload in progress").</summary>
+    public IReadOnlyList<OutboxProblem> Waiting()
+    {
+        using var c = db.Open();
+        return c.Query("""
+            SELECT client_id, shift_client_id, created_at, last_error, attempts FROM receipt
+            WHERE sync_status = 'Pending' ORDER BY created_at, client_id
+            """,
+            r => new OutboxProblem(OutboxKind.Bill, r.GetString(0), r.GetString(1), SqlExt.Instant(r, 2)!.Value, UploadStatus.Pending,
+                SqlExt.Str(r, 3), r.GetInt32(4)));
+    }
 
     /// <summary>A failure reported after the bill was already uploaded is ignored. <paramref name="nextAttemptAt"/> is the backoff:
     /// the uploader leaves the bill alone until then.</summary>

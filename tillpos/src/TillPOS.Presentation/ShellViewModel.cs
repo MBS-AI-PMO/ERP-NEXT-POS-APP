@@ -1,4 +1,7 @@
+using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using TillPOS.Sync;
 using TillPOS.Sync.Upload;
 
 namespace TillPOS.Presentation;
@@ -19,9 +22,14 @@ public sealed class ShellViewModel : ObservableObject, INavigator
     private int failedUploads;
     private IReadOnlyList<string> uploadProblems = [];
     private bool isDev;
+    private int uploadedToday;
+    private PullReport? lastPull;
+    private DateTimeOffset? lastSyncAt;
+    private IReadOnlyList<UploadProblem> uploadProblemDetails = [];
 
     public ShellViewModel()
     {
+        SyncStatusCommand = new AsyncRelayCommand(() => OpenSyncStatus?.Invoke() ?? Task.CompletedTask);
         Session.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName != nameof(SessionState.Counter)) return;
@@ -52,10 +60,46 @@ public sealed class ShellViewModel : ObservableObject, INavigator
     public string? SyncNotes { get => syncNotes; set => SetProperty(ref syncNotes, value); }
     public bool Online { get => online; set => SetProperty(ref online, value); }
     /// <summary>Documents waiting for upload (bills, shift documents, approvals): the header's "N waiting".</summary>
-    public int PendingUploads { get => pendingUploads; set => SetProperty(ref pendingUploads, value); }
+    public int PendingUploads
+    {
+        get => pendingUploads;
+        set { if (SetProperty(ref pendingUploads, value)) OnPropertyChanged(nameof(UploadCountsText)); }
+    }
 
     /// <summary>Documents ERPNext refused (retried after their backoff): the header's "M failed".</summary>
-    public int FailedUploads { get => failedUploads; set => SetProperty(ref failedUploads, value); }
+    public int FailedUploads
+    {
+        get => failedUploads;
+        set { if (SetProperty(ref failedUploads, value)) OnPropertyChanged(nameof(UploadCountsText)); }
+    }
+
+    /// <summary>Documents that reached ERPNext since local midnight (bills, shift openings and closings, approvals): the header's
+    /// "N uploaded today".</summary>
+    public int UploadedToday
+    {
+        get => uploadedToday;
+        set { if (SetProperty(ref uploadedToday, value)) OnPropertyChanged(nameof(UploadCountsText)); }
+    }
+
+    /// <summary>The header's counts after the sync text: "12 uploaded today · 0 waiting · 0 failed".</summary>
+    public string UploadCountsText => string.Create(CultureInfo.InvariantCulture,
+        $"{uploadedToday} uploaded today · {pendingUploads} waiting · {failedUploads} failed");
+
+    /// <summary>The last catalog download's report (each feed's rows and error), for the Sync status window; null before the
+    /// first one.</summary>
+    public PullReport? LastPull { get => lastPull; set => SetProperty(ref lastPull, value); }
+
+    /// <summary>When the last full sync (download and upload) ran while online; null before the first one.</summary>
+    public DateTimeOffset? LastSyncAt { get => lastSyncAt; set => SetProperty(ref lastSyncAt, value); }
+
+    /// <summary>What the last upload run reported, with each document's id (the Sync status window's "why it waits").</summary>
+    public IReadOnlyList<UploadProblem> UploadProblemDetails { get => uploadProblemDetails; set => SetProperty(ref uploadProblemDetails, value); }
+
+    /// <summary>Opens the Sync status window (set by the app; see SyncStatusViewModel.OpenAsync).</summary>
+    public Func<Task>? OpenSyncStatus { get; set; }
+
+    /// <summary>The header's sync pill: opens the Sync status window on any screen (one at a time).</summary>
+    public AsyncRelayCommand SyncStatusCommand { get; }
 
     /// <summary>What the last upload run reported (failures and what is waiting, and why).</summary>
     public IReadOnlyList<string> UploadProblems

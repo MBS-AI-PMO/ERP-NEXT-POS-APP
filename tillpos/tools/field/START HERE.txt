@@ -112,13 +112,23 @@ Receipts are saved as files in {{DATA_FOLDER}}\receipts
 CHANGING THE PRINTER LATER
 On the Login screen press "Settings", enter the supervisor PIN, and choose
 the new printer.
+
+SYNC STATUS
+The top bar shows the connection and the uploads, for example
+"Online · synced 09:25 · 12 uploaded today · 0 waiting · 0 failed".
+Click it (on any screen) to open the Sync status window: what the last
+download from ERPNext did (and what a "sync problem" was, in plain words),
+what was uploaded today, what is waiting and why, and what failed. Anyone
+can look; no PIN is needed. "Open Upload problems (supervisor)" there opens
+the Upload problems screen after the supervisor PIN.
 #DEV#
 #DEV#SEEING THE UPLOADS IN THE DEV ERPNEXT
 #DEV#Log in at https://dev.quickgroc.com and open the lists
 #DEV#  POS Invoice          (bills and returns; returns show "Is Return")
 #DEV#  POS Opening Shift    (one per shift, sent when the shift opens)
 #DEV#  POS Closing Shift    (sent after the shift is closed)
-#DEV#The newest are at the top.
+#DEV#The newest are at the top. The Sync status window on the till shows each
+#DEV#uploaded document's ERPNext name, so you can search for it there.
 
 MORE THAN ONE TILL
 The simplest way is one Windows user per till. The till's settings are kept

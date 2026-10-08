@@ -215,6 +215,20 @@ public sealed class ExcludedHistoryTests : IDisposable
     }
 
     [Fact]
+    public async Task Uploaded_documents_are_stamped_with_the_upload_time()
+    {
+        UploadHistory.SwitchToLive(shifts, kv, goLive, includeHistory: true);
+        var uploader = New();
+
+        await uploader.RunOnceAsync();
+
+        Assert.NotEmpty(erp.Inserted);
+        Assert.Equal(erp.Inserted.Count, uploader.UploadedSince(goLive.AddHours(5)));
+        Assert.Equal(0, uploader.UploadedSince(goLive.AddHours(5).AddTicks(1)));
+        Assert.All(receipts.SyncedSince(goLive), d => Assert.Equal(goLive.AddHours(5), d.SyncedAt));
+    }
+
+    [Fact]
     public void The_refusal_is_logged_again_after_the_mode_changed()
     {
         Shift("OPEN", goLive.AddHours(-1), close: false);

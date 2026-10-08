@@ -58,6 +58,12 @@ public sealed class WpfDialogs(
         return dialog.ShowDialog() == true ? dialog.Pick : null;
     }
 
+    public bool ShowSyncStatus(SyncStatusViewModel vm)
+    {
+        var dialog = new SyncStatusDialog(vm) { Owner = Top() };
+        return dialog.ShowDialog() == true;
+    }
+
     public string? ShowHeldBills(HeldBillsViewModel vm)
     {
         var dialog = new HeldBillsDialog(vm) { Owner = owner };

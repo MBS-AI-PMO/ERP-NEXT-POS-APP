@@ -41,6 +41,9 @@ public interface IDialogs
     /// or null when it was closed without adding.</summary>
     PriceCheckPick? ShowPriceCheck(PriceCheckViewModel vm);
 
+    /// <summary>Shows the Sync status window (modal, read-only). Returns true when "Open Upload problems (supervisor)" was pressed.</summary>
+    bool ShowSyncStatus(SyncStatusViewModel vm);
+
     /// <summary>Shows the held bills (modal). Returns the id of the bill to recall, or null.</summary>
     string? ShowHeldBills(HeldBillsViewModel vm);
 }

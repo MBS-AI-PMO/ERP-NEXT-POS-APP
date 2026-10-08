@@ -89,14 +89,74 @@ public sealed class ShiftStore(TillDb db)
 
     // Each document keeps its own error (opening_error, closing_error); last_error mirrors the latest one for older readers.
 
-    public void MarkSynced(string clientId, ShiftDocument document, string erpName)
+    /// <summary>The document is in ERPNext as <paramref name="erpName"/>, since <paramref name="at"/> (default: now).</summary>
+    public void MarkSynced(string clientId, ShiftDocument document, string erpName, DateTimeOffset? at = null)
     {
         var (status, name, error, _) = Columns(document);
+        var syncedAt = document == ShiftDocument.Opening ? "opening_synced_at" : "closing_synced_at";
         Update($"""
             UPDATE shift SET {status} = 'Synced', {name} = @n, {error} = NULL, last_error = NULL, attempts = 0, next_attempt_at = NULL,
-                unknown_attempts = 0
+                unknown_attempts = 0, {syncedAt} = @at
             WHERE client_id = @id
-            """, clientId, ("@n", erpName));
+            """, clientId, ("@n", erpName), ("@at", SqlExt.Instant(at ?? DateTimeOffset.UtcNow)));
+    }
+
+    /// <summary>Openings and closings that reached ERPNext at or after <paramref name="since"/>.</summary>
+    public int CountSyncedSince(DateTimeOffset since)
+    {
+        using var c = db.Open();
+        return Convert.ToInt32(c.Scalar(null, """
+            SELECT (SELECT COUNT(*) FROM shift WHERE opening_status = 'Synced' AND opening_synced_at >= @s)
+                 + (SELECT COUNT(*) FROM shift WHERE closing_status = 'Synced' AND closing_synced_at >= @s)
+            """, ("@s", SqlExt.Instant(since))), CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>Openings (amount: the float) and closings (amount: the shift's sales total) that reached ERPNext at or after
+    /// <paramref name="since"/>, newest first.</summary>
+    public IReadOnlyList<SyncedDocument> SyncedSince(DateTimeOffset since)
+    {
+        using var c = db.Open();
+        var at = SqlExt.Instant(since);
+        var openings = c.Query("""
+            SELECT opening_json, erp_opening, opening_synced_at FROM shift WHERE opening_status = 'Synced' AND opening_synced_at >= @s
+            """,
+            r =>
+            {
+                var opening = JsonSerializer.Deserialize<ShiftOpening>(r.GetString(0))!;
+                return new SyncedDocument(OutboxKind.Opening, opening.ClientId, SqlExt.Str(r, 1), SqlExt.Instant(r, 2)!.Value,
+                    opening.OpeningAmounts.Sum(p => p.Amount));
+            }, ("@s", at));
+        var closings = c.Query("""
+            SELECT client_id, closing_json, erp_closing, closing_synced_at FROM shift
+            WHERE closing_status = 'Synced' AND closing_synced_at >= @s AND closing_json IS NOT NULL
+            """,
+            r => new SyncedDocument(OutboxKind.Closing, r.GetString(0), SqlExt.Str(r, 2), SqlExt.Instant(r, 3)!.Value,
+                JsonSerializer.Deserialize<ShiftClosing>(r.GetString(1))!.GrandTotal), ("@s", at));
+        return [.. openings.Concat(closings).OrderByDescending(d => d.SyncedAt).ThenBy(d => d.Kind)];
+    }
+
+    /// <summary>Openings, and closings of closed shifts, waiting for upload (Pending), oldest shift first, with each document's
+    /// own error or note (e.g. waiting for the previous shift of its counter).</summary>
+    public IReadOnlyList<OutboxProblem> Waiting()
+    {
+        using var c = db.Open();
+        var rows = c.Query("""
+            SELECT client_id, opened_at, closed_at, opening_status, closing_status, opening_error, closing_error, attempts FROM shift
+            WHERE opening_status = 'Pending' OR (closed_at IS NOT NULL AND closing_status = 'Pending')
+            ORDER BY opened_at, client_id
+            """,
+            r => (Id: r.GetString(0), Opened: SqlExt.Instant(r, 1)!.Value, Closed: SqlExt.Instant(r, 2),
+                Opening: Enum.Parse<UploadStatus>(r.GetString(3)), Closing: Enum.Parse<UploadStatus>(r.GetString(4)),
+                OpeningError: SqlExt.Str(r, 5), ClosingError: SqlExt.Str(r, 6), Attempts: r.GetInt32(7)));
+        var waiting = new List<OutboxProblem>();
+        foreach (var s in rows)
+        {
+            if (s.Opening == UploadStatus.Pending)
+                waiting.Add(new OutboxProblem(OutboxKind.Opening, s.Id, s.Id, s.Opened, UploadStatus.Pending, s.OpeningError, s.Attempts));
+            if (s.Closed is { } closed && s.Closing == UploadStatus.Pending)
+                waiting.Add(new OutboxProblem(OutboxKind.Closing, s.Id, s.Id, closed, UploadStatus.Pending, s.ClosingError, s.Attempts));
+        }
+        return waiting;
     }
 
     /// <summary>A failure reported after the document was already uploaded is ignored. <paramref name="keepUnknown"/>: the failure

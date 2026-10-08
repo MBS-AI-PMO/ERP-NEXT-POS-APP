@@ -1,0 +1,150 @@
+<Window x:Class="TillPOS.App.Dialogs.SyncStatusDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:TillPOS.App"
+        Title="Sync status" Width="900" Height="680" WindowStartupLocation="CenterOwner" ResizeMode="CanResize"
+        ShowInTaskbar="False" FontFamily="{StaticResource TextFont}" FontSize="15" Background="{StaticResource Ground}">
+  <!-- Read-only: anyone may look. Only "Open Upload problems" leads on (behind the supervisor PIN). -->
+  <Window.Resources>
+    <Style TargetType="TextBlock" x:Key="Head" BasedOn="{StaticResource SectionTitle}">
+      <Setter Property="Margin" Value="0,16,0,6" />
+      <Setter Property="FontSize" Value="14" />
+    </Style>
+    <Style TargetType="TextBlock" x:Key="Cell">
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+      <Setter Property="Margin" Value="0,0,10,0" />
+    </Style>
+    <Style TargetType="TextBlock" x:Key="Empty">
+      <Setter Property="Foreground" Value="{StaticResource Muted}" />
+      <Setter Property="FontStyle" Value="Italic" />
+    </Style>
+    <Style TargetType="Border" x:Key="Row">
+      <Setter Property="BorderBrush" Value="{StaticResource Line}" />
+      <Setter Property="BorderThickness" Value="0,0,0,1" />
+      <Setter Property="Padding" Value="0,6" />
+    </Style>
+  </Window.Resources>
+  <DockPanel Margin="16">
+    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,4">
+      <TextBlock Text="&#xE895;" Style="{StaticResource Icon}" FontSize="20" Foreground="{StaticResource Accent}" Margin="0,0,10,0" />
+      <TextBlock Text="Sync status" Style="{StaticResource ScreenTitle}" FontSize="20" />
+    </StackPanel>
+    <DockPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
+      <!-- Not focusable: scanner keys must never press a button. Esc closes. -->
+      <Button DockPanel.Dock="Left" Style="{StaticResource KeyButton}" Content="Open Upload problems (supervisor)" Height="56" Padding="16,0"
+              Focusable="False" local:ButtonIcon.Glyph="&#xE7BA;" Click="OpenProblemsClick"
+              IsEnabled="{Binding CanOpenUploadProblems}" />
+      <Button Style="{StaticResource PrimaryButton}" Content="Close (Esc)" Width="160" Height="56" Focusable="False" IsCancel="True"
+              HorizontalAlignment="Right" />
+    </DockPanel>
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
+      <StackPanel>
+        <TextBlock Text="{Binding Message}" Foreground="{StaticResource Danger}" TextWrapping="Wrap"
+                   Visibility="{Binding Message.Length, Converter={StaticResource CountToVisibility}}" />
+
+        <!-- Connection -->
+        <Border Style="{StaticResource Card}" Margin="0,8,0,0" Padding="16,10">
+          <StackPanel>
+            <TextBlock>
+              <Run Text="{Binding Connection, Mode=OneWay}" FontWeight="Bold" /><Run Text="  ·  last sync " Foreground="{StaticResource Muted}" /><Run Text="{Binding LastSync, Mode=OneWay}" FontWeight="SemiBold" /><Run Text="  ·  " Foreground="{StaticResource Muted}" /><Run Text="{Binding SyncStatus, Mode=OneWay}" />
+            </TextBlock>
+            <TextBlock Text="{Binding UploadModeText}" Foreground="{StaticResource Muted}" Margin="0,4,0,0" />
+          </StackPanel>
+        </Border>
+
+        <!-- Download (catalog feeds): what "N sync problem(s)" means. -->
+        <TextBlock Style="{StaticResource Head}" Text="DOWNLOAD FROM ERPNEXT (LAST SYNC)" />
+        <TextBlock Text="{Binding FeedsSummary}" FontWeight="SemiBold" Margin="0,0,0,4" />
+        <ItemsControl ItemsSource="{Binding Feeds}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Border Style="{StaticResource Row}">
+                <Grid>
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="200" /><ColumnDefinition Width="80" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                  <TextBlock Grid.Column="0" Text="{Binding Feed}" Style="{StaticResource Cell}" FontWeight="SemiBold" />
+                  <TextBlock Grid.Column="1" Text="{Binding Rows, StringFormat='{}{0} rows'}" Style="{StaticResource Cell}" Foreground="{StaticResource Muted}" />
+                  <TextBlock Grid.Column="2" Text="{Binding Text}" TextWrapping="Wrap" VerticalAlignment="Center">
+                    <TextBlock.Style>
+                      <Style TargetType="TextBlock">
+                        <Setter Property="Foreground" Value="{StaticResource Danger}" />
+                        <Style.Triggers>
+                          <DataTrigger Binding="{Binding Ok}" Value="True"><Setter Property="Foreground" Value="{StaticResource Accent}" /></DataTrigger>
+                        </Style.Triggers>
+                      </Style>
+                    </TextBlock.Style>
+                  </TextBlock>
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- Uploads -->
+        <TextBlock Style="{StaticResource Head}">
+          <Run Text="UPLOADED TODAY (" /><Run Text="{Binding UploadedTodayCount, Mode=OneWay}" /><Run Text=")" />
+        </TextBlock>
+        <TextBlock Text="Nothing uploaded today." Style="{StaticResource Empty}"
+                   Visibility="{Binding UploadedTodayCount, Converter={StaticResource EmptyToVisibility}}" />
+        <ItemsControl ItemsSource="{Binding UploadedToday}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Border Style="{StaticResource Row}">
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="60" /><ColumnDefinition Width="120" /><ColumnDefinition Width="*" /><ColumnDefinition Width="220" /><ColumnDefinition Width="100" />
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Grid.Column="0" Text="{Binding Time}" Style="{StaticResource Cell}" Foreground="{StaticResource Muted}" />
+                  <TextBlock Grid.Column="1" Text="{Binding Kind}" Style="{StaticResource Cell}" FontWeight="SemiBold" />
+                  <TextBlock Grid.Column="2" Text="{Binding Id}" Style="{StaticResource Cell}" FontFamily="{StaticResource CodeFont}" FontSize="13" />
+                  <TextBlock Grid.Column="3" Text="{Binding ErpName}" Style="{StaticResource Cell}" FontFamily="{StaticResource CodeFont}" FontSize="13" />
+                  <TextBlock Grid.Column="4" Text="{Binding Amount}" Style="{StaticResource Cell}" TextAlignment="Right" />
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <TextBlock Style="{StaticResource Head}">
+          <Run Text="WAITING (" /><Run Text="{Binding WaitingCount, Mode=OneWay}" /><Run Text=")" />
+        </TextBlock>
+        <TextBlock Text="Nothing is waiting." Style="{StaticResource Empty}"
+                   Visibility="{Binding WaitingCount, Converter={StaticResource EmptyToVisibility}}" />
+        <ItemsControl ItemsSource="{Binding Waiting}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Border Style="{StaticResource Row}">
+                <Grid>
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="120" /><ColumnDefinition Width="280" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                  <TextBlock Grid.Column="0" Text="{Binding Kind}" Style="{StaticResource Cell}" FontWeight="SemiBold" />
+                  <TextBlock Grid.Column="1" Text="{Binding Id}" Style="{StaticResource Cell}" FontFamily="{StaticResource CodeFont}" FontSize="13" />
+                  <TextBlock Grid.Column="2" Text="{Binding Reason}" TextWrapping="Wrap" VerticalAlignment="Center" Foreground="{StaticResource Muted}" />
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <TextBlock Style="{StaticResource Head}">
+          <Run Text="FAILED (" /><Run Text="{Binding FailedCount, Mode=OneWay}" /><Run Text=")" />
+        </TextBlock>
+        <TextBlock Text="Nothing failed." Style="{StaticResource Empty}"
+                   Visibility="{Binding FailedCount, Converter={StaticResource EmptyToVisibility}}" />
+        <ItemsControl ItemsSource="{Binding Failed}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Border Style="{StaticResource Row}">
+                <Grid>
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="120" /><ColumnDefinition Width="280" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                  <TextBlock Grid.Column="0" Text="{Binding Kind}" Style="{StaticResource Cell}" FontWeight="SemiBold" />
+                  <TextBlock Grid.Column="1" Text="{Binding Id}" Style="{StaticResource Cell}" FontFamily="{StaticResource CodeFont}" FontSize="13" />
+                  <TextBlock Grid.Column="2" Text="{Binding Error}" TextWrapping="Wrap" VerticalAlignment="Center" Foreground="{StaticResource Danger}" />
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </ScrollViewer>
+  </DockPanel>
+</Window>
