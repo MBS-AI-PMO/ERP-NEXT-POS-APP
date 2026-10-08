@@ -57,31 +57,30 @@ public sealed class SyncStatusViewModel
             var since = StartOfDay(now);
             UploadedToday =
             [
-                .. new[] { ctx.Receipts.SyncedSince(since), ctx.Shifts.SyncedSince(since), ctx.Approvals.SyncedSince(since) }
+                .. new[] { ctx.Receipts.SyncedSince(since, MaxRows), ctx.Shifts.SyncedSince(since, MaxRows), ctx.Approvals.SyncedSince(since, MaxRows) }
                     .SelectMany(list => list)
                     .OrderByDescending(d => d.SyncedAt).ThenBy(d => d.Kind).ThenBy(d => d.Id, StringComparer.Ordinal)
+                    .Take(MaxRows)
                     .Select(d => new UploadedRow(Time(d.SyncedAt, now), KindName(d.Kind, d.IsReturn), d.Id, d.ErpName ?? "",
                         d.Amount is { } amount ? Format.Money(amount) : "")),
             ];
+            UploadedTodayCount = ctx.Receipts.CountSyncedSince(since) + ctx.Shifts.CountSyncedSince(since) + ctx.Approvals.CountSyncedSince(since);
             var runProblems = shell.UploadProblemDetails
                 .Where(p => p.DocId.Length > 0)
                 .GroupBy(p => p.DocId)
                 .ToDictionary(g => g.Key, g => g.First().Message);
             Waiting =
             [
-                .. new[] { ctx.Shifts.Waiting(), ctx.Receipts.Waiting(), ctx.Approvals.Waiting() }
-                    .SelectMany(list => list)
-                    .OrderBy(p => p.Created).ThenBy(p => p.Kind).ThenBy(p => p.Id, StringComparer.Ordinal)
-                    .Select(p => new WaitingRow(KindName(p, ctx), p.Id, WaitingReason(p, runProblems, shell.Upload))),
+                .. Newest(ctx.Shifts.Waiting(MaxRows), ctx.Receipts.Waiting(MaxRows), ctx.Approvals.Waiting(MaxRows))
+                    .Select(p => new WaitingRow(KindName(p.Kind, p.IsReturn), p.Id, WaitingReason(p, runProblems, shell.Upload))),
             ];
+            WaitingCount = ctx.Shifts.CountPending() + ctx.Receipts.CountPending() + ctx.Approvals.CountPending();
             Failed =
             [
-                .. new[] { ctx.Shifts.Problems(), ctx.Receipts.Problems(), ctx.Approvals.Problems() }
-                    .SelectMany(list => list)
-                    .Where(p => p.Status == UploadStatus.Failed)
-                    .OrderBy(p => p.Created).ThenBy(p => p.Kind).ThenBy(p => p.Id, StringComparer.Ordinal)
-                    .Select(p => new FailedRow(KindName(p, ctx), p.Id, p.Error ?? "")),
+                .. Newest(ctx.Shifts.Failed(MaxRows), ctx.Receipts.Failed(MaxRows), ctx.Approvals.Failed(MaxRows))
+                    .Select(p => new FailedRow(KindName(p.Kind, p.IsReturn), p.Id, p.Error ?? "")),
             ];
+            FailedCount = ctx.Shifts.CountFailed() + ctx.Receipts.CountFailed() + ctx.Approvals.CountFailed();
         }
         catch (Exception ex)
         {
@@ -109,9 +108,18 @@ public sealed class SyncStatusViewModel
     public IReadOnlyList<UploadedRow> UploadedToday { get; }
     public IReadOnlyList<WaitingRow> Waiting { get; }
     public IReadOnlyList<FailedRow> Failed { get; }
-    public int UploadedTodayCount => UploadedToday.Count;
-    public int WaitingCount => Waiting.Count;
-    public int FailedCount => Failed.Count;
+    /// <summary>At most this many rows per list (the newest); the rest is counted in the "and N more" line.</summary>
+    public const int MaxRows = 200;
+
+    /// <summary>All of today's uploads / the waiting / the failed documents (the lists show the newest <see cref="MaxRows"/>).</summary>
+    public int UploadedTodayCount { get; }
+    public int WaitingCount { get; }
+    public int FailedCount { get; }
+
+    /// <summary>"and 12 more" under a list cut at <see cref="MaxRows"/>, else "".</summary>
+    public string UploadedTodayMore => More(UploadedTodayCount, UploadedToday.Count);
+    public string WaitingMore => More(WaitingCount, Waiting.Count);
+    public string FailedMore => More(FailedCount, Failed.Count);
 
     /// <summary>A store failure while reading the lists, or "".</summary>
     public string Message { get; } = "";
@@ -173,20 +181,14 @@ public sealed class SyncStatusViewModel
         _ => isReturn ? "Return" : "Bill",
     };
 
-    private static string KindName(OutboxProblem p, TillContext ctx) =>
-        KindName(p.Kind, p.Kind == OutboxKind.Bill && IsReturn(ctx, p.Id));
+    /// <summary>The newest <see cref="MaxRows"/> of the stores' lists (each already newest first and capped), newest first.</summary>
+    private static IEnumerable<OutboxProblem> Newest(params IReadOnlyList<OutboxProblem>[] lists) =>
+        lists.SelectMany(list => list)
+            .OrderByDescending(p => p.Created).ThenBy(p => p.Kind).ThenBy(p => p.Id, StringComparer.Ordinal)
+            .Take(MaxRows);
 
-    private static bool IsReturn(TillContext ctx, string id)
-    {
-        try
-        {
-            return ctx.Receipts.Get(id)?.Kind == TillPOS.Core.Sales.ReceiptKind.Return;
-        }
-        catch (Exception)
-        {
-            return false;
-        }
-    }
+    private static string More(int total, int shown) =>
+        total > shown ? $"and {(total - shown).ToString(CultureInfo.InvariantCulture)} more" : "";
 
     private static string Time(DateTimeOffset at, DateTimeOffset now) => at.ToOffset(now.Offset).ToString("HH:mm", CultureInfo.InvariantCulture);
 

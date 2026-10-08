@@ -114,7 +114,8 @@ public sealed class SyncedTodayStoreTests : IDisposable
         Assert.Equal([("A1", (string?)null)], approvals.Waiting().Select(w => (w.Id, w.Error)));
 
         shifts.Close(new ShiftClosing("S1", Midnight.AddHours(10), [], 0, 0, 0m, 0m, 0m));
-        Assert.Equal([OutboxKind.Opening, OutboxKind.Closing], shifts.Waiting().Select(w => w.Kind));
+        Assert.Equal([OutboxKind.Closing, OutboxKind.Opening], shifts.Waiting().Select(w => w.Kind));      // newest first
+        Assert.Equal([OutboxKind.Closing], shifts.Waiting(limit: 1).Select(w => w.Kind));
     }
 
     [Fact]

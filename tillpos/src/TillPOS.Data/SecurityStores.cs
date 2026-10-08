@@ -72,33 +72,35 @@ public sealed class ApprovalStore(TillDb db)
             ("@s", SqlExt.Instant(since))), CultureInfo.InvariantCulture);
     }
 
-    /// <summary>Approvals that reached ERPNext at or after <paramref name="since"/>, newest first (amount: the approval's, or
-    /// null when it has none).</summary>
-    public IReadOnlyList<SyncedDocument> SyncedSince(DateTimeOffset since)
+    /// <summary>The newest <paramref name="limit"/> approvals that reached ERPNext at or after <paramref name="since"/>, newest first
+    /// (amount: the approval's, or null when it has none).</summary>
+    public IReadOnlyList<SyncedDocument> SyncedSince(DateTimeOffset since, int limit = int.MaxValue)
     {
         using var c = db.Open();
         return c.Query("""
-            SELECT json, erp_name, synced_at FROM approval_log WHERE sync_status = 'Synced' AND synced_at >= @s ORDER BY synced_at DESC, id
+            SELECT json, erp_name, synced_at FROM approval_log WHERE sync_status = 'Synced' AND synced_at >= @s
+            ORDER BY synced_at DESC, id LIMIT @l
             """,
             r =>
             {
                 var record = JsonSerializer.Deserialize<ApprovalRecord>(r.GetString(0), Json)!;
                 return new SyncedDocument(OutboxKind.Approval, record.Id, SqlExt.Str(r, 1), SqlExt.Instant(r, 2)!.Value,
                     record.Amount == 0m ? null : record.Amount);
-            }, ("@s", SqlExt.Instant(since)));
+            }, ("@s", SqlExt.Instant(since)), ("@l", limit));
     }
 
-    /// <summary>Approvals waiting for upload (Pending), oldest first, with their last error or note.</summary>
-    public IReadOnlyList<OutboxProblem> Waiting()
+    /// <summary>The newest <paramref name="limit"/> approvals waiting for upload (Pending), newest first, with their last error or note.</summary>
+    public IReadOnlyList<OutboxProblem> Waiting(int limit = int.MaxValue) => Newest("Pending", limit);
+
+    /// <summary>The newest <paramref name="limit"/> approvals ERPNext refused (Failed), newest first.</summary>
+    public IReadOnlyList<OutboxProblem> Failed(int limit = int.MaxValue) => Newest("Failed", limit);
+
+    private List<OutboxProblem> Newest(string status, int limit)
     {
         using var c = db.Open();
-        return c.Query("SELECT json, last_error, attempts FROM approval_log WHERE sync_status = 'Pending' ORDER BY at, id",
-            r =>
-            {
-                var record = JsonSerializer.Deserialize<ApprovalRecord>(r.GetString(0), Json)!;
-                return new OutboxProblem(OutboxKind.Approval, record.Id, record.ShiftClientId, record.At, UploadStatus.Pending,
-                    SqlExt.Str(r, 1), r.GetInt32(2));
-            });
+        return c.Query("SELECT id, json_extract(json, '$.ShiftClientId'), at, last_error, attempts FROM approval_log WHERE sync_status = @st ORDER BY at DESC, id DESC LIMIT @l",
+            r => new OutboxProblem(OutboxKind.Approval, r.GetString(0), SqlExt.Str(r, 1) ?? "", SqlExt.Instant(r, 2)!.Value,
+                Enum.Parse<UploadStatus>(status), SqlExt.Str(r, 3), r.GetInt32(4)), ("@st", status), ("@l", limit));
     }
 
     /// <summary>A failure reported after the approval was already uploaded is ignored.</summary>

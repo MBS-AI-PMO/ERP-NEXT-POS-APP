@@ -78,11 +78,53 @@ public sealed class SyncStatusTests : IDisposable
 
         Assert.Equal(
         [
-            ("Shift opening", Shift, "Waiting for the next upload"),
             ("Bill", "TILL2-A", "Bill TILL2-A waits for its shift's opening to upload."),
             ("Bill", "TILL2-B", "upload in progress"),
-        ], vm.Waiting.Select(r => (r.Kind, r.Id, r.Reason)));
+            ("Shift opening", Shift, "Waiting for the next upload"),
+        ], vm.Waiting.Select(r => (r.Kind, r.Id, r.Reason)));                 // newest first
         Assert.Equal(3, vm.WaitingCount);
+        Assert.Equal("", vm.WaitingMore);
+    }
+
+    [Fact]
+    public void Each_list_shows_the_newest_200_and_counts_the_rest()
+    {
+        f.Ctx.Shifts.MarkSynced(Shift, ShiftDocument.Opening, "POSA-OS-1", midnight.AddHours(8));
+        for (var i = 0; i < 205; i++)
+        {
+            var id = $"TILL2-{i:D3}";
+            f.Ctx.Receipts.Save(UploadTestData.Sale(id, Shift, f.Clock.Now.AddMinutes(-300 + i)));
+            if (i < 203) f.Ctx.Receipts.MarkSynced(id, $"ACC-{i:D3}", midnight.AddHours(8).AddSeconds(i + 1));
+            else f.Ctx.Receipts.MarkFailed(id, "refused", f.Clock.Now.AddMinutes(5));
+        }
+        for (var i = 0; i < 210; i++)
+            f.Ctx.Approvals.Add(new ApprovalRecord($"APP{i:D3}", ApprovalAction.LineVoid, "simran", "sup", Shift, null, "MILK", 1m, null,
+                f.Clock.Now.AddMinutes(-300 + i)));
+
+        var vm = Vm();
+
+        Assert.Equal((200, 204, "and 4 more"), (vm.UploadedToday.Count, vm.UploadedTodayCount, vm.UploadedTodayMore));
+        Assert.Equal("TILL2-202", vm.UploadedToday[0].Id);                                 // newest first
+        Assert.Equal((200, 210, "and 10 more"), (vm.Waiting.Count, vm.WaitingCount, vm.WaitingMore));
+        Assert.Equal("APP209", vm.Waiting[0].Id);
+        Assert.Equal((2, 2, ""), (vm.Failed.Count, vm.FailedCount, vm.FailedMore));
+    }
+
+    [Fact]
+    public void A_waiting_return_is_named_from_the_bills_kind_without_reading_the_bill()
+    {
+        Bill("TILL2-R", -6.79m, ReceiptKind.Return);
+        using (var c = f.Temp.Db.Open())
+        using (var cmd = c.CreateCommand())
+        {
+            cmd.CommandText = "UPDATE receipt SET json = 'not json'";                    // reading the bill would fail
+            cmd.ExecuteNonQuery();
+        }
+
+        var vm = Vm();
+
+        Assert.Equal("", vm.Message);
+        Assert.Contains(vm.Waiting, r => (r.Kind, r.Id) == ("Return", "TILL2-R"));
     }
 
     [Theory]

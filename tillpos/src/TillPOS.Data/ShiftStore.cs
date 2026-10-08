@@ -111,52 +111,60 @@ public sealed class ShiftStore(TillDb db)
             """, ("@s", SqlExt.Instant(since))), CultureInfo.InvariantCulture);
     }
 
-    /// <summary>Openings (amount: the float) and closings (amount: the shift's sales total) that reached ERPNext at or after
-    /// <paramref name="since"/>, newest first.</summary>
-    public IReadOnlyList<SyncedDocument> SyncedSince(DateTimeOffset since)
+    /// <summary>The newest <paramref name="limit"/> openings (amount: the float) and closings (amount: the shift's sales total) that
+    /// reached ERPNext at or after <paramref name="since"/>, newest first.</summary>
+    public IReadOnlyList<SyncedDocument> SyncedSince(DateTimeOffset since, int limit = int.MaxValue)
     {
         using var c = db.Open();
         var at = SqlExt.Instant(since);
         var openings = c.Query("""
             SELECT opening_json, erp_opening, opening_synced_at FROM shift WHERE opening_status = 'Synced' AND opening_synced_at >= @s
+            ORDER BY opening_synced_at DESC LIMIT @l
             """,
             r =>
             {
                 var opening = JsonSerializer.Deserialize<ShiftOpening>(r.GetString(0))!;
                 return new SyncedDocument(OutboxKind.Opening, opening.ClientId, SqlExt.Str(r, 1), SqlExt.Instant(r, 2)!.Value,
                     opening.OpeningAmounts.Sum(p => p.Amount));
-            }, ("@s", at));
+            }, ("@s", at), ("@l", limit));
         var closings = c.Query("""
             SELECT client_id, closing_json, erp_closing, closing_synced_at FROM shift
             WHERE closing_status = 'Synced' AND closing_synced_at >= @s AND closing_json IS NOT NULL
+            ORDER BY closing_synced_at DESC LIMIT @l
             """,
             r => new SyncedDocument(OutboxKind.Closing, r.GetString(0), SqlExt.Str(r, 2), SqlExt.Instant(r, 3)!.Value,
-                JsonSerializer.Deserialize<ShiftClosing>(r.GetString(1))!.GrandTotal), ("@s", at));
-        return [.. openings.Concat(closings).OrderByDescending(d => d.SyncedAt).ThenBy(d => d.Kind)];
+                JsonSerializer.Deserialize<ShiftClosing>(r.GetString(1))!.GrandTotal), ("@s", at), ("@l", limit));
+        return [.. openings.Concat(closings).OrderByDescending(d => d.SyncedAt).ThenBy(d => d.Kind).Take(limit)];
     }
 
-    /// <summary>Openings, and closings of closed shifts, waiting for upload (Pending), oldest shift first, with each document's
-    /// own error or note (e.g. waiting for the previous shift of its counter).</summary>
-    public IReadOnlyList<OutboxProblem> Waiting()
+    /// <summary>The newest <paramref name="limit"/> openings, and closings of closed shifts, waiting for upload (Pending), newest
+    /// first, with each document's own error or note (e.g. waiting for the previous shift of its counter).</summary>
+    public IReadOnlyList<OutboxProblem> Waiting(int limit = int.MaxValue) => Newest(UploadStatus.Pending, limit);
+
+    /// <summary>The newest <paramref name="limit"/> openings and closings ERPNext refused (Failed), newest first.</summary>
+    public IReadOnlyList<OutboxProblem> Failed(int limit = int.MaxValue) => Newest(UploadStatus.Failed, limit);
+
+    private List<OutboxProblem> Newest(UploadStatus status, int limit)
     {
         using var c = db.Open();
         var rows = c.Query("""
             SELECT client_id, opened_at, closed_at, opening_status, closing_status, opening_error, closing_error, attempts FROM shift
-            WHERE opening_status = 'Pending' OR (closed_at IS NOT NULL AND closing_status = 'Pending')
-            ORDER BY opened_at, client_id
+            WHERE opening_status = @st OR (closed_at IS NOT NULL AND closing_status = @st)
+            ORDER BY opened_at DESC, client_id DESC LIMIT @l
             """,
             r => (Id: r.GetString(0), Opened: SqlExt.Instant(r, 1)!.Value, Closed: SqlExt.Instant(r, 2),
                 Opening: Enum.Parse<UploadStatus>(r.GetString(3)), Closing: Enum.Parse<UploadStatus>(r.GetString(4)),
-                OpeningError: SqlExt.Str(r, 5), ClosingError: SqlExt.Str(r, 6), Attempts: r.GetInt32(7)));
-        var waiting = new List<OutboxProblem>();
+                OpeningError: SqlExt.Str(r, 5), ClosingError: SqlExt.Str(r, 6), Attempts: r.GetInt32(7)),
+            ("@st", status.ToString()), ("@l", limit));
+        var found = new List<OutboxProblem>();
         foreach (var s in rows)
         {
-            if (s.Opening == UploadStatus.Pending)
-                waiting.Add(new OutboxProblem(OutboxKind.Opening, s.Id, s.Id, s.Opened, UploadStatus.Pending, s.OpeningError, s.Attempts));
-            if (s.Closed is { } closed && s.Closing == UploadStatus.Pending)
-                waiting.Add(new OutboxProblem(OutboxKind.Closing, s.Id, s.Id, closed, UploadStatus.Pending, s.ClosingError, s.Attempts));
+            if (s.Opening == status)
+                found.Add(new OutboxProblem(OutboxKind.Opening, s.Id, s.Id, s.Opened, status, s.OpeningError, s.Attempts));
+            if (s.Closed is { } closed && s.Closing == status)
+                found.Add(new OutboxProblem(OutboxKind.Closing, s.Id, s.Id, closed, status, s.ClosingError, s.Attempts));
         }
-        return waiting;
+        return [.. found.OrderByDescending(p => p.Created).ThenByDescending(p => p.Kind).Take(limit)];
     }
 
     /// <summary>A failure reported after the document was already uploaded is ignored. <paramref name="keepUnknown"/>: the failure

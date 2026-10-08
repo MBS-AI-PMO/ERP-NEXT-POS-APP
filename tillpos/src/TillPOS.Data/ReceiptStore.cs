@@ -105,31 +105,38 @@ public sealed class ReceiptStore(TillDb db) : IReceiptStore
             ("@s", SqlExt.Instant(since))), CultureInfo.InvariantCulture);
     }
 
-    /// <summary>Bills that reached ERPNext at or after <paramref name="since"/>, newest first.</summary>
-    public IReadOnlyList<SyncedDocument> SyncedSince(DateTimeOffset since)
+    /// <summary>The newest <paramref name="limit"/> bills that reached ERPNext at or after <paramref name="since"/>, newest first.</summary>
+    public IReadOnlyList<SyncedDocument> SyncedSince(DateTimeOffset since, int limit = int.MaxValue)
     {
         using var c = db.Open();
         return c.Query("""
-            SELECT json, erp_name, synced_at FROM receipt WHERE sync_status = 'Synced' AND synced_at >= @s ORDER BY synced_at DESC, client_id
+            SELECT json, erp_name, synced_at FROM receipt WHERE sync_status = 'Synced' AND synced_at >= @s
+            ORDER BY synced_at DESC, client_id LIMIT @l
             """,
             r =>
             {
                 var receipt = Deserialize(r.GetString(0));
                 return new SyncedDocument(OutboxKind.Bill, receipt.ClientId, SqlExt.Str(r, 1), SqlExt.Instant(r, 2)!.Value, receipt.GrandTotal,
                     receipt.Kind == ReceiptKind.Return);
-            }, ("@s", SqlExt.Instant(since)));
+            }, ("@s", SqlExt.Instant(since)), ("@l", limit));
     }
 
-    /// <summary>Bills waiting for upload (Pending), oldest first, with their last error or note (e.g. "upload in progress").</summary>
-    public IReadOnlyList<OutboxProblem> Waiting()
+    /// <summary>The newest <paramref name="limit"/> bills waiting for upload (Pending), newest first, with their last error or note
+    /// (e.g. "upload in progress"). The bills themselves are not read.</summary>
+    public IReadOnlyList<OutboxProblem> Waiting(int limit = int.MaxValue) => Newest("Pending", limit);
+
+    /// <summary>The newest <paramref name="limit"/> bills ERPNext refused (Failed), newest first, with their error.</summary>
+    public IReadOnlyList<OutboxProblem> Failed(int limit = int.MaxValue) => Newest("Failed", limit);
+
+    private List<OutboxProblem> Newest(string status, int limit)
     {
         using var c = db.Open();
         return c.Query("""
-            SELECT client_id, shift_client_id, created_at, last_error, attempts FROM receipt
-            WHERE sync_status = 'Pending' ORDER BY created_at, client_id
+            SELECT client_id, shift_client_id, created_at, last_error, attempts, kind FROM receipt
+            WHERE sync_status = @st ORDER BY created_at DESC, client_id DESC LIMIT @l
             """,
-            r => new OutboxProblem(OutboxKind.Bill, r.GetString(0), r.GetString(1), SqlExt.Instant(r, 2)!.Value, UploadStatus.Pending,
-                SqlExt.Str(r, 3), r.GetInt32(4)));
+            r => new OutboxProblem(OutboxKind.Bill, r.GetString(0), r.GetString(1), SqlExt.Instant(r, 2)!.Value, Enum.Parse<UploadStatus>(status),
+                SqlExt.Str(r, 3), r.GetInt32(4), r.GetString(5) == nameof(ReceiptKind.Return)), ("@st", status), ("@l", limit));
     }
 
     /// <summary>A failure reported after the bill was already uploaded is ignored. <paramref name="nextAttemptAt"/> is the backoff:
@@ -176,11 +183,11 @@ public sealed class ReceiptStore(TillDb db) : IReceiptStore
     {
         using var c = db.Open();
         return c.Query("""
-            SELECT client_id, shift_client_id, created_at, sync_status, last_error, attempts FROM receipt
+            SELECT client_id, shift_client_id, created_at, sync_status, last_error, attempts, kind FROM receipt
             WHERE sync_status IN ('Failed', 'Excluded', 'Handled') ORDER BY created_at, client_id
             """,
             r => new OutboxProblem(OutboxKind.Bill, r.GetString(0), r.GetString(1), SqlExt.Instant(r, 2)!.Value,
-                Enum.Parse<UploadStatus>(r.GetString(3)), SqlExt.Str(r, 4), r.GetInt32(5)));
+                Enum.Parse<UploadStatus>(r.GetString(3)), SqlExt.Str(r, 4), r.GetInt32(5), r.GetString(6) == nameof(ReceiptKind.Return)));
     }
 
     /// <summary>A supervisor dealt with a failed or excluded bill by hand in ERPNext: it is never uploaded and no longer counted.

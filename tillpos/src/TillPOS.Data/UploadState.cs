@@ -33,10 +33,11 @@ public sealed record ShiftOutboxEntry(ShiftOpening Opening, ShiftClosing? Closin
 /// <summary>What kind of document an upload problem is about.</summary>
 public enum OutboxKind { Opening, Bill, Closing, Approval }
 
-/// <summary>A document the supervisor may have to deal with (Failed, or Excluded before Live), for the Upload problems screen.
-/// ShiftId is the shift it belongs to ("" for an approval made outside a shift).</summary>
+/// <summary>A document the supervisor may have to deal with (Failed, or Excluded before Live), for the Upload problems screen,
+/// or one waiting for upload. ShiftId is the shift it belongs to ("" for an approval made outside a shift). IsReturn: a bill that
+/// is a credit note (read from the bill's kind column, without reading the bill itself).</summary>
 public sealed record OutboxProblem(OutboxKind Kind, string Id, string ShiftId, DateTimeOffset Created, UploadStatus Status, string? Error,
-    int Attempts);
+    int Attempts, bool IsReturn = false);
 
 /// <summary>A document that reached ERPNext (inserted, or found there and adopted) at <paramref name="SyncedAt"/>, for the Sync
 /// status window. Amount: a bill's grand total (negative for a return), an opening's float, a closing's sales total, an
