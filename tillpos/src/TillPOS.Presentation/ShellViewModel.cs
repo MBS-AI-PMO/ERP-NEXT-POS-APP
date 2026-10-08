@@ -85,5 +85,13 @@ public sealed class ShellViewModel : ObservableObject, INavigator
         _ => "",
     };
 
-    public void Show(object viewModel) => Current = viewModel;
+    /// <summary>Shows a screen; the login screen's upload problem counts are read again whenever it is shown.</summary>
+    public void Show(object viewModel)
+    {
+        Current = viewModel;
+        (viewModel as LoginViewModel)?.RefreshUploadProblems();
+    }
+
+    /// <summary>An upload run finished (its counts are in the header): the login screen, if shown, reads its counts again.</summary>
+    public void UploadsUpdated() => (Current as LoginViewModel)?.RefreshUploadProblems();
 }

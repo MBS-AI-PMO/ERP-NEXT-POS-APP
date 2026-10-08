@@ -14,6 +14,8 @@ public sealed class LoginViewModel : ObservableObject
     private readonly Func<object> newSale;
     private string pin = "";
     private string message = "";
+    private int uploadProblemsCount;
+    private int handledUploads;
 
     public LoginViewModel(TillContext ctx, SessionState session, Func<object> newSale)
     {
@@ -26,7 +28,7 @@ public sealed class LoginViewModel : ObservableObject
         LoginCommand = new RelayCommand(Login);
         SettingsCommand = new AsyncRelayCommand(OpenSettingsAsync);
         UploadProblemsCommand = new AsyncRelayCommand(OpenUploadProblemsAsync);
-        (UploadProblemsCount, HandledUploads) = UploadProblemsViewModel.Counts(ctx);
+        RefreshUploadProblems();
         ShiftInfo = OpenShiftInfo();
     }
 
@@ -41,11 +43,23 @@ public sealed class LoginViewModel : ObservableObject
     /// <summary>Upload problems (supervisor): documents ERPNext refused, or left out from before Live.</summary>
     public AsyncRelayCommand UploadProblemsCommand { get; }
 
-    /// <summary>How many documents are on the Upload problems screen (the button shows when there are any).</summary>
-    public int UploadProblemsCount { get; }
+    /// <summary>How many documents need a look on the Upload problems screen (failed + excluded).</summary>
+    public int UploadProblemsCount { get => uploadProblemsCount; private set => SetProperty(ref uploadProblemsCount, value); }
 
     /// <summary>How many documents were handled by hand (listed on the same screen).</summary>
-    public int HandledUploads { get; }
+    public int HandledUploads { get => handledUploads; private set => SetProperty(ref handledUploads, value); }
+
+    /// <summary>Reads the upload problem counts again (when the screen is shown and after each upload run); the button, its
+    /// label and its visibility follow.</summary>
+    public void RefreshUploadProblems()
+    {
+        var (count, handled) = UploadProblemsViewModel.Counts(ctx);
+        if (count == UploadProblemsCount && handled == HandledUploads) return;
+        UploadProblemsCount = count;
+        HandledUploads = handled;
+        OnPropertyChanged(nameof(UploadProblemsTotal));
+        OnPropertyChanged(nameof(UploadProblemsLabel));
+    }
 
     /// <summary>Failed, excluded and handled documents together: the button shows when there is any.</summary>
     public int UploadProblemsTotal => UploadProblemsCount + HandledUploads;

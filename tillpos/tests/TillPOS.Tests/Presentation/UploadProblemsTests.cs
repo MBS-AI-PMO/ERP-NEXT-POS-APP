@@ -248,6 +248,33 @@ public sealed class UploadProblemsTests : IDisposable
     }
 
     [Fact]
+    public void The_login_screen_reads_the_counts_again_after_an_upload_run_and_when_shown()
+    {
+        var shell = new ShellViewModel();
+        var login = new LoginViewModel(f.Ctx, f.Session, () => new object());
+        shell.Show(login);
+        Assert.Equal(4, login.UploadProblemsCount);
+        var changed = new List<string?>();
+        login.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+        f.Ctx.Receipts.Retry("TILL2-A");   // e.g. the upload run retried it
+        shell.UploadsUpdated();
+
+        Assert.Equal(3, login.UploadProblemsCount);
+        Assert.Equal("Upload problems (3)", login.UploadProblemsLabel);
+        Assert.Contains(nameof(LoginViewModel.UploadProblemsLabel), changed);
+        Assert.Contains(nameof(LoginViewModel.UploadProblemsTotal), changed);
+
+        f.Ctx.Receipts.MarkHandled("TILL2-OLD", "Handled by sup: test data");
+        shell.Show(new object());
+        shell.UploadsUpdated();                 // not shown: nothing to refresh
+        Assert.Equal(3, login.UploadProblemsCount);
+        shell.Show(login);                      // shown again: read again
+        Assert.Equal((2, 1), (login.UploadProblemsCount, login.HandledUploads));
+        Assert.Equal("Upload problems (2 · 1 handled)", login.UploadProblemsLabel);
+    }
+
+    [Fact]
     public void The_login_button_stays_when_only_handled_documents_are_left()
     {
         f.Ctx.Receipts.MarkHandled("TILL2-A", "Handled by sup: by hand");

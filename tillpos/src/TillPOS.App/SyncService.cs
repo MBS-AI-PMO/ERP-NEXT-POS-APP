@@ -78,6 +78,7 @@ public sealed class SyncService(Func<CatalogPuller> newPuller, IErpClient erp, U
                 shell.PendingUploads = upload.Waiting;
                 shell.FailedUploads = upload.Failed;
                 shell.UploadProblems = upload.Problems.Select(p => p.Message).ToList();
+                shell.UploadsUpdated();
             });
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
