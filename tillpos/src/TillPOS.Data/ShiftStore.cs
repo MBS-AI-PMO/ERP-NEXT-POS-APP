@@ -183,6 +183,29 @@ public sealed class ShiftStore(TillDb db)
             """, clientId) > 0;
     }
 
+    /// <summary>Shifts opened before <paramref name="openedBefore"/> whose POS Opening Shift is in ERPNext but whose closing is not
+    /// (not uploaded, not handled, not excluded): still open there, oldest first.</summary>
+    public IReadOnlyList<ShiftOpening> OpenInErpNext(DateTimeOffset openedBefore)
+    {
+        using var c = db.Open();
+        return c.Query("""
+            SELECT opening_json FROM shift
+            WHERE opening_status = 'Synced' AND closing_status NOT IN ('Synced', 'Handled', 'Excluded') AND opened_at < @at
+            ORDER BY opened_at, client_id
+            """, r => JsonSerializer.Deserialize<ShiftOpening>(r.GetString(0))!, ("@at", SqlExt.Instant(openedBefore)));
+    }
+
+    /// <summary>The document waits (Pending, no attempt counted, no backoff) with <paramref name="note"/> as its error, e.g. an
+    /// opening ERPNext refused only because the previous shift of its counter is still open there.</summary>
+    public void MarkWaiting(string clientId, ShiftDocument document, string note)
+    {
+        var (status, _, error, _) = Columns(document);
+        Update($"""
+            UPDATE shift SET {status} = 'Pending', {error} = @n, last_error = @n, next_attempt_at = NULL
+            WHERE client_id = @id AND {status} IN ('Pending', 'Failed')
+            """, clientId, ("@n", note));
+    }
+
     /// <summary>A failed shift document goes back to the queue at once, its backoff reset. False when none was failed.</summary>
     public bool Retry(string clientId) =>
         Update("""

@@ -159,6 +159,17 @@ public sealed class Uploader
         var openingName = sync.OpeningStatus is UploadStatus.Synced or UploadStatus.Handled ? sync.ErpOpeningName : run.Planned(OpeningKey(id));
         if (openingName is null)
         {
+            // POS Awesome allows one open POS Opening Shift per user and POS Profile: an opening waits until the earlier shift of
+            // the same counter is closed in ERPNext (an opening refused for exactly that waits too, without counting an attempt).
+            if (Mode == UploadMode.Live && StillOpenBefore(opening, profile) is { } previous)
+            {
+                var note = $"Opening of shift {id} waits for {previous} to close in ERPNext.";
+                if (sync.OpeningStatus == UploadStatus.Failed
+                    && (sync.OpeningError ?? sync.LastError)?.Contains("already has an open POS shift", StringComparison.OrdinalIgnoreCase) == true)
+                    shifts.MarkWaiting(id, ShiftDocument.Opening, note);
+                run.Add(id, note);
+                return;
+            }
             if (!Due(sync.NextAttemptAt, id, $"Opening of shift {id}", sync.OpeningError ?? sync.LastError, run)) return;
             openingName = await UploadAsync(
                 new Doc(OpeningShiftPayload.Doctype, OfflineIdField, id, OpeningKey(id), $"Opening of shift {id}", true,
@@ -286,6 +297,14 @@ public sealed class Uploader
                 bill.UnknownAttempts, bill.LastError, error => receipts.MarkUnknown(receipt.ClientId, error)),
             run, ct);
     }
+
+    /// <summary>An earlier shift of the same counter (POS Profile) on this till that is open in ERPNext (opening uploaded, closing
+    /// not yet), or null.</summary>
+    private string? StillOpenBefore(Core.Shifts.ShiftOpening opening, PosSettings profile) =>
+        shifts.OpenInErpNext(opening.OpenedAt)
+            .FirstOrDefault(earlier => earlier.ClientId != opening.ClientId && string.Equals(
+                profileSettings(earlier.Counter)?.PosProfile ?? earlier.Counter, profile.PosProfile, StringComparison.OrdinalIgnoreCase))
+            ?.ClientId;
 
     /// <summary>A DryRun stand-in for a document that would be created in this run (not in ERPNext).</summary>
     private static bool IsStandIn(string name) => name.StartsWith("(new: ", StringComparison.Ordinal);
