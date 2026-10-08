@@ -1,0 +1,65 @@
+TILLPOS {{VERSION}} - TILL {{TILL}} (PRODUCTION)
+=======================================
+This TillPOS.exe is for TILL {{TILL}} only. It has Till {{TILL}}'s own ERPNext login built
+in and connects to the shop's real ERPNext (https://erp.quickgroc.com).
+Keep it on this till PC only; do not copy it to other PCs or share it.
+
+BEFORE THE FIRST START (once per PC)
+1. The PC's clock and time zone: "(UTC+04:00) Abu Dhabi, Muscat", the time
+   set correctly. Receipts print the PC's time.
+2. If this PC ran a TEST version of TillPOS before, its test bills are in
+   C:\ProgramData\TillPOS. Close TillPOS and rename that folder to
+   C:\ProgramData\TillPOS-old-test (do not delete it), so this version
+   starts clean. (C:\ProgramData\TillPOS-Dev belongs to the DEV test version
+   and is never used by this one.)
+3. Connect the receipt printer (installed in Windows) and the cash drawer
+   (drawer cable into the printer's DK port). Internet is needed for the
+   first start.
+
+FIRST START
+1. Copy TillPOS.exe to the Desktop and double-click it. Windows may say
+   "Windows protected your PC": click "More info", then "Run anyway".
+2. The setup screen opens: pick the receipt printer, press "Test print"
+   (a slip comes out, the drawer opens), keep Till number {{TILL}}, press
+   "Save and start".
+3. The till downloads the items, prices, counters and cashiers from
+   ERPNext. The cashiers log in with their PINs from ERPNext's
+   "POS Cashier" list.
+
+SWITCH UPLOADS ON - BEFORE THE FIRST REAL SHIFT
+Uploads to ERPNext are OFF in this package until the shop decides to go
+live. On go-live day, BEFORE opening the first shift:
+1. On the Login screen press "Settings" and enter a supervisor's PIN.
+2. Under "Upload to ERPNext" choose "Live", then save.
+3. The till restarts; the top bar shows a red "LIVE UPLOAD" badge.
+From then on every bill, return, shift and approval goes to ERPNext
+within about 10 seconds (or as soon as the internet is back).
+Bills made while uploads were Off are NOT uploaded, so do not sell
+real bills before switching to Live.
+
+COUNTERS
+When opening a shift choose the counter: "{{COUNTER}}" is this till's
+own counter (it comes first); "{{OTHER_COUNTER}}" can be chosen when
+the till serves the other counter. Count the drawer and open the shift.
+Only one system per counter at a time: do not run POS Awesome on a
+counter while TillPOS has a shift open on it.
+
+EVERY DAY
+- Log in with your PIN. Scan items; F12 cash (rounded to 0.25),
+  F11 card (exact amount), Split for card + cash.
+- F9 Delivery: prints a NOT PAID delivery invoice; take the payment later
+  from "Deliveries" (or scan the slip).
+- Returns (F6), Hold/Recall (F5/F7), Void (F8, supervisor), Reprint (Ctrl+P).
+- Log out keeps the shift open for the next cashier.
+- Close shift: count the cash and type the card machine total; a
+  supervisor enters their PIN; the Z report prints.
+- The top bar shows "synced", "uploaded today", "waiting" and "failed".
+  Click it to see details. "failed" needs a supervisor (Upload problems).
+
+NEW CASHIERS / PIN CHANGES
+Done in ERPNext (POS Cashier list). The till picks them up within about
+90 seconds; no restart needed.
+
+IF SOMETHING GOES WRONG
+Send the file C:\ProgramData\TillPOS\errors.log (if it exists), a photo
+of the screen, and the version shown on the Login screen ({{VERSION}}).

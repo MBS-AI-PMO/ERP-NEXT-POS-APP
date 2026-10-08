@@ -7,7 +7,7 @@ Do these in ERPNext through the web UI. Do them first on the **dev sandbox** (`h
 For each till PC (Till 1, Till 2, …):
 
 1. **User:** `till1@quickgroc.com` (name "Till 1"), with **Enabled** and **API Access** ticked.
-2. **Roles:** `TillPOS Device` (created in step 2 below) plus `Accounts User`, `Sales User` and `Stock User` (ERPNext grants create/submit on POS Invoice and stock postings through these; found during the sandbox test — System Manager alone cannot create a POS Invoice). No System Manager.
+2. **Roles:** `TillPOS Device` (created in step 2 below) plus `POS User`, `Accounts User`, `Sales User` and `Stock User` (`POS User` grants POS Awesome's POS Opening/Closing Shift; without it the till cannot open a shift — found on production 2026-10-09) (ERPNext grants create/submit on POS Invoice and stock postings through these; found during the sandbox test — System Manager alone cannot create a POS Invoice). No System Manager.
 3. **API key:** in the user's settings, choose **Generate Keys**. Copy the API key and secret into that till's `settings.json` (`ApiKey`, `ApiSecret`). The till encrypts the secret on first start.
 4. **Default values:** Company "AL AIN MARKETING L.L.C".
 
