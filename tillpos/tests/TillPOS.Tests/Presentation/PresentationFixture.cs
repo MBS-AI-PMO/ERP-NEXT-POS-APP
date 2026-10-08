@@ -53,6 +53,7 @@ public sealed class PresentationFixture : IDisposable
         Catalog.Barcodes.Add(new ItemBarcode("000089", "000089", "Kg"));
 
         var db = Temp.Db;
+        var receipts = new ReceiptStore(db);
         Ctx = new TillContext(
             2, [CounterTwo, TestCounter],
             profile => NotDownloaded.Contains(profile)
@@ -73,11 +74,12 @@ public sealed class PresentationFixture : IDisposable
             },
             text => Catalog.Items.Where(i => i.ItemName.Contains(text, StringComparison.OrdinalIgnoreCase)).ToList(),
             new Authenticator(() => [Simran, Sup]), new PinAttemptLimiter(() => Clock.Now), new PinAttemptLimiter(() => Clock.Now),
-            new ShiftStore(db), new ReceiptStore(db), new ApprovalStore(db), new CatalogStore(db),
+            new ShiftStore(db), receipts, new ApprovalStore(db), new CatalogStore(db),
             Clock, Output, Navigator, Dialogs, ShowReceiptPreview: true, new HeldCartStore(db))
         {
             RemoteReceipts = new RemoteReceiptStore(db),
             RemoteReturnsCheck = RemoteCheck,
+            Deliveries = new DeliveryStore(db, receipts),
         };
     }
 

@@ -44,6 +44,7 @@ public sealed class SaleViewModel : ObservableObject, IPaymentHost
     private string message = "";
     private bool messageIsError;
     private int heldCount;
+    private int deliveryCount;
 
     /// <param name="newLogin">The login screen, shown after Log out and after the shift is closed.</param>
     public SaleViewModel(TillContext ctx, SessionState session, SupervisorGate gate, Func<SaleViewModel, TenderKind, object> newPayment,
@@ -75,10 +76,13 @@ public sealed class SaleViewModel : ObservableObject, IPaymentHost
         ReturnCommand = new RelayCommand(Return);
         CloseShiftCommand = new RelayCommand(CloseShift);
         LogOutCommand = new RelayCommand(LogOut);
+        MakeDeliveryCommand = new RelayCommand(MakeDelivery);
+        OpenDeliveriesCommand = new RelayCommand(() => OpenDeliveries());
 
         RestoreAutosave();
         Refresh();
         RefreshHeldCount();
+        RefreshDeliveryCount();
     }
 
     public Cart Cart { get; }
@@ -94,6 +98,9 @@ public sealed class SaleViewModel : ObservableObject, IPaymentHost
     public string Message { get => message; private set => SetProperty(ref message, value); }
     public bool MessageIsError { get => messageIsError; private set => SetProperty(ref messageIsError, value); }
     /// <summary>Bills on hold (for the "Recall (n)" badge).</summary>
+    public int DeliveryCount { get => deliveryCount; private set => SetProperty(ref deliveryCount, value); }
+    public RelayCommand MakeDeliveryCommand { get; }
+    public RelayCommand OpenDeliveriesCommand { get; }
     public int HeldCount { get => heldCount; private set => SetProperty(ref heldCount, value); }
 
     public string SearchText
@@ -129,6 +136,7 @@ public sealed class SaleViewModel : ObservableObject, IPaymentHost
 
     public void Scan(string code)
     {
+        if (ClientIds.IsTillId(code) && OpenDeliverySlip(code)) return;
         Feedback(Cart.AddBarcode(code), code);
         Changed();
     }
@@ -482,6 +490,7 @@ public sealed class SaleViewModel : ObservableObject, IPaymentHost
         // The id and its own flag in one write: the previous bill's flag can never mark this one's first print as a copy.
         WriteLastReceipt(ctx.Kv, receipt.ClientId, printed: printError is null);
         Refresh();
+        RefreshDeliveryCount();
         if (printError is null) Info($"Saved {receipt.ClientId}. Change {Format.Money(receipt.Change)}");
         else if (ctx.ShowReceiptPreview) Error($"Saved {receipt.ClientId}, but the printer failed ({printError}). Use Print again on the invoice, or note bill number {receipt.ClientId}.");
         else Error($"Saved {receipt.ClientId}, but the printer failed ({printError}). Reprint it with Ctrl+P, or note bill number {receipt.ClientId}.");
@@ -572,6 +581,83 @@ public sealed class SaleViewModel : ObservableObject, IPaymentHost
         Discount = Format.Money(Cart.DiscountSaved());
         Vat = Format.Money(totals.TotalTaxes);
         Total = Format.Money(totals.GrandTotal);
+    }
+
+    /// <summary>F9: the bill as a delivery (not paid): saved on the till only, its slip printed, the screen cleared.</summary>
+    public void MakeDelivery()
+    {
+        if (Cart.Lines.Count == 0) { Error("Scan the delivery's items first."); return; }
+        if (session.Shift is not { } shift || session.Cashier is not { } cashier) { Error("No open shift — log in again."); return; }
+        if (!ctx.Dialogs.Confirm("Delivery", "Make this bill a delivery? It prints a NOT PAID delivery invoice; take the payment " +
+                "from Deliveries when the driver is back.")) return;
+
+        Delivery delivery;
+        try
+        {
+            var now = ctx.Clock.Now;
+            delivery = Deliveries.Make(Cart, ClientIds.Receipt(ctx.TillNumber, now, ctx.Receipts.NextSequence()), now, shift.ClientId,
+                cashier.Id, cashier.Name, ctx.CounterOf(session).DisplayName);
+            ctx.Deliveries.Add(delivery);
+        }
+        catch (Exception ex)
+        {
+            Error($"Could not save the delivery: {ex.Message}");
+            return;
+        }
+        Cart.Clear();
+        Changed();
+        RefreshDeliveryCount();
+        try
+        {
+            ctx.Output.PrintDelivery(delivery, copy: false);
+            Info($"Delivery {delivery.ClientId} saved: collect {Format.Money(delivery.CashToCollect)} cash or {Format.Money(delivery.CardToCollect)} card");
+        }
+        catch (Exception ex)
+        {
+            Error($"Delivery {delivery.ClientId} saved, but the slip did not print ({ex.Message}). Reprint it from Deliveries.");
+        }
+    }
+
+    /// <summary>The Deliveries screen (on an empty bill); <paramref name="select"/> opens that delivery.</summary>
+    public void OpenDeliveries(string? select = null)
+    {
+        if (Cart.Lines.Count > 0) { Error("Finish, hold or void the current bill first"); return; }
+        ctx.Navigator.Show(new DeliveriesViewModel(ctx, session, gate, this, select));
+    }
+
+    /// <summary>A scanned delivery slip: opens it (true), or explains why not (true); false = not a delivery number.</summary>
+    private bool OpenDeliverySlip(string code)
+    {
+        Delivery? d;
+        try
+        {
+            d = ctx.Deliveries.Get(code);
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+        if (d is null) return false;
+        if (d.Status != DeliveryStatus.Open)
+        {
+            Error($"Delivery {code} is already {(d.Status == DeliveryStatus.Paid ? "paid" : "cancelled")}");
+            return true;
+        }
+        if (Cart.Lines.Count > 0) { Error("Finish, hold or void the current bill first, then scan the delivery slip"); return true; }
+        OpenDeliveries(code);
+        return true;
+    }
+
+    public void RefreshDeliveryCount()
+    {
+        try
+        {
+            DeliveryCount = ctx.Deliveries.Open().Count;
+        }
+        catch (Exception)
+        {
+            // Keep the last count; the badge is only a hint.
+        }
     }
 
     private void RefreshHeldCount()

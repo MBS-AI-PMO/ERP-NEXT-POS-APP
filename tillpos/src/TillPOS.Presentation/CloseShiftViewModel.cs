@@ -1,6 +1,7 @@
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using TillPOS.Core.Sales;
 using TillPOS.Core.Security;
 using TillPOS.Core.Shifts;
 using TillPOS.Data;
@@ -167,9 +168,19 @@ public sealed class CloseShiftViewModel : ObservableObject
     /// <summary>After the shift is closed: print the report (a failure is only reported), log out, show the login.</summary>
     private void Closed(ShiftOpening opening, ShiftClosing result, string approvedBy)
     {
+        DeliverySummary? deliveries = null;
         try
         {
-            ctx.Output.PrintShiftReport(opening, result, session.Cashier?.Name ?? opening.Cashier, approvedBy, null);
+            var paid = ctx.Receipts.ByShift(opening.ClientId).Where(r => r.IsDelivery && r.Kind == ReceiptKind.Sale).ToList();
+            deliveries = new DeliverySummary(paid.Count, paid.Sum(r => r.GrandTotal), ctx.Deliveries.Open());
+        }
+        catch (Exception)
+        {
+            // The report prints without the delivery lines rather than not at all.
+        }
+        try
+        {
+            ctx.Output.PrintShiftReport(opening, result, session.Cashier?.Name ?? opening.Cashier, approvedBy, null, deliveries);
         }
         catch (Exception ex)
         {

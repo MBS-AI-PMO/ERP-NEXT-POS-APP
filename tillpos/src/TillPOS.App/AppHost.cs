@@ -97,6 +97,7 @@ public sealed class AppHost
         {
             RemoteReceipts = remoteReceipts,
             RemoteReturnsCheck = remoteReturns,
+            Deliveries = new DeliveryStore(db, receipts),
             TaxTemplates = catalog.FindSalesTaxTemplate,
         };
         // The header's sync pill: the Sync status window, on any screen.
