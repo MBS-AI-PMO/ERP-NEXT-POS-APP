@@ -39,17 +39,21 @@ public sealed class ReceiptStore(TillDb db) : IReceiptStore
 
     public void Save(Receipt receipt)
     {
-        using (var c = db.Open())
-        {
-            c.Exec(null, """
-                INSERT INTO receipt (client_id, kind, return_against, shift_client_id, created_at, json)
-                VALUES (@id, @k, @ra, @s, @at, @j)
-                """,
-                ("@id", receipt.ClientId), ("@k", receipt.Kind.ToString()), ("@ra", receipt.ReturnAgainst), ("@s", receipt.ShiftClientId),
-                ("@at", receipt.CreatedAt.UtcDateTime.ToString("O", CultureInfo.InvariantCulture)), ("@j", JsonSerializer.Serialize(receipt, Json)));
-        }
+        using (var c = db.Open()) Insert(c, null, receipt);
         Saved?.Invoke();
     }
+
+    /// <summary>Inserts a receipt row (inside the caller's transaction, if any). Callers raise <see cref="Saved"/> afterwards.</summary>
+    internal static void Insert(SqliteConnection c, SqliteTransaction? tx, Receipt receipt) =>
+        c.Exec(tx, """
+            INSERT INTO receipt (client_id, kind, return_against, shift_client_id, created_at, json)
+            VALUES (@id, @k, @ra, @s, @at, @j)
+            """,
+            ("@id", receipt.ClientId), ("@k", receipt.Kind.ToString()), ("@ra", receipt.ReturnAgainst), ("@s", receipt.ShiftClientId),
+            ("@at", receipt.CreatedAt.UtcDateTime.ToString("O", CultureInfo.InvariantCulture)), ("@j", JsonSerializer.Serialize(receipt, Json)));
+
+    /// <summary>Tells the upload a bill was saved by another store's transaction (a paid delivery).</summary>
+    internal void RaiseSaved() => Saved?.Invoke();
 
     public Receipt? Get(string clientId) => Query("WHERE client_id = @p", clientId).FirstOrDefault();
     public IReadOnlyList<Receipt> ReturnsAgainst(string clientId) => Query("WHERE return_against = @p ORDER BY created_at", clientId);

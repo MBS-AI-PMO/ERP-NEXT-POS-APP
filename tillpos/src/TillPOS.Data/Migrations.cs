@@ -130,5 +130,10 @@ internal static class Migrations
         ALTER TABLE approval_log ADD COLUMN synced_at TEXT;
         CREATE INDEX ix_receipt_synced_at ON receipt(synced_at);
         """,
+        // 0.4.4: delivery bills kept on the till until paid (json = the Delivery record).
+        """
+        CREATE TABLE delivery (client_id TEXT PRIMARY KEY, status TEXT NOT NULL, created_at TEXT NOT NULL, json TEXT NOT NULL);
+        CREATE INDEX ix_delivery_status ON delivery(status, created_at);
+        """,
     ];
 }
