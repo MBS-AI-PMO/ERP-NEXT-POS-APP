@@ -184,3 +184,11 @@ Sandbox prepared (metadata + 2 cashiers + change accounts). **Task 9 (Live on th
 | Finding 2 | Return refused: needs `pos_invoice_item` per line (fixed 62fb0509) **and** `paid_amount`/`base_paid_amount`/`change_amount 0` (ERPNext crashes with a 500 TypeError in `validate_change_amount` otherwise — verified by a hand probe, probe draft deleted) |
 | Finding 3 | A deterministic 500 on one document paused the whole queue until escalation; escalation → Failed → supervisor Retry worked as designed |
 | Finding 4 | Login screen's "Upload problems" count only refreshed on login |
+| Return (after fixes 62fb0509 + ce3823cc2) | **ACC-PSINV-2026-05631**: is_return, against 05626, −3.333, paid −3.333, change 0, outstanding 0, line linked via `pos_invoice_item`; consolidated at closing |
+| Shift 1 closing | **POSA-CS-26-0000044**: 6 invoices (incl. the return), grand 105.328, VAT 5.016; opening POSA-OS-26-0000045 now Closed. Counted amounts showed 0 (sent in the wrong field) → fixed 9121aa443 |
+| Finding 5 | Second shift's opening refused while the first was still open in ERPNext ("already has an open POS shift") → openings now wait for the previous shift of that counter to close (627910ede) |
+| Shift 2 (after fixes) | Opening **POSA-OS-26-0000046**, sale **ACC-PSINV-2026-05632** (51), closing **POSA-CS-26-0000045**: Cash Counter 2 expected 51 / counted 51 / diff 0 — counted amounts correct; opening now Closed |
+| Approvals | 19 TillPOS Approval records uploaded (LineVoid, ShiftCount ×6, ShiftVariance, SettingsChange ×6, UploadRetry ×3, UploadModeChange, FailedSupervisorPin) |
+| Final state | Till queue empty: 0 bills, 0 shifts, 0 approvals waiting |
+
+**Result: Plan 2b Task 9 passed on the sandbox** after 6 fixes (roles, `pos_invoice_item`, `paid_amount` on returns, server errors don't pause the queue, login count refresh, shift ordering, closing currency fields). Production cutover (Task 10) still needs: the admin checklist on production, a per-till user/key, removal of test cashiers/sample QR, and the owner's go-ahead.
