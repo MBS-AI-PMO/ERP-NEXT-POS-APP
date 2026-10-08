@@ -1,6 +1,6 @@
 # TillPOS — Delivery bills (Design Spec)
 
-Status: approved in conversation on 2026-10-08; this document records it for review before planning.
+Status: approved by the shop owner on 2026-10-08 (with the "Deliveries paid this shift" Z report line; no "Print list").
 Parent spec: `2026-10-05-tillpos-offline-pos-design.md` (Phase 1A till).
 
 ## 1. Goal
@@ -62,7 +62,9 @@ Rounding is as for every bill: cash and split rounded to AED 0.25, card exact (s
 ### 3.4 Shift close
 - Allowed with deliveries out. The Z report gets a section: "Deliveries still out: N, AED X" with each bill number and
   amount. They are not part of the drawer's expected cash.
-- Deliveries paid during the shift are ordinary sales of that shift (counted in its bills, cash and card).
+- Deliveries paid during the shift are ordinary sales of that shift (counted in its bills, cash and card). The Z report also
+  shows them on their own line, "Deliveries paid this shift: N, AED X" (already included in the sales figures above it).
+  Printed only when N > 0.
 
 ## 4. Data
 
@@ -99,7 +101,7 @@ New approval actions (logged and uploaded like the others): `DeliveryChange`, `D
 
 **Paid invoice**: the normal tax invoice (QR included) with "DELIVERY — PAID" under the title; its date is the payment time.
 
-**Z report**: the "Deliveries still out" section (3.4).
+**Z report**: the "Deliveries paid this shift" line and the "Deliveries still out" section (3.4).
 
 ## 6. Not in scope
 
