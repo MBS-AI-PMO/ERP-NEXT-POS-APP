@@ -45,6 +45,7 @@ public sealed class DeliveriesViewModel : ObservableObject, IPaymentHost
         CancelCommand = new AsyncRelayCommand<string>(r => CancelAsync(r ?? "Other"));
         ReprintCommand = new RelayCommand(Reprint);
         BackCommand = new RelayCommand(Back);
+        ScanCommand = new RelayCommand<string>(c => Scan(c ?? ""));
         Reload(select);
     }
 
@@ -82,6 +83,7 @@ public sealed class DeliveriesViewModel : ObservableObject, IPaymentHost
     public AsyncRelayCommand<string> CancelCommand { get; }
     public RelayCommand ReprintCommand { get; }
     public RelayCommand BackCommand { get; }
+    public RelayCommand<string> ScanCommand { get; }
 
     public async Task ReduceLineAsync(Guid id)
     {
@@ -103,8 +105,7 @@ public sealed class DeliveriesViewModel : ObservableObject, IPaymentHost
         Cart.Remove(id);
         if (Cart.Lines.Count == 0)
         {
-            Close(ctx.Deliveries.Cancel(selected.ClientId, ctx.Clock.Now, supervisor.Id, "All items removed"),
-                $"Delivery {selected.ClientId} cancelled (all items removed)");
+            CancelStored(selected.ClientId, supervisor.Id, "All items removed", $"Delivery {selected.ClientId} cancelled (all items removed)");
             return;
         }
         SaveChange();
@@ -116,7 +117,57 @@ public sealed class DeliveriesViewModel : ObservableObject, IPaymentHost
         var supervisor = await gate.ApproveBySupervisorAsync(ApprovalAction.DeliveryCancel, $"Cancel delivery {selected.ClientId}: {reason}",
             selected.ClientId, null, selected.Bill.GrandTotal);
         if (supervisor is null) return;
-        Close(ctx.Deliveries.Cancel(selected.ClientId, ctx.Clock.Now, supervisor.Id, reason), $"Delivery {selected.ClientId} cancelled ({reason})");
+        CancelStored(selected.ClientId, supervisor.Id, reason, $"Delivery {selected.ClientId} cancelled ({reason})");
+    }
+
+    /// <summary>Scanned delivery slip: selects that open delivery, or says why not.</summary>
+    public void Scan(string code)
+    {
+        code = (code ?? "").Trim();
+        Delivery? d = null;
+        try
+        {
+            d = code.Length == 0 ? null : ctx.Deliveries.Get(code);
+        }
+        catch (Exception)
+        {
+            // Treated as not found below.
+        }
+        if (d is null) { Error($"No open delivery {code} on this till"); return; }
+        if (d.Status == DeliveryStatus.Paid) { Error($"Delivery {code} is already paid"); return; }
+        if (d.Status == DeliveryStatus.Cancelled) { Error($"Delivery {code} is already cancelled"); return; }
+        if (Rows.All(r => r.ClientId != code)) Reload(code);
+        else SelectedId = code;
+        Info($"Delivery {code} opened");
+    }
+
+    private void CancelStored(string clientId, string by, string reason, string text)
+    {
+        bool done;
+        try
+        {
+            done = ctx.Deliveries.Cancel(clientId, ctx.Clock.Now, by, reason);
+        }
+        catch (Exception ex)
+        {
+            ReloadAfterFailure($"Could not cancel: {ex.Message}");
+            return;
+        }
+        Close(done, text);
+    }
+
+    /// <summary>A store call failed: show the error and bring the screen and cart back to what is stored.</summary>
+    private void ReloadAfterFailure(string error)
+    {
+        try
+        {
+            Reload(selected?.ClientId);
+        }
+        catch (Exception)
+        {
+            // Nothing more can be done; the error below still tells the cashier.
+        }
+        Error(error);
     }
 
     public Receipt Record(PaymentPlan plan, Cashier cashier, ShiftOpening shift)
@@ -137,6 +188,7 @@ public sealed class DeliveriesViewModel : ObservableObject, IPaymentHost
 
     private void Pay(TenderKind kind)
     {
+        if (session.Shift is null) { Error("Open a shift first"); return; }
         if (selected is null) { Error("Choose a delivery first."); return; }
         ctx.Navigator.Show(new PaymentViewModel(ctx, session, this, kind));
     }
@@ -165,7 +217,17 @@ public sealed class DeliveriesViewModel : ObservableObject, IPaymentHost
     {
         if (selected is null) return;
         var changed = Deliveries.Rebill(selected, Cart);
-        if (!ctx.Deliveries.Update(changed)) { Error($"Delivery {selected.ClientId} is no longer open."); Reload(null); return; }
+        bool updated;
+        try
+        {
+            updated = ctx.Deliveries.Update(changed);
+        }
+        catch (Exception ex)
+        {
+            ReloadAfterFailure($"Could not save the change: {ex.Message}");
+            return;
+        }
+        if (!updated) { Error($"Delivery {selected.ClientId} is no longer open."); Reload(null); return; }
         selected = changed;
         Info($"Delivery {changed.ClientId} changed: collect {Format.Money(changed.CashToCollect)} cash or {Format.Money(changed.CardToCollect)} card");
         Reload(changed.ClientId);

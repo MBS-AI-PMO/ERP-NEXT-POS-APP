@@ -314,4 +314,76 @@ public sealed class DeliveryFlowTests : IDisposable
         sale.CloseShift();
         Assert.IsType<CloseShiftViewModel>(f.Navigator.Current);
     }
+
+    [Fact]
+    public async Task A_failing_store_leaves_the_screen_matching_what_is_stored()
+    {
+        var d = Make();
+        var vm = Open();
+        using (var conn = f.Temp.Db.Open())
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "CREATE TRIGGER no_update BEFORE UPDATE ON delivery BEGIN SELECT RAISE(ABORT, 'locked'); END";
+            cmd.ExecuteNonQuery();
+        }
+        f.Dialogs.Pins.Enqueue("9999");
+
+        await vm.RemoveLineAsync(vm.Cart.Lines[0].Id);       // last line: cancel, which updates the row
+
+        Assert.True(vm.MessageIsError);
+        Assert.Contains("Could not cancel", vm.Message);
+        Assert.Equal(DeliveryStatus.Open, f.Ctx.Deliveries.Get(d.ClientId)!.Status);
+        Assert.Equal(2m, Assert.Single(vm.Cart.Lines).Qty);
+        Assert.Single(vm.SelectedLines);
+
+        f.Dialogs.Pins.Enqueue("9999");
+        await vm.ReduceLineAsync(vm.Cart.Lines[0].Id);
+
+        Assert.Contains("Could not save the change", vm.Message);
+        Assert.Equal(2m, Assert.Single(vm.Cart.Lines).Qty);
+        Assert.Equal("13.58", Assert.Single(vm.Rows).Amount);
+        Assert.Equal(M("13.58"), f.Ctx.Deliveries.Get(d.ClientId)!.Bill.GrandTotal);
+    }
+
+    [Fact]
+    public void Scanning_in_the_list_selects_open_and_explains_paid_cancelled_and_unknown()
+    {
+        var a = Make();
+        sale.Scan("111");
+        f.Dialogs.ConfirmAnswers.Enqueue(true);
+        sale.MakeDelivery();
+        var b = f.Ctx.Deliveries.Open().Single(x => x.ClientId != a.ClientId);
+        var vm = Open();
+
+        vm.ScanCommand.Execute($" {b.ClientId} ");
+        Assert.Equal(b.ClientId, vm.SelectedId);
+
+        vm.Scan("TILL2-NOPE");
+        Assert.Equal("No open delivery TILL2-NOPE on this till", vm.Message);
+        Assert.True(vm.MessageIsError);
+
+        f.Ctx.Deliveries.Cancel(a.ClientId, f.Clock.Now, "sup", "Other");
+        vm.Scan(a.ClientId);
+        Assert.Equal($"Delivery {a.ClientId} is already cancelled", vm.Message);
+
+        vm.SelectedId = b.ClientId;
+        vm.PayCardCommand.Execute(null);
+        Assert.IsType<PaymentViewModel>(f.Navigator.Current).CompleteCommand.Execute(null);
+        vm.Scan(b.ClientId);
+        Assert.Equal($"Delivery {b.ClientId} is already paid", vm.Message);
+    }
+
+    [Fact]
+    public void Pay_is_refused_without_an_open_shift_but_the_list_still_shows()
+    {
+        Make();
+        var vm = Open();
+        f.Session.Shift = null;
+
+        vm.PayCashCommand.Execute(null);
+
+        Assert.Same(vm, f.Navigator.Current);
+        Assert.Equal("Open a shift first", vm.Message);
+        Assert.Single(vm.Rows);
+    }
 }
