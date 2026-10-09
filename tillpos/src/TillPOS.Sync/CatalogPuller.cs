@@ -101,6 +101,10 @@ public sealed class CatalogPuller(IReadOnlyList<ISyncFeed> feeds, Action afterPu
         }
     }
 
+    /// <summary>Only the Item Price feed (rows changed since the last pull): the frequent price check between full syncs.
+    /// Prices are read from the database on every scan, so nothing needs reloading afterwards.</summary>
+    public static CatalogPuller CreatePricesOnly(SyncContext ctx) => new([new ItemPriceFeed(ctx)], () => { }, ctx.Pager);
+
     public static CatalogPuller CreateDefault(SyncContext ctx, Action afterPull, Func<DateTimeOffset>? now = null, params ISyncFeed[] extraFeeds) => new(
     [
         new PosProfileFeed(ctx),

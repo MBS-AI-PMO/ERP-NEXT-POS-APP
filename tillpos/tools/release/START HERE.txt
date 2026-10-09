@@ -56,6 +56,13 @@ EVERY DAY
 - The top bar shows "synced", "uploaded today", "waiting" and "failed".
   Click it to see details. "failed" needs a supervisor (Upload problems).
 
+PRICE CHANGES (weighed items too)
+Change the Item Price in ERPNext. The till picks it up within about
+15 seconds, or at once with "Update prices (F10)" on the sale screen.
+Items already on an open bill take the new price (the screen says
+"Price updated: ..."); a bill on the payment screen, deliveries and
+finished bills keep their price.
+
 NEW CASHIERS / PIN CHANGES
 Done in ERPNext (POS Cashier list). The till picks them up within about
 90 seconds; no restart needed.

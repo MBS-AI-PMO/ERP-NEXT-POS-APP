@@ -30,6 +30,7 @@ public sealed class AppHost
     private readonly Uploader uploader;
     private readonly string? startupNotice;
     private readonly CancellationTokenSource stop = new();
+    private SyncService? syncService;   // set by StartAsync; "Update prices (F10)" goes through it
 
     /// <param name="settingsPath">The settings file the till was started from (named in setup error messages).</param>
     public AppHost(TillSettings settings, string settingsPath, Dispatcher dispatcher, IDialogs dialogs, Action<Exception> logError)
@@ -99,6 +100,7 @@ public sealed class AppHost
             RemoteReturnsCheck = remoteReturns,
             Deliveries = new DeliveryStore(db, receipts),
             TaxTemplates = catalog.FindSalesTaxTemplate,
+            RefreshPrices = () => syncService is { } s ? s.RefreshPricesNowAsync(stop.Token) : Task.FromResult(new PriceRefresh(false, 0, null)),
         };
         // The header's sync pill: the Sync status window, on any screen.
         Shell.OpenSyncStatus = () => SyncStatusViewModel.OpenAsync(ctx, Shell);
@@ -125,8 +127,11 @@ public sealed class AppHost
         Shell.Show(NewLogin());
         if (startupNotice is not null) ctx.Dialogs.Info(startupNotice);
 
-        var sync = new SyncService(NewPuller, erp, uploader, Shell, dispatcher, TimeSpan.FromSeconds(settings.SyncIntervalSeconds), logError);
-        // A sale, a return, or a shift opened or closed is uploaded within about 10 s.
+        // New prices re-price the bill on the sale screen (not a bill being paid, nor deliveries, which keep their price).
+        var sync = new SyncService(NewPuller, () => CatalogPuller.CreatePricesOnly(syncContext), erp, uploader, Shell, dispatcher,
+            TimeSpan.FromSeconds(settings.SyncIntervalSeconds), () => (Shell.Current as SaleViewModel)?.PricesChanged(), logError);
+        syncService = sync;
+        // A sale, a return, or a shift opened or closed is uploaded within a few seconds.
         ctx.Receipts.Saved += sync.RequestUploadNow;
         ctx.Shifts.Changed += sync.RequestUploadNow;
         _ = Task.Run(() => sync.RunAsync(stop.Token)).ContinueWith(t => logError(t.Exception!), TaskContinuationOptions.OnlyOnFaulted);

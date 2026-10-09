@@ -48,6 +48,10 @@ public interface IDialogs
     string? ShowHeldBills(HeldBillsViewModel vm);
 }
 
+/// <summary>The outcome of fetching changed prices: Online = ERPNext answered; ChangedPrices = price rows that changed;
+/// LastSync = when prices were last downloaded (shown when offline).</summary>
+public sealed record PriceRefresh(bool Online, int ChangedPrices, DateTimeOffset? LastSync);
+
 public interface IClock
 {
     DateTimeOffset Now { get; }
@@ -103,6 +107,9 @@ public sealed record TillContext(
 
     /// <summary>The synced Sales Taxes and Charges Template by name (for previews built like the uploader's); none by default.</summary>
     public Func<string, SalesTaxTemplate?> TaxTemplates { get; init; } = _ => null;
+
+    /// <summary>Fetches the prices changed in ERPNext right now ("Update prices (F10)"); null where there is no ERPNext.</summary>
+    public Func<Task<PriceRefresh>>? RefreshPrices { get; init; }
 
     /// <summary>Delivery bills kept on this till until paid.</summary>
     public required DeliveryStore Deliveries { get; init; }

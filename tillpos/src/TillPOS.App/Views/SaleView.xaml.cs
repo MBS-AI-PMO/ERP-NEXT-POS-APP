@@ -22,6 +22,12 @@ public partial class SaleView : UserControl
                 e.Handled = true;
             }
             else if (e.Key == Key.F2) { SearchBox.Focus(); e.Handled = true; }
+            // F10 reaches WPF as a system key (Windows' menu key), so a KeyBinding never sees it.
+            else if (e.Key == Key.System && e.SystemKey == Key.F10 && DataContext is TillPOS.Presentation.SaleViewModel prices)
+            {
+                prices.UpdatePricesCommand.Execute(null);
+                e.Handled = true;
+            }
             else if (e.Key == Key.Escape) { ScanBox.Focus(); e.Handled = true; }
         };
     }

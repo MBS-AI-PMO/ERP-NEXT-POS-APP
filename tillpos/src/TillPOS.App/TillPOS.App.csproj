@@ -5,7 +5,7 @@
     <UseWPF>true</UseWPF>
     <AssemblyName>TillPOS</AssemblyName>
     <RootNamespace>TillPOS.App</RootNamespace>
-    <Version>0.4.4</Version>
+    <Version>1.0.1</Version>
     <InformationalVersion>0.4.4-test</InformationalVersion>
   </PropertyGroup>
   <ItemGroup>

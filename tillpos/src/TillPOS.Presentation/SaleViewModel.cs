@@ -76,6 +76,7 @@ public sealed class SaleViewModel : ObservableObject, IPaymentHost
         ReturnCommand = new RelayCommand(Return);
         CloseShiftCommand = new RelayCommand(CloseShift);
         LogOutCommand = new RelayCommand(LogOut);
+        UpdatePricesCommand = new AsyncRelayCommand(UpdatePricesAsync);
         MakeDeliveryCommand = new RelayCommand(MakeDelivery);
         OpenDeliveriesCommand = new RelayCommand(() => OpenDeliveries());
 
@@ -134,6 +135,7 @@ public sealed class SaleViewModel : ObservableObject, IPaymentHost
     public RelayCommand ReturnCommand { get; }
     public RelayCommand CloseShiftCommand { get; }
     public RelayCommand LogOutCommand { get; }
+    public AsyncRelayCommand UpdatePricesCommand { get; }
 
     public void Scan(string code)
     {
@@ -444,6 +446,56 @@ public sealed class SaleViewModel : ObservableObject, IPaymentHost
         {
             // The bill is saved; only "reprint last" is affected.
         }
+    }
+
+    /// <summary>New prices arrived from ERPNext: the open bill is priced again (its quantities stay) and the screen says which
+    /// lines changed. Nothing happens on an empty bill or when no line's price changed.</summary>
+    public IReadOnlyList<PriceChange> PricesChanged()
+    {
+        if (Cart.Lines.Count == 0) return [];
+        IReadOnlyList<PriceChange> changes;
+        try
+        {
+            changes = Cart.Reprice();
+        }
+        catch (Exception ex)
+        {
+            Error($"Could not apply the new prices ({ex.Message})");
+            return [];
+        }
+        if (changes.Count == 0) return changes;
+        Changed();
+        Info("Price updated: " + string.Join("; ", changes.Select(c =>
+            $"{c.ItemName} {Format.Money(c.OldRate)} → {Format.Money(c.NewRate)} /{c.Uom}")));
+        return changes;
+    }
+
+    /// <summary>F10: fetches the prices changed in ERPNext now and re-prices the open bill.</summary>
+    public async Task UpdatePricesAsync()
+    {
+        if (ctx.RefreshPrices is null) { Info("Prices come from ERPNext automatically"); return; }
+        PriceRefresh result;
+        Info("Updating prices…");
+        try
+        {
+            result = await ctx.RefreshPrices();
+        }
+        catch (Exception ex)
+        {
+            Error($"Could not update prices ({ex.Message}) – using the last downloaded prices");
+            return;
+        }
+        if (!result.Online)
+        {
+            Error(result.LastSync is { } at
+                ? $"Offline – using prices from {at.ToString("HH:mm", CultureInfo.InvariantCulture)}"
+                : "Offline – using the last downloaded prices");
+            return;
+        }
+        if (PricesChanged().Count > 0) return;
+        Info(result.ChangedPrices > 0
+            ? $"Prices updated: {result.ChangedPrices.ToString(CultureInfo.InvariantCulture)} changed"
+            : "Prices are up to date");
     }
 
     public void ClearAutosave() => ctx.Kv.SetValue(AutosaveKey, "[]");

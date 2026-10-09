@@ -65,10 +65,18 @@ public sealed class CartLine
     public string Uom { get; }
     public decimal ConversionFactor { get; }
     public decimal Qty { get; internal set; }
-    public decimal PriceListRate { get; }
-    public AppliedRule? Rule { get; }
-    /// <summary>Unit rate after the offer; fixed when the line is added (cashiers cannot change it).</summary>
-    public decimal Rate { get; }
+    public decimal PriceListRate { get; private set; }
+    public AppliedRule? Rule { get; private set; }
+    /// <summary>Unit rate after the offer; fixed when the line is added (cashiers cannot change it). Only new prices from ERPNext
+    /// change it (<see cref="Cart.Reprice"/>).</summary>
+    public decimal Rate { get; private set; }
+
+    internal void SetPrice(decimal priceListRate, AppliedRule? rule, decimal rate)
+    {
+        PriceListRate = priceListRate;
+        Rule = rule;
+        Rate = rate;
+    }
     public string? ItemTaxTemplate { get; }
     /// <summary>The code that was scanned (a scale label keeps the full 13 digits).</summary>
     public string? Barcode { get; }
@@ -77,6 +85,9 @@ public sealed class CartLine
     /// <summary>Set when the scanned barcode's unit is not set up on the item, so the line was sold in the stock unit.</summary>
     public string? UomFallbackFrom { get; }
 }
+
+/// <summary>A bill line whose unit rate changed when new prices arrived (<see cref="Cart.Reprice"/>).</summary>
+public sealed record PriceChange(Guid LineId, string ItemName, string Uom, decimal OldRate, decimal NewRate);
 
 public enum AddOutcome { Added, UnknownBarcode, UnknownItem, ItemNotSellable, UnknownUom, NoPrice, UnsupportedTax, InvalidScaleLabel }
 
@@ -222,6 +233,26 @@ public sealed class Cart(SaleContext ctx)
             if (!s.FromScaleLabel) line.Qty = s.Qty;
             lines.Add(line);
         }
+    }
+
+    /// <summary>Prices every line again from the current catalog, as a fresh scan would (price list rate, then the best offer):
+    /// new prices from ERPNext reach a bill that is still open. Quantities, units and lines stay as they are; a line whose
+    /// price can no longer be found keeps the price it was scanned at. Returns the lines whose unit rate changed.</summary>
+    public IReadOnlyList<PriceChange> Reprice()
+    {
+        var changes = new List<PriceChange>();
+        var date = ctx.Today();
+        foreach (var line in lines)
+        {
+            if (prices.PriceListRate(line.Item, line.Uom, line.ConversionFactor, date) is not { } listRate) continue;
+            var plr = Rounder.Round(listRate, ctx.Money);
+            var rule = rules.Select(line.Item, plr, line.ConversionFactor, date);
+            var rate = LineMath.RateAfterRule(plr, line.ConversionFactor, rule, ctx.Money);
+            if (rate == line.Rate && plr == line.PriceListRate) continue;
+            changes.Add(new PriceChange(line.Id, line.Item.ItemName, line.Uom, line.Rate, rate));
+            line.SetPrice(plr, rule, rate);
+        }
+        return changes;
     }
 
     public BillTotals Totals() =>

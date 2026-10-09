@@ -180,6 +180,11 @@
             </StackPanel>
           </Button>
         </Grid>
+        <!-- Update prices: fetches prices changed in ERPNext now and re-prices the open bill (they also arrive by themselves
+             every ~15 s). -->
+        <Button Focusable="False" Style="{StaticResource SecondaryButton}" Height="48" Margin="4,4,4,0" FontSize="15" FontWeight="SemiBold"
+                local:ButtonIcon.Glyph="&#xE72C;" Content="Update prices (F10)" Command="{Binding UpdatePricesCommand}"
+                ToolTip="Fetch the prices changed in ERPNext now (they also arrive by themselves within about 15 seconds)" />
         <UniformGrid Columns="3" Margin="0,4,0,0">
           <UniformGrid.Resources>
             <Style TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
