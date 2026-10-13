@@ -526,14 +526,41 @@ public sealed class SaleViewModel : ObservableObject, IPaymentHost
     public void BackFromPayment() => ctx.Navigator.Show(this);
 
     /// <summary>A cart's lines as the screens show them (also the payment screen's list).</summary>
+    //public static IReadOnlyList<SaleLine> LinesOf(Cart cart)
+    //{
+    //    var totals = cart.Totals();
+    //    return cart.Lines.Select((l, i) => new SaleLine(l.Id, i + 1, l.Item.ItemName, l.Barcode,
+    //        l.FromScaleLabel || l.Qty != decimal.Truncate(l.Qty)
+    //            ? $"{l.Qty.ToString("0.000", CultureInfo.InvariantCulture)} {l.Uom}"
+    //            : l.Qty.ToString("0", CultureInfo.InvariantCulture),
+    //        Format.Money(l.Rate), l.Rule?.Label ?? "", Format.Money(totals.Lines[i].Amount), l.FromScaleLabel)).ToList();
+    //}
+
     public static IReadOnlyList<SaleLine> LinesOf(Cart cart)
     {
         var totals = cart.Totals();
-        return cart.Lines.Select((l, i) => new SaleLine(l.Id, i + 1, l.Item.ItemName, l.Barcode,
-            l.FromScaleLabel || l.Qty != decimal.Truncate(l.Qty)
-                ? $"{l.Qty.ToString("0.000", CultureInfo.InvariantCulture)} {l.Uom}"
-                : l.Qty.ToString("0", CultureInfo.InvariantCulture),
-            Format.Money(l.Rate), l.Rule?.Label ?? "", Format.Money(totals.Lines[i].Amount), l.FromScaleLabel)).ToList();
+        int count = cart.Lines.Count;
+        return cart.Lines.Select((l, i) => 
+        {
+            // Reverse the index so the newest scanned item (last in cart.Lines) becomes #1 at the top
+            int reverseIndex = count - 1 - i;
+            var lineTotal = totals.Lines[reverseIndex];
+            var cartLine = cart.Lines[reverseIndex];
+
+            return new SaleLine(
+                cartLine.Id, 
+                i + 1, // Row numbering stays 1, 2, 3... downwards
+                cartLine.Item.ItemName, 
+                cartLine.Barcode,
+                cartLine.FromScaleLabel || cartLine.Qty != decimal.Truncate(cartLine.Qty)
+                    ? $"{cartLine.Qty.ToString("0.000", CultureInfo.InvariantCulture)} {cartLine.Uom}"
+                    : cartLine.Qty.ToString("0", CultureInfo.InvariantCulture),
+                Format.Money(cartLine.Rate), 
+                cartLine.Rule?.Label ?? "", 
+                Format.Money(lineTotal.Amount), 
+                cartLine.FromScaleLabel
+            );
+        }).ToList();
     }
 
     /// <summary>Called by the payment screen after the bill was saved (the cart is already empty). Then shows the invoice

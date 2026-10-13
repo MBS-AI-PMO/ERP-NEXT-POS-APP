@@ -2,210 +2,244 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:TillPOS.App">
-  <UserControl.InputBindings>
-    <KeyBinding Key="F3" Command="{Binding SetQtySelectedCommand}" />
-    <KeyBinding Key="F4" Command="{Binding PriceCheckCommand}" />
-    <KeyBinding Key="F5" Command="{Binding HoldCommand}" />
-    <KeyBinding Key="F6" Command="{Binding ReturnCommand}" />
-    <KeyBinding Key="F7" Command="{Binding RecallCommand}" />
-    <KeyBinding Key="F8" Command="{Binding VoidBillCommand}" />
-    <KeyBinding Key="F9" Command="{Binding MakeDeliveryCommand}" />
-    <KeyBinding Key="F11" Command="{Binding PayCardCommand}" />
-    <KeyBinding Key="F12" Command="{Binding PayCashCommand}" />
-    <KeyBinding Key="Delete" Command="{Binding RemoveSelectedCommand}" />
-    <KeyBinding Key="P" Modifiers="Control" Command="{Binding ReprintLastCommand}" />
-  </UserControl.InputBindings>
-  <Grid>
-    <Grid.ColumnDefinitions>
-      <ColumnDefinition Width="*" />
-      <ColumnDefinition Width="404" />
-    </Grid.ColumnDefinitions>
+    <UserControl.InputBindings>
+        <KeyBinding Key="F3" Command="{Binding SetQtySelectedCommand}" />
+        <KeyBinding Key="F4" Command="{Binding PriceCheckCommand}" />
+        <KeyBinding Key="F5" Command="{Binding HoldCommand}" />
+        <KeyBinding Key="F6" Command="{Binding ReturnCommand}" />
+        <KeyBinding Key="F7" Command="{Binding RecallCommand}" />
+        <KeyBinding Key="F8" Command="{Binding VoidBillCommand}" />
+        <KeyBinding Key="F9" Command="{Binding MakeDeliveryCommand}" />
+        <KeyBinding Key="F11" Command="{Binding PayCardCommand}" />
+        <KeyBinding Key="F12" Command="{Binding PayCashCommand}" />
+        <KeyBinding Key="Delete" Command="{Binding RemoveSelectedCommand}" />
+        <KeyBinding Key="P" Modifiers="Control" Command="{Binding ReprintLastCommand}" />
+    </UserControl.InputBindings>
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="404" />
+        </Grid.ColumnDefinitions>
 
-    <DockPanel Grid.Column="0" Margin="0,0,16,0">
-      <TextBox x:Name="ScanBox" DockPanel.Dock="Top" Style="{StaticResource ScanTextBox}"
+        <DockPanel Grid.Column="0" Margin="0,0,16,0">
+            <TextBox x:Name="ScanBox" DockPanel.Dock="Top" Style="{StaticResource ScanTextBox}"
                local:Placeholder.Text="Scan a barcode or type a code and press Enter"
                Text="{Binding ScanText, UpdateSourceTrigger=PropertyChanged}">
-        <TextBox.InputBindings>
-          <KeyBinding Key="Enter" Command="{Binding ScanEnteredCommand}" />
-        </TextBox.InputBindings>
-      </TextBox>
-      <TextBlock DockPanel.Dock="Top" Text="{Binding Message}" Margin="4,8" FontSize="15" MinHeight="22">
-        <TextBlock.Style>
-          <Style TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{StaticResource Accent}" />
-            <Style.Triggers>
-              <DataTrigger Binding="{Binding MessageIsError}" Value="True"><Setter Property="Foreground" Value="{StaticResource Danger}" /></DataTrigger>
-            </Style.Triggers>
-          </Style>
-        </TextBlock.Style>
-      </TextBlock>
-      <TextBox x:Name="SearchBox" DockPanel.Dock="Bottom" Margin="0,8,0,0" Style="{StaticResource SearchTextBox}"
+                <TextBox.InputBindings>
+                    <KeyBinding Key="Enter" Command="{Binding ScanEnteredCommand}" />
+                </TextBox.InputBindings>
+            </TextBox>
+            <TextBlock DockPanel.Dock="Top" Text="{Binding Message}" Margin="4,8" FontSize="15" MinHeight="22">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Setter Property="Foreground" Value="{StaticResource Accent}" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding MessageIsError}" Value="True">
+                                <Setter Property="Foreground" Value="{StaticResource Danger}" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+            <TextBox x:Name="SearchBox" DockPanel.Dock="Bottom" Margin="0,8,0,0" Style="{StaticResource SearchTextBox}"
                local:Placeholder.Text="Search item by name or code (F2)"
                Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" />
-      <ListBox DockPanel.Dock="Bottom" MaxHeight="160" Margin="0,8,0,0" HorizontalContentAlignment="Stretch" ItemsSource="{Binding SearchResults}"
+            <ListBox DockPanel.Dock="Bottom" MaxHeight="160" Margin="0,8,0,0" HorizontalContentAlignment="Stretch" ItemsSource="{Binding SearchResults}"
                Visibility="{Binding SearchResults.Count, Converter={StaticResource CountToVisibility}}">
-        <ListBox.ItemTemplate>
-          <DataTemplate>
-            <Button Style="{StaticResource GhostButton}" HorizontalContentAlignment="Left" MinHeight="40" local:ButtonIcon.Glyph="&#xE710;"
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <Button Style="{StaticResource GhostButton}" HorizontalContentAlignment="Left" MinHeight="40" local:ButtonIcon.Glyph="&#xE710;"
                     Command="{Binding DataContext.AddFromSearchCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                     CommandParameter="{Binding ItemCode}">
-              <TextBlock><Run Text="{Binding ItemName, Mode=OneWay}" FontWeight="SemiBold" /><Run Text="  " /><Run Text="{Binding ItemCode, Mode=OneWay}" Foreground="{StaticResource Muted}" /></TextBlock>
-            </Button>
-          </DataTemplate>
-        </ListBox.ItemTemplate>
-      </ListBox>
-      <!-- Column heads, lined up with the line rows below (list border + padding + row border and padding on the left;
+                            <TextBlock><Run Text="{Binding ItemName, Mode=OneWay}" FontWeight="SemiBold" /><Run Text="  " /><Run Text="{Binding ItemCode, Mode=OneWay}" Foreground="{StaticResource Muted}" /></TextBlock>
+                        </Button>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+            <!-- Column heads, lined up with the line rows below (list border + padding + row border and padding on the left;
            plus the scroll bar on the right). -->
-      <Grid DockPanel.Dock="Top" Margin="14,0,31,4">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="36" /><ColumnDefinition Width="*" /><ColumnDefinition Width="170" />
-          <ColumnDefinition Width="90" /><ColumnDefinition Width="90" /><ColumnDefinition Width="100" /><ColumnDefinition Width="56" />
-        </Grid.ColumnDefinitions>
-        <TextBlock Grid.Column="0" Text="#" Style="{StaticResource SectionTitle}" />
-        <TextBlock Grid.Column="1" Text="Item" Style="{StaticResource SectionTitle}" />
-        <TextBlock Grid.Column="2" Text="Qty" Style="{StaticResource SectionTitle}" TextAlignment="Center" />
-        <TextBlock Grid.Column="3" Text="Price" Style="{StaticResource SectionTitle}" TextAlignment="Right" />
-        <TextBlock Grid.Column="4" Text="Offer" Style="{StaticResource SectionTitle}" TextAlignment="Right" />
-        <TextBlock Grid.Column="5" Text="Amount" Style="{StaticResource SectionTitle}" TextAlignment="Right" />
-      </Grid>
-      <Grid>
-        <!-- Kept light: one Grid per row, the default VirtualizingStackPanel (recycling rows), no outer ScrollViewer. -->
-        <ListBox ItemsSource="{Binding Lines}" SelectedItem="{Binding SelectedLine}" HorizontalContentAlignment="Stretch"
-                 VirtualizingPanel.VirtualizationMode="Recycling" ScrollViewer.VerticalScrollBarVisibility="Visible">
-          <ListBox.ItemTemplate>
-            <DataTemplate>
-              <Grid Height="56">
+            <Grid DockPanel.Dock="Top" Margin="14,0,31,4">
                 <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="36" /><ColumnDefinition Width="*" /><ColumnDefinition Width="170" />
-                  <ColumnDefinition Width="90" /><ColumnDefinition Width="90" /><ColumnDefinition Width="100" /><ColumnDefinition Width="56" />
+                    <ColumnDefinition Width="36" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="170" />
+                    <ColumnDefinition Width="90" />
+                    <ColumnDefinition Width="90" />
+                    <ColumnDefinition Width="100" />
+                    <ColumnDefinition Width="56" />
                 </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="{Binding No}" VerticalAlignment="Center" Foreground="{StaticResource Muted}" />
-                <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                  <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                  <TextBlock Text="{Binding Barcode}" FontSize="12" Foreground="{StaticResource Muted}" FontFamily="{StaticResource CodeFont}" />
-                </StackPanel>
-                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                  <Button Focusable="False" Style="{StaticResource IconButton}" Content="&#xE738;"
+                <TextBlock Grid.Column="0" Text="#" Style="{StaticResource SectionTitle}" />
+                <TextBlock Grid.Column="1" Text="Item" Style="{StaticResource SectionTitle}" />
+                <TextBlock Grid.Column="2" Text="Qty" Style="{StaticResource SectionTitle}" TextAlignment="Center" />
+                <TextBlock Grid.Column="3" Text="Price" Style="{StaticResource SectionTitle}" TextAlignment="Right" />
+                <TextBlock Grid.Column="4" Text="Offer" Style="{StaticResource SectionTitle}" TextAlignment="Right" />
+                <TextBlock Grid.Column="5" Text="Amount" Style="{StaticResource SectionTitle}" TextAlignment="Right" />
+            </Grid>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="67*"/>
+                    <ColumnDefinition Width="547*"/>
+                </Grid.ColumnDefinitions>
+                <!-- Kept light: one Grid per row, the default VirtualizingStackPanel (recycling rows), no outer ScrollViewer. -->
+                <ListBox ItemsSource="{Binding Lines}" SelectedItem="{Binding SelectedLine}" HorizontalContentAlignment="Stretch"
+                 VirtualizingPanel.VirtualizationMode="Recycling" ScrollViewer.VerticalScrollBarVisibility="Visible" Grid.ColumnSpan="2">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Height="56">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="36" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="170" />
+                                    <ColumnDefinition Width="90" />
+                                    <ColumnDefinition Width="90" />
+                                    <ColumnDefinition Width="100" />
+                                    <ColumnDefinition Width="56" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="{Binding No}" VerticalAlignment="Center" Foreground="{StaticResource Muted}" />
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding Barcode}" FontSize="12" Foreground="{StaticResource Muted}" FontFamily="{StaticResource CodeFont}" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button Focusable="False" Style="{StaticResource IconButton}" Content="&#xE738;"
                           Command="{Binding DataContext.DecrementCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding Id}" />
-                  <TextBlock Text="{Binding Qty}" Width="70" TextAlignment="Center" VerticalAlignment="Center" FontSize="16" Style="{StaticResource Money}" />
-                  <Button Focusable="False" Style="{StaticResource IconButton}" Content="&#xE710;"
+                                    <TextBlock Text="{Binding Qty}" Width="70" TextAlignment="Center" VerticalAlignment="Center" FontSize="16" Style="{StaticResource Money}" />
+                                    <Button Focusable="False" Style="{StaticResource IconButton}" Content="&#xE710;"
                           Command="{Binding DataContext.IncrementCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding Id}" />
-                </StackPanel>
-                <TextBlock Grid.Column="3" Text="{Binding Price}" TextAlignment="Right" VerticalAlignment="Center" Style="{StaticResource Money}" />
-                <TextBlock Grid.Column="4" Text="{Binding Offer}" TextAlignment="Right" VerticalAlignment="Center" Foreground="{StaticResource Warn}" />
-                <TextBlock Grid.Column="5" Text="{Binding Amount}" TextAlignment="Right" VerticalAlignment="Center" FontSize="17" Style="{StaticResource Money}" />
-                <Button Focusable="False" Grid.Column="6" Style="{StaticResource DangerIconButton}" Content="&#xE711;" HorizontalAlignment="Right"
+                                </StackPanel>
+                                <TextBlock Grid.Column="3" Text="{Binding Price}" TextAlignment="Right" VerticalAlignment="Center" Style="{StaticResource Money}" />
+                                <TextBlock Grid.Column="4" Text="{Binding Offer}" TextAlignment="Right" VerticalAlignment="Center" Foreground="{StaticResource Warn}" />
+                                <TextBlock Grid.Column="5" Text="{Binding Amount}" TextAlignment="Right" VerticalAlignment="Center" FontSize="17" Style="{StaticResource Money}" />
+                                <Button Focusable="False" Grid.Column="6" Style="{StaticResource DangerIconButton}" Content="&#xE711;" HorizontalAlignment="Right"
                         Command="{Binding DataContext.RemoveCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding Id}" />
-              </Grid>
-            </DataTemplate>
-          </ListBox.ItemTemplate>
-        </ListBox>
-        <!-- Empty bill. -->
-        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"
-                    Visibility="{Binding Lines.Count, Converter={StaticResource EmptyToVisibility}}">
-          <Border Background="{StaticResource AccentSoft}" CornerRadius="40" Width="80" Height="80" HorizontalAlignment="Center">
-            <TextBlock Text="&#xEE6F;" Style="{StaticResource Icon}" FontSize="40" Foreground="{StaticResource Accent}" HorizontalAlignment="Center" />
-          </Border>
-          <TextBlock Text="Scan an item to start the bill" FontSize="20" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,14,0,4" />
-          <TextBlock Text="or search by name below (F2)" Foreground="{StaticResource Muted}" HorizontalAlignment="Center" />
-        </StackPanel>
-      </Grid>
-    </DockPanel>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+                <!-- Empty bill. -->
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"
+            Visibility="{Binding Lines.Count, Converter={StaticResource EmptyToVisibility}}" Grid.Column="1" Margin="0">
+                    <Border Background="{StaticResource AccentSoft}" CornerRadius="40" Width="80" Height="80" HorizontalAlignment="Center">
+                        <TextBlock Text="&#xEE6F;" Style="{StaticResource Icon}" FontSize="40" Foreground="{StaticResource Accent}" HorizontalAlignment="Center" />
+                    </Border>
+                    <TextBlock Text="Scan an item to start the bill" FontSize="20" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,14,0,4" />
+                    <TextBlock Text="or search by name below (F2)" Foreground="{StaticResource Muted}" HorizontalAlignment="Center" />
+                </StackPanel>
+            </Grid>
+        </DockPanel>
 
-    <!-- The right column scrolls only if a small screen cannot fit it; every button is non-focusable so the scan box keeps the keyboard. -->
-    <ScrollViewer Grid.Column="1" Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-      <StackPanel>
-        <Border Style="{StaticResource Card}" Margin="4,0" Padding="20,14">
-          <StackPanel>
-            <DockPanel><TextBlock Text="Lines" Foreground="{StaticResource Muted}" /><TextBlock Text="{Binding ItemCount}" HorizontalAlignment="Right" Style="{StaticResource Money}" /></DockPanel>
-            <DockPanel Margin="0,2,0,0"><TextBlock Text="Offers &amp; discounts" Foreground="{StaticResource Warn}" /><TextBlock Text="{Binding Discount}" HorizontalAlignment="Right" Foreground="{StaticResource Warn}" Style="{StaticResource Money}" /></DockPanel>
-            <DockPanel Margin="0,2,0,0"><TextBlock Text="VAT 5% (included)" Foreground="{StaticResource Muted}" /><TextBlock Text="{Binding Vat}" HorizontalAlignment="Right" Style="{StaticResource Money}" /></DockPanel>
-            <Separator />
-            <DockPanel>
-              <TextBlock Text="TOTAL AED" FontWeight="Bold" VerticalAlignment="Bottom" Margin="0,0,0,9" />
-              <TextBlock Text="{Binding Total}" HorizontalAlignment="Right" FontSize="40" FontWeight="Bold" Style="{StaticResource Money}" />
-            </DockPanel>
-          </StackPanel>
-        </Border>
-        <Button Focusable="False" Style="{StaticResource PrimaryButton}" Height="80" Margin="4,12,4,4" Command="{Binding PayCashCommand}">
-          <StackPanel Orientation="Horizontal">
-            <Path Data="{StaticResource CashGeometry}" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+        <!-- The right column scrolls only if a small screen cannot fit it; every button is non-focusable so the scan box keeps the keyboard. -->
+        <ScrollViewer Grid.Column="1" Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel>
+                <Border Style="{StaticResource Card}" Margin="4,0" Padding="20,14">
+                    <StackPanel>
+                        <DockPanel>
+                            <TextBlock Text="Lines" Foreground="{StaticResource Muted}" />
+                            <TextBlock Text="{Binding ItemCount}" HorizontalAlignment="Right" Style="{StaticResource Money}" />
+                        </DockPanel>
+                        <DockPanel Margin="0,2,0,0">
+                            <TextBlock Text="Offers &amp; discounts" Foreground="{StaticResource Warn}" />
+                            <TextBlock Text="{Binding Discount}" HorizontalAlignment="Right" Foreground="{StaticResource Warn}" Style="{StaticResource Money}" />
+                        </DockPanel>
+                        <DockPanel Margin="0,2,0,0">
+                            <TextBlock Text="VAT 5% (included)" Foreground="{StaticResource Muted}" />
+                            <TextBlock Text="{Binding Vat}" HorizontalAlignment="Right" Style="{StaticResource Money}" />
+                        </DockPanel>
+                        <Separator />
+                        <DockPanel>
+                            <TextBlock Text="TOTAL AED" FontWeight="Bold" VerticalAlignment="Bottom" Margin="0,0,0,9" />
+                            <TextBlock Text="{Binding Total}" HorizontalAlignment="Right" FontSize="40" FontWeight="Bold" Style="{StaticResource Money}" />
+                        </DockPanel>
+                    </StackPanel>
+                </Border>
+                <Button Focusable="False" Style="{StaticResource PrimaryButton}" Height="80" Margin="4,12,4,4" Command="{Binding PayCashCommand}">
+                    <StackPanel Orientation="Horizontal">
+                        <Path Data="{StaticResource CashGeometry}" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
                   Width="30" Height="21" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,12,0" />
-            <TextBlock Text="PAY CASH  (F12)" VerticalAlignment="Center" />
-          </StackPanel>
-        </Button>
-        <Grid Margin="0,4,0,0">
-          <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition /></Grid.ColumnDefinitions>
-          <Grid.RowDefinitions><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /></Grid.RowDefinitions>
-          <Grid.Resources>
-            <Style TargetType="Button" x:Key="PadButton" BasedOn="{StaticResource KeyButton}">
-              <Setter Property="Focusable" Value="False" />
-              <Setter Property="MinHeight" Value="52" />
-              <Setter Property="Height" Value="52" />
-              <Setter Property="FontSize" Value="16" />
-              <Setter Property="HorizontalContentAlignment" Value="Left" />
-              <Setter Property="Padding" Value="14,0" />
-            </Style>
-          </Grid.Resources>
-          <Button Grid.Row="0" Grid.Column="0" Style="{StaticResource PadButton}" local:ButtonIcon.Glyph="&#xE8C7;" Content="Card (F11)" Command="{Binding PayCardCommand}" />
-          <Button Grid.Row="0" Grid.Column="1" Style="{StaticResource PadButton}" local:ButtonIcon.Glyph="&#xE8EF;" Content="Set qty (F3)" Command="{Binding SetQtySelectedCommand}" />
-          <Button Grid.Row="1" Grid.Column="0" Style="{StaticResource PadButton}" local:ButtonIcon.Glyph="&#xE721;" Content="Search (F2)" Click="FocusSearch" />
-          <Button Grid.Row="1" Grid.Column="1" Style="{StaticResource PadButton}" local:ButtonIcon.Glyph="&#xE8EC;" Content="Price check (F4)" Command="{Binding PriceCheckCommand}" />
-          <Button Grid.Row="2" Grid.Column="0" Style="{StaticResource PadButton}" local:ButtonIcon.Glyph="&#xE769;" Content="Hold (F5)" Command="{Binding HoldCommand}" />
-          <Button Grid.Row="2" Grid.Column="1" Style="{StaticResource PadButton}" local:ButtonIcon.Glyph="&#xE81C;" Command="{Binding RecallCommand}">
-            <StackPanel Orientation="Horizontal">
-              <TextBlock Text="Recall (F7)" VerticalAlignment="Center" />
-              <!-- How many bills are on hold; hidden when none. -->
-              <Border Background="{StaticResource Accent}" CornerRadius="11" MinWidth="24" Height="22" Padding="6,0" Margin="8,0,0,0"
+                        <TextBlock Text="PAY CASH  (F12)" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+                <Grid Margin="0,4,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition />
+                        <ColumnDefinition />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition />
+                        <RowDefinition />
+                        <RowDefinition />
+                        <RowDefinition />
+                        <RowDefinition />
+                    </Grid.RowDefinitions>
+                    <Grid.Resources>
+                        <Style TargetType="Button" x:Key="PadButton" BasedOn="{StaticResource KeyButton}">
+                            <Setter Property="Focusable" Value="False" />
+                            <Setter Property="MinHeight" Value="52" />
+                            <Setter Property="Height" Value="52" />
+                            <Setter Property="FontSize" Value="16" />
+                            <Setter Property="HorizontalContentAlignment" Value="Left" />
+                            <Setter Property="Padding" Value="14,0" />
+                        </Style>
+                    </Grid.Resources>
+                    <Button Grid.Row="0" Grid.Column="0" Style="{StaticResource PadButton}" local:ButtonIcon.Glyph="&#xE8C7;" Content="Card (F11)" Command="{Binding PayCardCommand}" />
+                    <Button Grid.Row="0" Grid.Column="1" Style="{StaticResource PadButton}" local:ButtonIcon.Glyph="&#xE8EF;" Content="Set qty (F3)" Command="{Binding SetQtySelectedCommand}" />
+                    <Button Grid.Row="1" Grid.Column="0" Style="{StaticResource PadButton}" local:ButtonIcon.Glyph="&#xE721;" Content="Search (F2)" Click="FocusSearch" />
+                    <Button Grid.Row="1" Grid.Column="1" Style="{StaticResource PadButton}" local:ButtonIcon.Glyph="&#xE8EC;" Content="Price check (F4)" Command="{Binding PriceCheckCommand}" />
+                    <Button Grid.Row="2" Grid.Column="0" Style="{StaticResource PadButton}" local:ButtonIcon.Glyph="&#xE769;" Content="Hold (F5)" Command="{Binding HoldCommand}" />
+                    <Button Grid.Row="2" Grid.Column="1" Style="{StaticResource PadButton}" local:ButtonIcon.Glyph="&#xE81C;" Command="{Binding RecallCommand}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Recall (F7)" VerticalAlignment="Center" />
+                            <!-- How many bills are on hold; hidden when none. -->
+                            <Border Background="{StaticResource Accent}" CornerRadius="11" MinWidth="24" Height="22" Padding="6,0" Margin="8,0,0,0"
                       VerticalAlignment="Center" Visibility="{Binding HeldCount, Converter={StaticResource CountToVisibility}}">
-                <TextBlock Text="{Binding HeldCount}" Foreground="White" FontSize="14" FontWeight="Bold"
+                                <TextBlock Text="{Binding HeldCount}" Foreground="White" FontSize="14" FontWeight="Bold"
                            HorizontalAlignment="Center" VerticalAlignment="Center" />
-              </Border>
-            </StackPanel>
-          </Button>
-          <Button Grid.Row="3" Grid.Column="0" Style="{StaticResource PadButton}" local:ButtonIcon.Glyph="&#xE7A7;" Content="Return (F6)" Command="{Binding ReturnCommand}" />
-          <Button Grid.Row="3" Grid.Column="1" Focusable="False" Style="{StaticResource DangerButton}" MinHeight="52" Height="52" FontSize="16"
+                            </Border>
+                        </StackPanel>
+                    </Button>
+                    <Button Grid.Row="3" Grid.Column="0" Style="{StaticResource PadButton}" local:ButtonIcon.Glyph="&#xE7A7;" Content="Return (F6)" Command="{Binding ReturnCommand}" />
+                    <Button Grid.Row="3" Grid.Column="1" Focusable="False" Style="{StaticResource DangerButton}" MinHeight="52" Height="52" FontSize="16"
                   HorizontalContentAlignment="Left" Padding="14,0" local:ButtonIcon.Glyph="&#xE74D;"
                   Content="Void bill (F8)" Command="{Binding VoidBillCommand}" />
-          <Button Grid.Row="4" Grid.Column="0" Style="{StaticResource PadButton}" local:ButtonIcon.Glyph="&#xE806;" Content="Delivery (F9)" Command="{Binding MakeDeliveryCommand}" />
-          <Button Grid.Row="4" Grid.Column="1" Style="{StaticResource PadButton}" local:ButtonIcon.Glyph="&#xE7BF;" Command="{Binding OpenDeliveriesCommand}">
-            <StackPanel Orientation="Horizontal">
-              <TextBlock Text="Deliveries" VerticalAlignment="Center" />
-              <!-- How many deliveries are out (not paid yet); hidden when none. -->
-              <Border Background="{StaticResource Warn}" CornerRadius="11" MinWidth="24" Height="22" Padding="6,0" Margin="8,0,0,0"
+                    <Button Grid.Row="4" Grid.Column="0" Style="{StaticResource PadButton}" local:ButtonIcon.Glyph="&#xE806;" Content="Delivery (F9)" Command="{Binding MakeDeliveryCommand}" />
+                    <Button Grid.Row="4" Grid.Column="1" Style="{StaticResource PadButton}" local:ButtonIcon.Glyph="&#xE7BF;" Command="{Binding OpenDeliveriesCommand}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Deliveries" VerticalAlignment="Center" />
+                            <!-- How many deliveries are out (not paid yet); hidden when none. -->
+                            <Border Background="{StaticResource Warn}" CornerRadius="11" MinWidth="24" Height="22" Padding="6,0" Margin="8,0,0,0"
                       VerticalAlignment="Center" Visibility="{Binding DeliveryCount, Converter={StaticResource CountToVisibility}}">
-                <TextBlock Text="{Binding DeliveryCount}" Foreground="White" FontSize="14" FontWeight="Bold"
+                                <TextBlock Text="{Binding DeliveryCount}" Foreground="White" FontSize="14" FontWeight="Bold"
                            HorizontalAlignment="Center" VerticalAlignment="Center" />
-              </Border>
-            </StackPanel>
-          </Button>
-        </Grid>
-        <!-- Update prices: fetches prices changed in ERPNext now and re-prices the open bill (they also arrive by themselves
+                            </Border>
+                        </StackPanel>
+                    </Button>
+                </Grid>
+                <!-- Update prices: fetches prices changed in ERPNext now and re-prices the open bill (they also arrive by themselves
              every ~15 s). -->
-        <Button Focusable="False" Style="{StaticResource SecondaryButton}" Height="48" Margin="4,4,4,0" FontSize="15" FontWeight="SemiBold"
+                <Button Focusable="False" Style="{StaticResource SecondaryButton}" Height="48" Margin="4,4,4,0" FontSize="15" FontWeight="SemiBold"
                 local:ButtonIcon.Glyph="&#xE72C;" Content="Update prices (F10)" Command="{Binding UpdatePricesCommand}"
                 ToolTip="Fetch the prices changed in ERPNext now (they also arrive by themselves within about 15 seconds)" />
-        <UniformGrid Columns="3" Margin="0,4,0,0">
-          <UniformGrid.Resources>
-            <Style TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
-              <Setter Property="Focusable" Value="False" />
-              <Setter Property="MinHeight" Value="48" />
-              <Setter Property="Height" Value="48" />
-              <Setter Property="FontSize" Value="14" />
-              <Setter Property="Padding" Value="8,0" />
-              <Setter Property="Foreground" Value="{StaticResource Muted}" />
-              <Setter Property="local:ButtonIcon.Size" Value="15" />
-            </Style>
-          </UniformGrid.Resources>
-          <!-- Reprint shows the bill on screen too (marked COPY), so it visibly works even without a printer. -->
-          <Button Command="{Binding ReprintLastCommand}" local:ButtonIcon.Glyph="&#xE749;" Foreground="{StaticResource Accent}" FontWeight="SemiBold"
+                <UniformGrid Columns="3" Margin="0,4,0,0">
+                    <UniformGrid.Resources>
+                        <Style TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
+                            <Setter Property="Focusable" Value="False" />
+                            <Setter Property="MinHeight" Value="48" />
+                            <Setter Property="Height" Value="48" />
+                            <Setter Property="FontSize" Value="14" />
+                            <Setter Property="Padding" Value="8,0" />
+                            <Setter Property="Foreground" Value="{StaticResource Muted}" />
+                            <Setter Property="local:ButtonIcon.Size" Value="15" />
+                        </Style>
+                    </UniformGrid.Resources>
+                    <!-- Reprint shows the bill on screen too (marked COPY), so it visibly works even without a printer. -->
+                    <Button Command="{Binding ReprintLastCommand}" local:ButtonIcon.Glyph="&#xE749;" Foreground="{StaticResource Accent}" FontWeight="SemiBold"
                   ToolTip="Prints the last bill or credit note again (marked COPY) and shows it on screen">
-            <TextBlock Text="Reprint last (Ctrl+P)" TextWrapping="Wrap" TextAlignment="Center" />
-          </Button>
-          <Button Content="Log out" local:ButtonIcon.Glyph="&#xE748;" Command="{Binding LogOutCommand}" />
-          <Button Content="Close shift" local:ButtonIcon.Glyph="&#xE72E;" Command="{Binding CloseShiftCommand}" />
-        </UniformGrid>
-      </StackPanel>
-    </ScrollViewer>
-  </Grid>
+                        <TextBlock Text="Reprint last (Ctrl+P)" TextWrapping="Wrap" TextAlignment="Center" />
+                    </Button>
+                    <Button Content="Log out" local:ButtonIcon.Glyph="&#xE748;" Command="{Binding LogOutCommand}" />
+                    <Button Content="Close shift" local:ButtonIcon.Glyph="&#xE72E;" Command="{Binding CloseShiftCommand}" />
+                </UniformGrid>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
 </UserControl>
