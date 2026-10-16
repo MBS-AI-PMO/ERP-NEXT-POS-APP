@@ -73,6 +73,19 @@ public sealed class LoginViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task Settings_tells_setup_whether_a_shift_is_open_so_the_money_decimals_stay_fixed_during_a_shift()
+    {
+        f.Dialogs.Pins.Enqueue("9999");
+        await Login().SettingsCommand.ExecuteAsync(null);
+        Assert.False(f.Dialogs.SetupShiftOpen);
+
+        f.Ctx.Shifts.Open(new ShiftOpening("TILL1-SHIFT-X", "c1", "", DateTimeOffset.Now, []));
+        f.Dialogs.Pins.Enqueue("9999");
+        await Login().SettingsCommand.ExecuteAsync(null);
+        Assert.True(f.Dialogs.SetupShiftOpen);
+    }
+
+    [Fact]
     public async Task Settings_with_a_supervisor_pin_opens_setup_once_and_logs_the_approval()
     {
         f.Dialogs.Pins.Enqueue("9999");

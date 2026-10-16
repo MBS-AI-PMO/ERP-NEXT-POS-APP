@@ -102,6 +102,8 @@ switch (args[0])
             },
         };
 
+        // POS Awesome refuses a POS Invoice without an open POS Opening Shift of the profile: name one with "OpeningShift".
+        if (!string.IsNullOrWhiteSpace(config.OpeningShift)) doc["posa_pos_opening_shift"] = config.OpeningShift;
         var created = await writer.InsertAsync("POS Invoice", doc);
         var name = created.Str("name");
         try

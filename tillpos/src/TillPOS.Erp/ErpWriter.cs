@@ -15,6 +15,9 @@ public sealed class ErpWriter(ErpClient client) : IErpWriter
         return await client.CallAsync("frappe.client.submit", new Dictionary<string, object?> { ["doc"] = doc }, ct);
     }
 
+    public Task<JsonElement> UpdateAsync(string doctype, string name, object doc, CancellationToken ct = default) =>
+        client.UpdateAsync(doctype, name, doc, ct);
+
     public Task<JsonElement> CallAsync(string method, object args, CancellationToken ct = default) => client.CallAsync(method, args, ct);
 
     /// <summary>Deletes a document (tools only; not part of <see cref="IErpWriter"/>: the till never deletes).</summary>

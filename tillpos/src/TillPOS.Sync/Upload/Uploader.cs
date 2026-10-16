@@ -191,19 +191,41 @@ public sealed class Uploader
             if (openingName is null) return;
         }
 
-        // 2. POS Invoices, oldest first.
+        // 2. POS Invoices, oldest first. ERPNext refuses a bill on a closed shift, so once this shift's closing is in ERPNext its
+        // remaining bills (a failed bill retried later) go with the counter's current open shift, keeping their sale date.
+        var closedInErp = sync.ClosingStatus is UploadStatus.Synced or UploadStatus.Handled;
+        string? lateShift = null;
+        var lateShiftKnown = false;
         var uploaded = new List<(string ErpName, Receipt Receipt)>();
         var waiting = 0;
+        var parked = 0;
         foreach (var (receipt, bill) in receipts.Outbox(id).Select(e => (e.Receipt, e.Sync)))
         {
             if (bill.Status is ReceiptSyncStatus.Excluded or ReceiptSyncStatus.Handled) continue;   // never uploaded
             var name = bill.Status == ReceiptSyncStatus.Synced ? bill.ErpName : run.Planned(InvoiceKey(receipt.ClientId));
-            name ??= await InvoiceAsync(receipt, bill, profile, openingName, run, ct);
-            if (name is null) waiting++;
-            else uploaded.Add((name, receipt));
+            if (name is null)
+            {
+                var shiftName = openingName;
+                if (closedInErp)
+                {
+                    if (!lateShiftKnown) (lateShift, lateShiftKnown) = (CurrentShiftName(opening, profile), true);
+                    if (lateShift is null)
+                    {
+                        run.Add(receipt.ClientId, $"Bill {receipt.ClientId} waits for the next shift of {profile.PosProfile} to open in ERPNext " +
+                            $"(its own shift {id} is closed there).", OutboxKind.Bill);
+                        continue;
+                    }
+                    shiftName = lateShift;
+                }
+                name = await InvoiceAsync(receipt, bill, profile, shiftName, run, ct);
+            }
+            if (name is not null) uploaded.Add((name, receipt));
+            else if (IsParked(receipt)) parked++;
+            else waiting++;
         }
 
-        // 3. POS Closing Shift: only for a closed shift whose bills are all in ERPNext.
+        // 3. POS Closing Shift, once the shift is closed and none of its bills is still on its way. A bill ERPNext refused (Failed)
+        // does not hold it: the closing carries the till's totals and count for every paid bill, and the bill follows later.
         if (entry.Closing is not { } closing) return;
         sync = shifts.SyncInfo(id)!;
         if (sync.ClosingStatus is not (UploadStatus.Pending or UploadStatus.Failed)) return;   // synced, excluded or handled: final
@@ -214,10 +236,16 @@ public sealed class Uploader
             return;
         }
         if (!Due(sync.NextAttemptAt, id, $"Closing of shift {id}", sync.ClosingError ?? sync.LastError, run, OutboxKind.Closing)) return;
+        if (parked > 0)
+            run.Add(id, $"Closing of shift {id} goes without {parked.ToString(CultureInfo.InvariantCulture)} failed bill(s); " +
+                "Retry sends them later with the current shift.", OutboxKind.Closing);
+        var linked = await LinkedInvoicesAsync(openingName, ct);
+        var shiftReceipts = receipts.ByShift(id);
         await UploadAsync(
             new Doc(ClosingShiftPayload.Doctype, OfflineIdField, id, ClosingKey(id), $"Closing of shift {id}", true,
                 () => ClosingShiftPayload.Build(opening, closing, openingName, uploaded, profile.PosProfile, profile.Company, user,
-                    profile.Customer, profile.TaxesAndCharges is { Length: > 0 } taxes ? TaxTemplates(taxes) : null, profile.Currency),
+                    profile.Customer, profile.TaxesAndCharges is { Length: > 0 } taxes ? TaxTemplates(taxes) : null, profile.Currency,
+                    shiftReceipts, linked),
                 Check: (checks, body, ct) => checks.ShiftAsync(body, "payment_reconciliation", ct)),
             new Marks(sync.Attempts, name => shifts.MarkSynced(id, ShiftDocument.Closing, name, now()),
                 (error, next, keep) => shifts.MarkFailed(id, ShiftDocument.Closing, error, next, keep),
@@ -315,6 +343,47 @@ public sealed class Uploader
             .FirstOrDefault(earlier => earlier.ClientId != opening.ClientId && string.Equals(
                 profileSettings(earlier.Counter)?.PosProfile ?? earlier.Counter, profile.PosProfile, StringComparison.OrdinalIgnoreCase))
             ?.ClientId;
+
+    /// <summary>The ERPNext name of the counter's current open shift on this till (opening in ERPNext, closing not yet), for a
+    /// bill whose own shift is already closed there; null when the counter has none open.</summary>
+    private string? CurrentShiftName(Core.Shifts.ShiftOpening shiftOfBill, PosSettings profile) =>
+        shifts.OpenInErpNext(now().AddYears(1))
+            .Where(s => s.ClientId != shiftOfBill.ClientId && string.Equals(
+                profileSettings(s.Counter)?.PosProfile ?? s.Counter, profile.PosProfile, StringComparison.OrdinalIgnoreCase))
+            .Select(s => shifts.SyncInfo(s.ClientId)?.ErpOpeningName)
+            .LastOrDefault(n => n is not null);
+
+    /// <summary>A bill that is not on its way: ERPNext refused it (Failed), or it is a return of a sale on this till that ERPNext
+    /// refused or that was dealt with by hand. Its shift's closing does not wait for it.</summary>
+    private bool IsParked(Receipt receipt)
+    {
+        if (StatusOf(receipt.ClientId) == ReceiptSyncStatus.Failed) return true;
+        return receipt.Kind == ReceiptKind.Return && receipt.ReturnAgainst is { Length: > 0 } original && ClientIds.IsTillId(original)
+            && StatusOf(original) is ReceiptSyncStatus.Failed or ReceiptSyncStatus.Handled or ReceiptSyncStatus.Excluded;
+    }
+
+    private ReceiptSyncStatus? StatusOf(string clientId)
+    {
+        try
+        {
+            return receipts.SyncInfo(clientId).Status;
+        }
+        catch (KeyNotFoundException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>The submitted invoices in ERPNext linked to this opening (read-only), so its closing lists the bills of earlier
+    /// shifts that were sent late with it. None for a DryRun stand-in.</summary>
+    private async Task<IReadOnlyList<LinkedInvoice>> LinkedInvoicesAsync(string openingName, CancellationToken ct)
+    {
+        if (IsStandIn(openingName)) return [];
+        var rows = await reader.GetListAsync(new ListQuery(PosInvoicePayload.Doctype, ["name", "posting_date", "customer", "grand_total"],
+            [["posa_pos_opening_shift", "=", openingName], ["docstatus", "=", 1]], "creation asc", 0, 5000), ct);
+        return rows.Select(r => new LinkedInvoice(r.Str("name"), r.StrOrNull("posting_date") ?? "", r.StrOrNull("customer"), r.Dec("grand_total")))
+            .ToList();
+    }
 
     /// <summary>A DryRun stand-in for a document that would be created in this run (not in ERPNext).</summary>
     private static bool IsStandIn(string name) => name.StartsWith("(new: ", StringComparison.Ordinal);
@@ -497,6 +566,9 @@ public sealed class Uploader
                     $"Draft {found.Name} is in ERPNext, but writing it got no answer {marks.UnknownAttempts} times."), keepUnknown: true);
             if (doc.Submittable && found is { DocStatus: 0 } && doc.Expected is null && DraftMismatch(doc, found) is { } foreign)
                 throw new DocumentFailure(foreign);
+            // An invoice draft left by an earlier try (a refused submit, a lost answer) is rewritten from the till's bill first:
+            // ERPNext keeps the values it was given then (other precision, a shift that has closed since).
+            if (found is { DocStatus: 0 } && doc.Expected is not null) found = await RewriteDraftAsync(doc, found, marks, ct);
             found ??= await InsertDraftAsync(doc, marks, ct);
             var draft = doc.Submittable && found.DocStatus == 0;
             if (Mismatch(doc, found) is { } mismatch)
@@ -616,6 +688,30 @@ public sealed class Uploader
             throw new InvalidDataException(noName);
         }
         return new Found(name, saved, saved.Int("docstatus"));
+    }
+
+    /// <summary>Saves the till's bill over its own draft in ERPNext (found by its client id): lines, payments and the shift it goes
+    /// with. A refusal is a failure with ERPNext's message; no answer is an unknown outcome, like an insert.</summary>
+    private async Task<Found> RewriteDraftAsync(Doc doc, Found draft, Marks marks, CancellationToken ct)
+    {
+        var body = new Dictionary<string, object?>(doc.Build());
+        body.Remove("doctype");
+        body.Remove("docstatus");
+        if (!marks.InFlight(now() + InFlightHold)) throw new DocumentSkipped();
+        try
+        {
+            var saved = await writer.UpdateAsync(doc.Doctype, draft.Name, body, ct);
+            return new Found(draft.Name, saved, 0);
+        }
+        catch (Exception ex) when (Classify(ex) == ErpOutcome.Refused)
+        {
+            throw new DocumentFailure($"Draft {draft.Name} is in ERPNext but could not be updated: {Short(ex.Message)}");
+        }
+        catch (Exception ex) when (Classify(ex) is ErpOutcome.Unknown or ErpOutcome.ServerError && !ct.IsCancellationRequested)
+        {
+            marks.Unknown(UnknownText(ex.Message));
+            throw;
+        }
     }
 
     /// <summary>Submits a checked draft. A refusal leaves the draft in ERPNext (the next try finds it and submits it again).</summary>

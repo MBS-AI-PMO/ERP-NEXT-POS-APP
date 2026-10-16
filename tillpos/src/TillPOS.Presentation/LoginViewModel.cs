@@ -95,7 +95,7 @@ public sealed class LoginViewModel : ObservableObject
         Pin = "";
         var gate = new SupervisorGate(ctx, new SessionState());
         if (await gate.ApproveAsync(ApprovalAction.SettingsChange, "Change till settings") is not { } supervisor) return;
-        await ctx.Dialogs.ShowSetupAsync((from, to) => UploadModeChangedAsync(gate, supervisor, from, to));
+        await ctx.Dialogs.ShowSetupAsync((from, to) => UploadModeChangedAsync(gate, supervisor, from, to), ctx.Shifts.Current() is not null);
     }
 
     /// <summary>The upload mode decides whether the till writes to ERPNext: its change is logged with the approving supervisor.

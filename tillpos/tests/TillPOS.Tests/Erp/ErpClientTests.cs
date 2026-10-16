@@ -110,6 +110,26 @@ public class ErpClientTests
     }
 
     [Fact]
+    public async Task Update_puts_the_values_on_the_document_and_returns_data()
+    {
+        var (client, handler) = Make(_ => StubHandler.Json("""{"data":{"name":"ACC-PSINV-7","posa_pos_opening_shift":"POSA-OS-2"}}"""));
+
+        var saved = await new ErpWriter(client).UpdateAsync("POS Invoice", "ACC-PSINV-7",
+            new Dictionary<string, object?> { ["posa_pos_opening_shift"] = "POSA-OS-2" });
+
+        Assert.Equal("POSA-OS-2", saved.GetProperty("posa_pos_opening_shift").GetString());
+        var (req, body) = handler.Requests.Single();
+        Assert.Equal(HttpMethod.Put, req.Method);
+        Assert.Equal("/api/resource/POS%20Invoice/ACC-PSINV-7", req.RequestUri!.AbsolutePath);
+        using var sent = JsonDocument.Parse(body!);
+        Assert.Equal("POSA-OS-2", sent.RootElement.GetProperty("posa_pos_opening_shift").GetString());
+    }
+
+    [Fact]
+    public void The_no_write_writer_refuses_updates() =>
+        Assert.Throws<InvalidOperationException>(() => { _ = NoWriteErpWriter.Instance.UpdateAsync("POS Invoice", "X", new { }); });
+
+    [Fact]
     public async Task Submit_reads_the_draft_and_posts_it_to_frappe_client_submit()
     {
         var (client, handler) = Make(req => req.Method == HttpMethod.Get

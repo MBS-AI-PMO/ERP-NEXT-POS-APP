@@ -71,7 +71,7 @@ public sealed class WpfDialogs(
     }
 
     /// <summary>Starts from the file on disk (not the settings the till started with), so hand edits made since are kept.</summary>
-    public async Task<bool> ShowSetupAsync(Func<UploadMode, UploadMode, Task<bool>> uploadModeChanged)
+    public async Task<bool> ShowSetupAsync(Func<UploadMode, UploadMode, Task<bool>> uploadModeChanged, bool shiftOpen = false)
     {
         TillSettings current;
         try
@@ -84,7 +84,7 @@ public sealed class WpfDialogs(
             return false;
         }
 
-        var dialog = new SetupDialog(current, firstRun: false) { Owner = owner, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        var dialog = new SetupDialog(current, firstRun: false, shiftOpen) { Owner = owner, WindowStartupLocation = WindowStartupLocation.CenterOwner };
         if (dialog.ShowDialog() != true || dialog.Result is not { } saved) return false;
         if (saved.Upload != current.Upload)
         {

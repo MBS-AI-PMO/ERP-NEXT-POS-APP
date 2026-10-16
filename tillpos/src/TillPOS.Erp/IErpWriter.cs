@@ -12,6 +12,10 @@ public interface IErpWriter
     /// <summary>Submits a saved draft (frappe.client.submit). Returns the submitted document.</summary>
     Task<JsonElement> SubmitAsync(string doctype, string name, CancellationToken ct = default);
 
+    /// <summary>Saves new values over a draft (PUT /api/resource/{doctype}/{name}); child tables sent replace the draft's rows.
+    /// Returns the saved document.</summary>
+    Task<JsonElement> UpdateAsync(string doctype, string name, object doc, CancellationToken ct = default);
+
     /// <summary>Calls a whitelisted server method (POST /api/method/{method}) and returns its "message".</summary>
     Task<JsonElement> CallAsync(string method, object args, CancellationToken ct = default);
 }
@@ -24,6 +28,7 @@ public sealed class NoWriteErpWriter : IErpWriter
 
     public Task<JsonElement> InsertAsync(string doctype, object doc, CancellationToken ct = default) => throw Off();
     public Task<JsonElement> SubmitAsync(string doctype, string name, CancellationToken ct = default) => throw Off();
+    public Task<JsonElement> UpdateAsync(string doctype, string name, object doc, CancellationToken ct = default) => throw Off();
     public Task<JsonElement> CallAsync(string method, object args, CancellationToken ct = default) => throw Off();
 
     private static InvalidOperationException Off() => new("Upload is off");

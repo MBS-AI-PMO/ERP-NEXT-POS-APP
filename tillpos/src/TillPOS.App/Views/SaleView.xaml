@@ -70,7 +70,7 @@
       </Grid>
       <Grid>
         <!-- Kept light: one Grid per row, the default VirtualizingStackPanel (recycling rows), no outer ScrollViewer. -->
-        <ListBox ItemsSource="{Binding Lines}" SelectedItem="{Binding SelectedLine}" HorizontalContentAlignment="Stretch"
+        <ListBox ItemsSource="{Binding Lines}" SelectedItem="{Binding SelectedLine}" HorizontalContentAlignment="Stretch" SelectionChanged="ShowSelectedLine"
                  VirtualizingPanel.VirtualizationMode="Recycling" ScrollViewer.VerticalScrollBarVisibility="Visible">
           <ListBox.ItemTemplate>
             <DataTemplate>

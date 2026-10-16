@@ -11,7 +11,8 @@ public sealed record CliConfig(
     string DbPath = "tillpos-cli.db",
     int Precision = 2,
     RoundingMethod Rounding = RoundingMethod.Bankers,
-    bool AllowWrites = false)
+    bool AllowWrites = false,
+    string? OpeningShift = null)
 {
     public static CliConfig Load(string path) =>
         JsonSerializer.Deserialize<CliConfig>(File.ReadAllText(path),

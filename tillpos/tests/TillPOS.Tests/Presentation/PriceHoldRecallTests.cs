@@ -135,9 +135,9 @@ public sealed class PriceHoldRecallTests : IDisposable
         sale.PriceCheck();
 
         Assert.Equal(3, f.Dialogs.PriceCheckRequests);
-        Assert.Equal(new[] { "0.740 Kg", "1" }, sale.Lines.Select(l => l.Qty));
-        Assert.Equal("2000089007400", sale.Lines[0].Barcode);
-        Assert.Null(sale.Lines[1].Barcode);
+        Assert.Equal(new[] { "1", "0.740 Kg" }, sale.Lines.Select(l => l.Qty));   // newest (the milk) on top
+        Assert.Null(sale.Lines[0].Barcode);
+        Assert.Equal("2000089007400", sale.Lines[1].Barcode);
         Assert.Equal("Added Full Cream Milk 1L", sale.Message);
     }
 
@@ -242,12 +242,12 @@ public sealed class PriceHoldRecallTests : IDisposable
         var row = Assert.Single(shown!.Bills);
         Assert.Equal("10:00 · Simran · 2 items · 16.17", row.Label);
         Assert.Equal("07/10 10:00", row.HeldAt);
-        Assert.Equal(new[] { "2", "0.740 Kg" }, sale.Lines.Select(l => l.Qty));
+        Assert.Equal(new[] { "0.740 Kg", "2" }, sale.Lines.Select(l => l.Qty));
         Assert.Equal("16.17", sale.Total);
         Assert.False(sale.MessageIsError);
         Assert.Empty(f.Ctx.Held.List());
         Assert.Equal(0, sale.HeldCount);
-        Assert.Equal(new[] { "2", "0.740 Kg" }, NewSale().Lines.Select(l => l.Qty));
+        Assert.Equal(new[] { "0.740 Kg", "2" }, NewSale().Lines.Select(l => l.Qty));
     }
 
     [Fact]

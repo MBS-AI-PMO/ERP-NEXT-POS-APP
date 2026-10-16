@@ -20,7 +20,9 @@ public partial class SetupDialog : Window
     /// <param name="firstRun">At the first start an empty printer means "not chosen yet", so an installed receipt printer, else
     /// the Windows default unless it only makes files (PDF, XPS…), is offered (PrinterNames.PickDefault); later it means the
     /// till deliberately saves receipts as files.</param>
-    public SetupDialog(TillSettings settings, bool firstRun)
+    /// <param name="shiftOpen">A shift is open on the till: the money decimals cannot change (every bill of a shift is rounded
+    /// the same way, as ERPNext rounds it).</param>
+    public SetupDialog(TillSettings settings, bool firstRun, bool shiftOpen = false)
     {
         InitializeComponent();
         this.settings = settings;
@@ -54,6 +56,12 @@ public partial class SetupDialog : Window
         // At the first start nobody has approved anything yet, so the upload mode is shown but can only be changed later
         // (Settings on the login screen, behind the supervisor PIN).
         UploadPanel.IsEnabled = !firstRun;
+        (settings.Precision == 2 ? Decimals2 : Decimals3).IsChecked = true;
+        if (shiftOpen)
+        {
+            DecimalsPanel.IsEnabled = false;
+            DecimalsNote.Text = "A shift is open: close it first to change the money decimals.";
+        }
         if (problem is not null) ShowStatus($"Printers could not be listed: {problem}", ok: false);
     }
 
@@ -62,6 +70,8 @@ public partial class SetupDialog : Window
 
     private string SelectedPrinter => PrinterBox.SelectedIndex > 0 ? (string)PrinterBox.SelectedItem : "";
     private PaperWidth SelectedPaper => Paper58.IsChecked == true ? PaperWidth.Mm58 : PaperWidth.Mm80;
+    private int SelectedPrecision => !DecimalsPanel.IsEnabled ? settings.Precision : Decimals2.IsChecked == true ? 2 : 3;
+
     private UploadMode SelectedUpload =>
         !UploadPanel.IsEnabled ? settings.EffectiveUpload
         : UploadLive.IsChecked == true && settings.LiveAllowed ? UploadMode.Live
@@ -148,6 +158,7 @@ public partial class SetupDialog : Window
             ShowReceiptPreview = PreviewBox.IsChecked == true,
             SetupDone = true,
             Upload = SelectedUpload,
+            Precision = SelectedPrecision,
         }).WithCounters(rows);
         try
         {

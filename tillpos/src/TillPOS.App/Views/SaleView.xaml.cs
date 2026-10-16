@@ -36,4 +36,10 @@ public partial class SaleView : UserControl
         Keyboard.FocusedElement is not TextBox box || (ReferenceEquals(box, ScanBox) && ScanBox.Text.Length == 0);
 
     private void FocusSearch(object sender, RoutedEventArgs e) => SearchBox.Focus();
+
+    /// <summary>The line just scanned (selected, at the top) is always in view, even after the list was scrolled.</summary>
+    private void ShowSelectedLine(object sender, SelectionChangedEventArgs e)
+    {
+        if (sender is ListBox list && list.SelectedItem is { } line) list.ScrollIntoView(line);
+    }
 }

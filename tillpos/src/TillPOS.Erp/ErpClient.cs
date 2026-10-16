@@ -65,6 +65,9 @@ public sealed class ErpClient : IErpClient
         return root.TryGetProperty("message", out var message) ? message.Clone() : root;
     }
 
+    internal async Task<JsonElement> UpdateAsync(string doctype, string name, object doc, CancellationToken ct) =>
+        (await SendAsync(HttpMethod.Put, ResourcePath(doctype, name), doc, ct)).GetProperty("data").Clone();
+
     internal async Task DeleteAsync(string doctype, string name, CancellationToken ct) =>
         await SendAsync(HttpMethod.Delete, ResourcePath(doctype, name), null, ct);
 

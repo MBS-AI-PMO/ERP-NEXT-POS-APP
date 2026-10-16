@@ -182,14 +182,32 @@ public sealed class SaleViewModelTests : IDisposable
         var vm = NewSale();
         vm.Scan("111");
         vm.Scan("2000089007400");
-        vm.SelectedLine = vm.Lines[0];
+        vm.SelectedLine = vm.Lines.Single(l => l.Barcode == "111");
 
-        vm.Increment(vm.Lines[0].Id);
+        vm.Increment(vm.SelectedLine.Id);
 
         Assert.NotNull(vm.SelectedLine);
         Assert.Equal("111", vm.SelectedLine!.Barcode);
         Assert.Equal("2", vm.SelectedLine.Qty);
+        Assert.Same(vm.Lines[0], vm.SelectedLine);   // the changed line moved to the top
+    }
+
+    [Fact]
+    public void The_newest_scan_is_the_top_line_and_selected_and_a_rescan_moves_its_line_to_the_top()
+    {
+        var vm = NewSale();
+        vm.Scan("111");
+        vm.Scan("2000089007400");
+        Assert.Equal(["2000089007400", "111"], vm.Lines.Select(l => l.Barcode));
         Assert.Same(vm.Lines[0], vm.SelectedLine);
+
+        vm.Scan("111");                                     // re-scan: quantity 2, back on top
+
+        Assert.Equal(["111", "2000089007400"], vm.Lines.Select(l => l.Barcode));
+        Assert.Equal("2", vm.Lines[0].Qty);
+        Assert.Same(vm.Lines[0], vm.SelectedLine);
+        Assert.Equal(["1", "2"], vm.Lines.Select(l => l.No.ToString(System.Globalization.CultureInfo.InvariantCulture)));   // receipt numbers keep the scan order
+        Assert.Equal(["111", "2000089007400"], vm.Cart.Lines.Select(l => l.Barcode));   // the bill (receipt, invoice) keeps the scan order
     }
 
     [Fact]
@@ -223,7 +241,7 @@ public sealed class SaleViewModelTests : IDisposable
 
         var second = NewSale();
 
-        Assert.Equal(new[] { "2", "0.740 Kg" }, second.Lines.Select(l => l.Qty));
+        Assert.Equal(new[] { "0.740 Kg", "2" }, second.Lines.Select(l => l.Qty));
     }
 
     [Fact]

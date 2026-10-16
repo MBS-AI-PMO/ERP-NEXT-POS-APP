@@ -142,6 +142,31 @@ public sealed class FakeErp : IErpClient, IErpWriter
         return Task.FromResult(JsonSerializer.SerializeToElement(row));
     }
 
+    /// <summary>Every update attempt (a draft rewritten), refused ones included.</summary>
+    public List<(string Doctype, string Name, JsonElement Doc)> Updated { get; } = [];
+
+    /// <summary>Return an exception to refuse an update: the draft keeps its values.</summary>
+    public Func<string, string, Exception?>? RejectUpdate { get; set; }
+
+    /// <summary>Fields ERPNext computes when a draft is saved (e.g. grand_total); also kept on the stored row.</summary>
+    public Func<string, JsonElement, Dictionary<string, object?>?>? OnUpdate { get; set; }
+
+    /// <summary>Saves the sent top-level fields over a stored row (child tables replace the stored document's) and answers with it.</summary>
+    public Task<JsonElement> UpdateAsync(string doctype, string name, object doc, CancellationToken ct = default)
+    {
+        var e = JsonSerializer.SerializeToElement(doc);
+        Updated.Add((doctype, name, e));
+        if (RejectUpdate?.Invoke(doctype, name) is { } refused) throw refused;
+        var row = tables.GetValueOrDefault(doctype)?.FirstOrDefault(r => r.GetValueOrDefault("name")?.ToString() == name)
+            ?? throw new ErpException(404, $"{doctype} {name} not found", "DoesNotExistError");
+        foreach (var p in e.EnumerateObject())
+            if (p.Value.ValueKind != JsonValueKind.Array) row[p.Name] = Scalar(p.Value);
+        foreach (var (key, value) in OnUpdate?.Invoke(doctype, e) ?? []) row[key] = value;
+        if (Docs.TryGetValue((doctype, name), out var stored) && stored is System.Text.Json.Nodes.JsonObject full)
+            foreach (var p in e.EnumerateObject()) full[p.Name] = System.Text.Json.Nodes.JsonNode.Parse(p.Value.GetRawText());
+        return Task.FromResult(JsonSerializer.SerializeToElement(row));
+    }
+
     public List<(string Method, JsonElement Args)> Calls { get; } = [];
 
     public Task<JsonElement> CallAsync(string method, object args, CancellationToken ct = default)

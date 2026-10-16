@@ -140,15 +140,22 @@ public sealed class SaleViewModel : ObservableObject, IPaymentHost
     public void Scan(string code)
     {
         if (ClientIds.IsTillId(code) && OpenDeliverySlip(code)) return;
-        Feedback(Cart.AddBarcode(code), code);
+        Added(Cart.AddBarcode(code), code);
         Changed();
     }
 
     public void AddFromSearch(string itemCode)
     {
-        Feedback(Cart.AddItem(itemCode), itemCode);
+        Added(Cart.AddItem(itemCode), itemCode);
         SearchText = "";
         Changed();
+    }
+
+    /// <summary>The add's message, and the line just added (or whose quantity a re-scan raised) to the top, selected.</summary>
+    private void Added(AddResult result, string code)
+    {
+        Feedback(result, code);
+        if (result is { Outcome: AddOutcome.Added, Line: { } line }) ShowOnTop(line.Id);
     }
 
     public void Increment(Guid id)
@@ -157,6 +164,7 @@ public sealed class SaleViewModel : ObservableObject, IPaymentHost
         try
         {
             Cart.Increment(id);
+            ShowOnTop(id);
             Changed();
         }
         catch (InvalidOperationException ex)
@@ -172,6 +180,7 @@ public sealed class SaleViewModel : ObservableObject, IPaymentHost
         if (line.Qty <= 1m) return;
         if (await gate.ApproveAsync(ApprovalAction.LineVoid, $"Reduce {line.Item.ItemName}", null, line.Item.ItemCode, line.Rate) is null) return;
         Cart.Decrement(id);
+        ShowOnTop(id);
         Changed();
     }
 
@@ -188,6 +197,7 @@ public sealed class SaleViewModel : ObservableObject, IPaymentHost
                 null, line.Item.ItemCode, (line.Qty - newQty) * line.Rate) is null)
             return;
         Cart.SetQty(id, newQty);
+        ShowOnTop(id);
         Changed();
     }
 
@@ -623,12 +633,33 @@ public sealed class SaleViewModel : ObservableObject, IPaymentHost
         }
     }
 
+    /// <summary>Lines the cashier added or changed, newest first: the screen lists them first.</summary>
+    private readonly List<Guid> recent = [];
+    private Guid? selectNext;
+
+    /// <summary>Puts the line at the top of the screen's list and selects it on the next refresh.</summary>
+    private void ShowOnTop(Guid id)
+    {
+        recent.Remove(id);
+        recent.Insert(0, id);
+        selectNext = id;
+    }
+
+    /// <summary>The screen's order: the most recently added or changed line first, then the other lines newest first. Only the
+    /// screen: the cart, the receipt and the invoice keep the order the items were added (the "No" column).</summary>
+    private IEnumerable<SaleLine> ScreenOrder(IReadOnlyList<SaleLine> lines)
+    {
+        recent.RemoveAll(id => lines.All(l => l.Id != id));
+        return recent.Select(id => lines.First(l => l.Id == id)).Concat(lines.AsEnumerable().Reverse().Where(l => !recent.Contains(l.Id)));
+    }
+
     private void Refresh()
     {
         var totals = Cart.Totals();
-        var selectedId = SelectedLine?.Id;
+        var selectedId = selectNext ?? SelectedLine?.Id;
+        selectNext = null;
         Lines.Clear();
-        foreach (var line in LinesOf(Cart)) Lines.Add(line);
+        foreach (var line in ScreenOrder(LinesOf(Cart))) Lines.Add(line);
         SelectedLine = Lines.FirstOrDefault(l => l.Id == selectedId);
         ItemCount = Cart.Lines.Count.ToString(CultureInfo.InvariantCulture);
         Discount = Format.Money(Cart.DiscountSaved());

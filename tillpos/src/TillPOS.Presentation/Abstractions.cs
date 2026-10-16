@@ -25,8 +25,8 @@ public interface IDialogs
     /// <summary>Shows the till setup (printer, paper, till number, invoice preview, counters, upload mode). Returns true when the
     /// settings were saved (the app then restarts to use them). When the upload mode was changed, <paramref name="uploadModeChanged"/>
     /// (old mode, new mode) runs before the restart, so it can be logged and the switch to Live prepared; when it returns false
-    /// (or fails) the old upload mode is saved back.</summary>
-    Task<bool> ShowSetupAsync(Func<UploadMode, UploadMode, Task<bool>> uploadModeChanged);
+    /// (or fails) the old upload mode is saved back. With <paramref name="shiftOpen"/> the money decimals cannot be changed.</summary>
+    Task<bool> ShowSetupAsync(Func<UploadMode, UploadMode, Task<bool>> uploadModeChanged, bool shiftOpen = false);
 
     /// <summary>A yes/no question (No is the default). Returns true for Yes.</summary>
     bool Confirm(string title, string message);

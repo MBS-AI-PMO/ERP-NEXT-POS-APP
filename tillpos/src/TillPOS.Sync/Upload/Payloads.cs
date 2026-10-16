@@ -151,6 +151,9 @@ public static class OpeningShiftPayload
 /// pos_payments (POS Awesome fills them from Payment Entries), the VAT per tax account (taxes) and the blind-count reconciliation per payment mode (opening,
 /// expected, counted, difference) from <see cref="ShiftClosing"/>. Submittable documents are built as drafts (docstatus 0):
 /// the uploader submits them after its checks.</summary>
+/// <summary>A submitted POS Invoice in ERPNext linked to a shift's opening (posa_pos_opening_shift), for its closing's list.</summary>
+public sealed record LinkedInvoice(string PosInvoice, string PostingDate, string? Customer, decimal GrandTotal);
+
 public static class ClosingShiftPayload
 {
     public const string Doctype = "POS Closing Shift";
@@ -165,9 +168,15 @@ public static class ClosingShiftPayload
     /// <param name="customer">The POS Profile's customer (each transaction names it, unless the bill has its own).</param>
     /// <param name="taxTemplate">The profile's Sales Taxes and Charges Template: its account heads and rates for the taxes rows.</param>
     /// <param name="currency">The profile's currency (e.g. AED), for each reconciliation row.</param>
+    /// <param name="shiftReceipts">Every bill of the shift, uploaded or not (total_quantity); default: <paramref name="invoices"/>.
+    /// The totals, the VAT and the reconciliation come from <paramref name="closing"/> (the till's figures for every paid bill),
+    /// so a bill ERPNext refused is still counted there; only pos_transactions lists what is in ERPNext.</param>
+    /// <param name="linked">Submitted invoices already in ERPNext under this opening that are not among <paramref name="invoices"/>
+    /// (bills of an earlier shift sent late with this one), listed so ERPNext consolidates them with this shift.</param>
     public static Dictionary<string, object?> Build(ShiftOpening opening, ShiftClosing closing, string openingErpName,
         IReadOnlyList<(string ErpName, Receipt Receipt)> invoices, string posProfile, string company, string erpUser, string customer,
-        SalesTaxTemplate? taxTemplate = null, string? currency = null) => new()
+        SalesTaxTemplate? taxTemplate = null, string? currency = null, IReadOnlyList<Receipt>? shiftReceipts = null,
+        IReadOnlyList<LinkedInvoice>? linked = null) => new()
     {
         ["doctype"] = Doctype,
         ["pos_opening_shift"] = openingErpName,
@@ -179,7 +188,7 @@ public static class ClosingShiftPayload
         ["user"] = erpUser,
         ["grand_total"] = closing.GrandTotal,
         ["net_total"] = closing.NetTotal,
-        ["total_quantity"] = invoices.Sum(i => i.Receipt.Lines.Sum(l => l.Qty)),
+        ["total_quantity"] = (shiftReceipts ?? invoices.Select(i => i.Receipt).ToList()).Sum(r => r.Lines.Sum(l => l.Qty)),
         ["pos_transactions"] = invoices
             .Select(i => new Dictionary<string, object?>
             {
@@ -188,11 +197,18 @@ public static class ClosingShiftPayload
                 ["customer"] = i.Receipt.Customer ?? customer,
                 ["grand_total"] = i.Receipt.GrandTotal,
             })
+            .Concat((linked ?? []).Where(l => invoices.All(i => i.ErpName != l.PosInvoice)).Select(l => new Dictionary<string, object?>
+            {
+                ["pos_invoice"] = l.PosInvoice,
+                ["posting_date"] = l.PostingDate,
+                ["customer"] = l.Customer ?? customer,
+                ["grand_total"] = l.GrandTotal,
+            }))
             .ToList(),
         // POS Awesome fills pos_payments from Payment Entries (credit sales paid later); the till's bills are paid at the counter,
         // so it sends none. To be confirmed by the sandbox Live run.
         ["pos_payments"] = new List<Dictionary<string, object?>>(),
-        ["taxes"] = Taxes(taxTemplate, invoices.Sum(i => i.Receipt.TotalTaxes)),
+        ["taxes"] = Taxes(taxTemplate, closing.TotalTaxes),
         ["payment_reconciliation"] = closing.Modes
             .Select(m => new Dictionary<string, object?>
             {

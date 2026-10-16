@@ -78,7 +78,7 @@ foreach ($n in $tills) {
         PrinterName         = ""
         PaperWidth          = "Mm80"
         ReceiptFooter       = "Thank you for shopping with us"
-        Precision           = 3
+        Precision           = 2   # money decimals; must match ERPNext Currency Precision (2). Weights keep 3.
         Rounding            = "Bankers"
         DbPath              = ""
         SyncIntervalSeconds = 90

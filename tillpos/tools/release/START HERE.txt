@@ -55,6 +55,21 @@ EVERY DAY
   supervisor enters their PIN; the Z report prints.
 - The top bar shows "synced", "uploaded today", "waiting" and "failed".
   Click it to see details. "failed" needs a supervisor (Upload problems).
+- The item just scanned is always the top line of the bill (highlighted);
+  scanning an item again raises its quantity and moves it to the top.
+
+FAILED BILLS NEVER HOLD THE OTHERS
+A bill ERPNext refuses goes to "failed"; every other bill, the shift
+closing and the next shifts keep uploading. The shift's totals and cash
+count in ERPNext still include the failed bill. Fix the cause in ERPNext
+(e.g. a disabled item), then press Retry in Upload problems: the bill is
+sent with the counter's current shift, keeping its sale date.
+
+MONEY DECIMALS (2)
+The till works out money with 2 decimals; weights keep 3 (grams).
+ERPNext System Settings must stay: Currency Precision 2, Float Precision 3.
+Do not change them while the tills are in use. (Settings > Money decimals,
+supervisor only, can only be changed when no shift is open.)
 
 PRICE CHANGES (weighed items too)
 Change the Item Price in ERPNext. The till picks it up within about

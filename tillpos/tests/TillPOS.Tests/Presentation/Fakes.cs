@@ -69,9 +69,13 @@ public sealed class FakeDialogs : IDialogs
     /// <summary>What the upload-mode callback answered last (false: the old mode would be saved back).</summary>
     public bool? SetupUploadAccepted { get; private set; }
 
-    public async Task<bool> ShowSetupAsync(Func<UploadMode, UploadMode, Task<bool>> uploadModeChanged)
+    /// <summary>Whether a shift was open when Settings was last shown.</summary>
+    public bool? SetupShiftOpen { get; private set; }
+
+    public async Task<bool> ShowSetupAsync(Func<UploadMode, UploadMode, Task<bool>> uploadModeChanged, bool shiftOpen = false)
     {
         SetupRequests++;
+        SetupShiftOpen = shiftOpen;
         if (SetupUploadChange is { } change) SetupUploadAccepted = await uploadModeChanged(change.From, change.To);
         return SetupResults.Count > 0 && SetupResults.Dequeue();
     }

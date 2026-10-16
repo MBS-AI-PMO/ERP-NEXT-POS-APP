@@ -209,7 +209,6 @@ public sealed class UploaderTests : IDisposable
         OpenShift();
         Sale("TILL2-A", 1);
         Return("TILL2-R", "TILL2-A", 5);
-        CloseShift();
         erp.RejectInsert = (doctype, doc) => doctype == "POS Invoice" && Str(doc, "posa_client_request_id") == "TILL2-A"
             ? new ErpException(417, "Item RICE5 is disabled", "ValidationError")
             : null;
@@ -219,18 +218,15 @@ public sealed class UploaderTests : IDisposable
         Assert.Equal(["TILL2-A"], InsertedInvoices.Select(i => Str(i, "posa_client_request_id")));   // the return was not sent
         Assert.Equal(ReceiptSyncStatus.Pending, receipts.SyncInfo("TILL2-R").Status);
         Assert.Contains(report.Problems, p => p.Message.Contains("Return TILL2-R waits for its original sale TILL2-A"));
-        Assert.Contains(report.Problems, p => p.Message.Contains("Closing of shift") && p.Message.Contains("2 bill(s)"));
-        Assert.DoesNotContain("POS Closing Shift", InsertedDoctypes);
         Assert.Equal(1, report.Failed);
-        Assert.Equal(2, report.Waiting); // the return and the closing
+        Assert.Equal(1, report.Waiting); // the return (the shift is still open: no closing yet)
 
-        // Once the original goes in, the return follows with return_against, then the closing.
+        // Once the original goes in, the return follows with return_against.
         erp.RejectInsert = null;
         clock = clock.AddMinutes(1);
         await New().RunOnceAsync();
         var returned = InsertedInvoices.Single(i => Str(i, "posa_client_request_id") == "TILL2-R");
         Assert.Equal(receipts.SyncInfo("TILL2-A").ErpName, Str(returned, "return_against"));
-        Assert.Contains("POS Closing Shift", InsertedDoctypes);
     }
 
     [Fact]
