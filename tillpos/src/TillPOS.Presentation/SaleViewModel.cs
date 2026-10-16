@@ -535,7 +535,8 @@ public sealed class SaleViewModel : ObservableObject, IPaymentHost
 
     public void BackFromPayment() => ctx.Navigator.Show(this);
 
-    /// <summary>A cart's lines as the screens show them (also the payment screen's list).</summary>
+    /// <summary>A cart's lines in the bill's order, numbered as on the receipt (also the payment screen's list). The sale screen
+    /// shows them newest first (<see cref="ScreenOrder"/>).</summary>
     public static IReadOnlyList<SaleLine> LinesOf(Cart cart)
     {
         var totals = cart.Totals();
